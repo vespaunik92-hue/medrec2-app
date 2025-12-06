@@ -26,6 +26,7 @@ const firebaseConfig = {
   messagingSenderId: "1097108054720",
   appId: "1:1097108054720:web:a53efbaf9882d5086d0325"
 };
+const appID = firebaseConfig.appId;
 
 // --- DATA STATIS ---
 
@@ -1877,19 +1878,14 @@ const App = () => {
             setDb(firestoreInstance);
         });
 
-      // FIX: Improved Auth Flow Pattern
-      const initAuth = async () => {
-        try {
-            if (initialAuthToken) {
-                await signInWithCustomToken(auth, initialAuthToken);
-            } else {
-                await signInAnonymously(auth);
-            }
-        } catch (e) {
-            console.error("Auth failed", e);
-        }
-      };
-      initAuth();
+const initAuth = async () => {
+    try {
+      await signInAnonymously(auth);
+    } catch (e) {
+      console.error("Auth failed", e);
+    }
+};
+initAuth();
 
       const unsubscribe = onAuthStateChanged(auth, (u) => { 
         setUserId(u ? u.uid : null); 
