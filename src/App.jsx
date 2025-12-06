@@ -1913,7 +1913,7 @@ initAuth();
   if (!isAuthReady || !db || !isOfflineReady) 
     return <div className="flex h-screen items-center justify-center text-indigo-600 font-bold animate-pulse">Memuat Aplikasi dan Menyiapkan Mode Offline (Shared)...</div>;
     
-  return <MedicalRecordApp db={db} userId={userId} appId={appId} isOnline={isOnline} onLogout={() => setHasLoginPassed(false)} />;
+  return <MedicalRecordApp db={db} userId={userId} appId={firebaseConfig.appId} isOnline={isOnline} onLogout={() => setHasLoginPassed(false)} />;
 };
 
 export default App;
