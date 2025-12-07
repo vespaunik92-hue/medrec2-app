@@ -806,62 +806,45 @@ const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter
     );
 };
 
-// --- Helper untuk Memformat Planning di Tabel ---
+// --- Helper untuk Memformat Planning (Warna-Warni Otomatis) ---
 const renderPlanningCell = (text) => {
     if (!text) return '-';
     
-    const lines = text.split('\n');
-    const labs = [];
-    const rads = [];
-    const tms = [];
-    const others = [];
+    return text.split('\n').map((line, idx) => {
+        const lower = line.toLowerCase().trim();
+        if (!lower) return null;
 
-    lines.forEach(line => {
-        const trimmed = line.trim();
-        if (!trimmed) return;
+        // Default Style (Polos)
+        let containerStyle = "mb-1 block w-fit max-w-full";
+        let textStyle = "text-gray-800";
 
-        if (trimmed.startsWith('Lab. R/')) {
-            labs.push(trimmed.replace('Lab. R/', '').trim());
-        } else if (trimmed.startsWith('Rad. R/')) {
-            rads.push(trimmed.replace('Rad. R/', '').trim());
-        } else if (trimmed.startsWith('TM.')) {
-            tms.push(trimmed.replace('TM.', '').trim());
-        } else {
-            others.push(line);
+        // 1. Deteksi LAB (Kuning)
+        if (lower.includes('lab') || lower.includes('darah') || lower.includes('urine') || lower.includes('cek')) {
+            containerStyle = "mb-1 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded w-fit max-w-full";
+            textStyle = "text-yellow-900 font-medium";
+        } 
+        // 2. Deteksi RADIOLOGI (Biru)
+        else if (lower.includes('rad') || lower.includes('rontgen') || lower.includes('ct ') || lower.includes('usg') || lower.includes('foto')) {
+            containerStyle = "mb-1 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded w-fit max-w-full";
+            textStyle = "text-blue-900 font-medium";
+        } 
+        // 3. Deteksi TERAPI/OBAT (Hijau)
+        else if (lower.includes('terapi') || lower.includes('rx') || lower.includes('obat') || lower.includes('inj') || lower.includes('infus') || lower.includes('drip')) {
+            containerStyle = "mb-1 bg-green-100 border border-green-200 px-2 py-0.5 rounded w-fit max-w-full";
+            textStyle = "text-green-900 font-medium";
+        } 
+        // 4. Deteksi LACAK/PENTING (Merah Berdenyut)
+        else if (lower.includes('lacak') || lower.includes('konsul') || lower.includes('plan') || lower.includes('pro')) {
+            containerStyle = "mb-1 bg-red-100 border border-red-200 px-2 py-0.5 rounded w-fit max-w-full animate-pulse";
+            textStyle = "text-red-900 font-bold";
         }
-    });
 
-    return (
-        <div className="text-xs text-gray-800">
-            {/* Teks Biasa */}
-            {others.length > 0 && (
-                <div className="whitespace-pre-wrap mb-2 font-sans text-gray-700 leading-snug">
-                    {others.join('\n')}
-                </div>
-            )}
-            {/* Badges */}
-            <div className="flex flex-col items-start gap-1">
-                {labs.length > 0 && (
-                    <div className="bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded w-full">
-                        <span className="font-bold text-[9px] uppercase block mb-0.5 text-red-800">Laboratorium:</span>
-                        <span className="font-medium">{labs.join(', ')}</span>
-                    </div>
-                )}
-                {rads.length > 0 && (
-                    <div className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded w-full">
-                        <span className="font-bold text-[9px] uppercase block mb-0.5 text-blue-800">Radiologi:</span>
-                        <span className="font-medium">{rads.join(', ')}</span>
-                    </div>
-                )}
-                {tms.length > 0 && (
-                    <div className="bg-green-50 text-green-700 border border-green-200 px-2 py-1 rounded w-full">
-                        <span className="font-bold text-[9px] uppercase block mb-0.5 text-green-800">Tindakan:</span>
-                        <span className="font-medium">{tms.join(', ')}</span>
-                    </div>
-                )}
+        return (
+            <div key={idx} className={containerStyle}>
+                <span className={textStyle}>{line}</span>
             </div>
-        </div>
-    );
+        );
+    });
 };
 
 // --- Helper Baru: Format Objektif dengan Balon Lacak ---
@@ -1844,6 +1827,28 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout }) => {
     </div>
   );
 };
+// --- RUMUS VISUAL TAGS ---
+const formatTags = (text) => {
+  if (!text) return "-";
+  return text.split('\n').map((line, idx) => {
+    let style = "block mb-1 "; // Dasar: Tiap baris dikasih jarak dikit
+    const lower = line.toLowerCase();
+
+    // Logika Deteksi Warna
+    if (lower.includes('lab') || lower.includes('darah') || lower.includes('urine')) {
+      style += "bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded w-fit border border-yellow-200"; // Kuning
+    } else if (lower.includes('rad') || lower.includes('rontgen') || lower.includes('ct') || lower.includes('usg')) {
+      style += "bg-blue-100 text-blue-800 px-2 py-0.5 rounded w-fit border border-blue-200"; // Biru
+    } else if (lower.includes('terapi') || lower.includes('rx') || lower.includes('obat') || lower.includes('inj')) {
+      style += "bg-green-100 text-green-800 px-2 py-0.5 rounded w-fit border border-green-200"; // Hijau
+    } else if (lower.includes('lacak') || lower.includes('konsul') || lower.includes('plan')) {
+      style += "bg-red-100 text-red-800 px-2 py-0.5 rounded w-fit font-bold border border-red-200"; // Merah
+    }
+
+    return <span key={idx} className={style}>{line}</span>;
+  });
+};
+// -------------------------
 
 const App = () => {
   const [db, setDb] = useState(null);
