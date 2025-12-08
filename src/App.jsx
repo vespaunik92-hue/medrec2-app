@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { 
     getFirestore, 
     collection, 
@@ -14,7 +14,6 @@ import {
     getDoc, 
     Timestamp, 
     orderBy, 
-    enableIndexedDbPersistence, 
     getDocs,
     where
 } from 'firebase/firestore';
@@ -1916,15 +1915,6 @@ const App = () => {
       
       setDb(firestoreInstance);
       setIsOfflineReady(true);
-
-const initAuth = async () => {
-    try {
-      await signInAnonymously(auth);
-    } catch (e) {
-      console.error("Auth failed", e);
-    }
-};
-initAuth();
 
       const unsubscribe = onAuthStateChanged(auth, (u) => { 
         setUserId(u ? u.uid : null); 
