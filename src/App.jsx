@@ -15,6 +15,8 @@ import {
     Timestamp, 
     orderBy, 
     enableIndexedDbPersistence 
+    getDocs,
+    where
 } from 'firebase/firestore';
 
 // --- Global Firebase Configuration ---
@@ -80,13 +82,53 @@ const LoginPage = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Validasi sederhana
-    if(username && password) {
-        onLogin();
-    } else {
-        alert("Mohon isi username dan password");
+    
+    if (!username || !password) {
+        alert("Mohon isi Email/Nama Pengguna dan Password.");
+        return;
+    }
+
+    const auth = getAuth();
+    // Inisiasi Firestore dari aplikasi auth, karena db belum di-pass ke LoginPage
+    const db = getFirestore(auth.app); 
+    let loginEmail = username; 
+
+    try {
+        // --- 1. Cek apakah input adalah Nama Pengguna (tanpa @) ---
+        if (!username.includes('@')) {
+            
+            // --- Pencarian Nama Pengguna di Firestore ---
+            // Cari dokumen di koleksi userProfiles di mana field 'username' == input pengguna
+            const userRef = collection(db, 'userProfiles'); 
+            const q = query(userRef, where('username', '==', username));
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                // Jika username tidak ditemukan di Firestore
+                alert(`Login Gagal: Nama Pengguna "${username}" tidak terdaftar.`);
+                return;
+            }
+
+            // Jika ditemukan, ambil email yang terkait
+            const userData = querySnapshot.docs[0].data();
+            loginEmail = userData.email; 
+        }
+        
+        // --- 2. Lakukan Otentikasi Firebase menggunakan EMAIL yang telah diproses ---
+        await signInWithEmailAndPassword(auth, loginEmail, password); 
+        
+    } catch (error) {
+        console.error("Login Error:", error);
+        let pesan = "Login Gagal. Cek koneksi atau coba lagi.";
+        
+        // Pesan error spesifik dari Firebase
+        if (error.code === 'auth/wrong-password') pesan = "Password salah.";
+        if (error.code === 'auth/user-not-found') pesan = "Email tidak terdaftar.";
+        if (error.code === 'auth/invalid-credential') pesan = "Email atau Password salah.";
+        
+        alert(pesan);
     }
   };
 
