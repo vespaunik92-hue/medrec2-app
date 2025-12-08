@@ -14,7 +14,7 @@ import {
     getDoc, 
     Timestamp, 
     orderBy, 
-    enableIndexedDbPersistence 
+    enableIndexedDbPersistence, 
     getDocs,
     where
 } from 'firebase/firestore';
@@ -1914,16 +1914,8 @@ const App = () => {
       const auth = getAuth(app);
       firestoreInstance = getFirestore(app);
       
-      enableIndexedDbPersistence(firestoreInstance)
-        .then(() => {
-            setIsOfflineReady(true);
-            setDb(firestoreInstance);
-        })
-        .catch((err) => {
-            console.warn("Firestore Persistence error:", err.code);
-            setIsOfflineReady(true); // Proceed even if persistence fails
-            setDb(firestoreInstance);
-        });
+      setDb(firestoreInstance);
+      setIsOfflineReady(true);
 
 const initAuth = async () => {
     try {
