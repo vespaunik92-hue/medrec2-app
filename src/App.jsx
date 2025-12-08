@@ -1934,15 +1934,27 @@ const App = () => {
     };
   }, []);
 
-  // NEW: Gate Login Check
-  if (!hasLoginPassed) {
-      return <LoginPage onLogin={() => setHasLoginPassed(true)} />;
+ // --- GATE LOGIN CHECK YANG BENAR ---
+  
+  // 1. Jika User BELUM Login (userId kosong), Tampilkan Login Page
+  if (!userId) {
+      return <LoginPage />;
   }
 
+  // 2. Jika Sedang Loading
   if (!isAuthReady || !db || !isOfflineReady) 
-    return <div className="flex h-screen items-center justify-center text-indigo-600 font-bold animate-pulse">Memuat Aplikasi dan Menyiapkan Mode Offline (Shared)...</div>;
+    return <div className="flex h-screen items-center justify-center text-indigo-600 font-bold animate-pulse">Memuat Aplikasi...</div>;
     
-  return <MedicalRecordApp db={db} userId={userId} appId={firebaseConfig.appId} isOnline={isOnline} onLogout={() => setHasLoginPassed(false)} />;
+  // 3. Jika SUDAH Login (userId ada), Buka Aplikasi Utama
+  return (
+    <MedicalRecordApp 
+        db={db} 
+        userId={userId} 
+        appId={firebaseConfig.appId} 
+        isOnline={isOnline} 
+        onLogout={() => signOut(getAuth())} 
+    />
+  );
 };
 
 export default App;
