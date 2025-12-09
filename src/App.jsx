@@ -1994,7 +1994,8 @@ const fetchUserRole = async (userEmail, db) => {
         userId={userId} 
         appId={firebaseConfig.appId} 
         isOnline={isOnline} 
-        onLogout={() => signOut(getAuth())} 
+        onLogout={() => signOut(getAuth())}
+        userRole={userRole} 
     />
   );
 };
