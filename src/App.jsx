@@ -45,7 +45,8 @@ const DEFAULT_DPJP_DATA = [
     { name: 'dr. Dian Ekowati, Sp.PD', waNumber: '6281210680279' },
     { name: 'dr. Priyo, Sp.PD', waNumber: '62811220364' },
     { name: 'dr. Risa, Sp.PD', waNumber: '6281316198500' },
-    { name: 'dr. Evan, Sp.P', waNumber: '6281210100626' }
+    { name: 'dr. Evan, Sp.P', waNumber: '6281210100626' },
+    { name: 'Abi Nugroho', waNumber: '628568425477' }
 ];
 
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
@@ -1897,9 +1898,30 @@ const App = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isOfflineReady, setIsOfflineReady] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
-  
-  // NEW: State untuk Gate Login
-  const [hasLoginPassed, setHasLoginPassed] = useState(false);
+  const [userRole, setUserRole] = useState(null);
+
+// --- FUNGSI BARU UNTUK MENGAMBIL ROLE ---
+const fetchUserRole = async (userEmail, db) => {
+    if (!userEmail || !db) return null;
+    
+    try {
+        const userProfilesRef = collection(db, 'userProfiles');
+        // Cari dokumen di mana field 'email' sama dengan email pengguna yang login
+        const q = query(userProfilesRef, where('email', '==', userEmail));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+            // Jika profil ditemukan, kembalikan field 'role'
+            const userData = querySnapshot.docs[0].data();
+            return userData.role || 'user'; // Default ke 'user' jika role tidak ditemukan
+        }
+        return 'guest'; // Jika profil tidak ditemukan sama sekali
+        
+    } catch (e) {
+        console.error("Error fetching user role:", e);
+        return 'guest';
+    }
+};
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -1916,10 +1938,30 @@ const App = () => {
       setDb(firestoreInstance);
       setIsOfflineReady(true);
 
-      const unsubscribe = onAuthStateChanged(auth, (u) => { 
+      const unsubscribe = onAuthStateChanged(auth, async (u) => { 
         setUserId(u ? u.uid : null); 
-        setIsAuthReady(true); 
-      });
+        setIsAuthReady(true);
+        if (u) {
+            try {
+                const userProfilesRef = collection(firestoreInstance, 'userProfiles');
+                const q = query(userProfilesRef, where('email', '==', u.email));
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    const userData = querySnapshot.docs[0].data();
+                    setUserRole(userData.role || 'user');
+                    console.log("Role loaded:", userData.role);
+                } else {
+                    setUserRole('guest');
+                }
+            } catch (e) {
+                console.error("Error fetching role:", e);
+                setUserRole('guest');
+            }
+        } else {
+            setUserRole(null); 
+        }
+      }); 
 
       return () => unsubscribe();
 
