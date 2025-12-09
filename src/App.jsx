@@ -46,7 +46,6 @@ const DEFAULT_DPJP_DATA = [
     { name: 'dr. Priyo, Sp.PD', waNumber: '62811220364' },
     { name: 'dr. Risa, Sp.PD', waNumber: '6281316198500' },
     { name: 'dr. Evan, Sp.P', waNumber: '6281210100626' },
-    { name: 'Abi Nugroho', waNumber: '628568425477' }
 ];
 
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
@@ -1015,7 +1014,7 @@ const RoomFilterModal = ({ roomList, selectedRooms, onToggleRoom, onSave, onSele
 
 // --- LOGIC UTAMA ---
 
-const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout }) => {
+const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) => {
   const [records, setRecords] = useState([]);
   const [activeRecords, setActiveRecords] = useState([]);
   const [occupiedRooms, setOccupiedRooms] = useState([]);
@@ -1691,6 +1690,16 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout }) => {
     <div className="min-h-screen bg-gray-100 font-sans text-gray-800 pb-20">
         <div className="bg-white shadow-sm p-3 sticky top-0 z-40 border-b flex justify-between items-center max-w-7xl mx-auto">
             <h1 className="font-extrabold text-indigo-800">MEDREC V3 (SHARED)</h1>
+            {userRole && (
+                <div className={`text-xs font-bold px-3 py-1 rounded-full ${
+                    userRole === 'admin' 
+                    ? 'bg-red-100 text-red-700 border border-red-300' 
+                    : 'bg-blue-100 text-blue-700 border border-blue-300'
+                }`}>
+                    PERAN: {userRole.toUpperCase()}
+                </div>
+            )}
+            
             <div className={`text-xs font-bold px-3 py-1 rounded-full ${isOnline ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                 {isOnline ? 'ONLINE' : 'OFFLINE'}
             </div>
