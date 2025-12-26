@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { 
@@ -11,7 +11,6 @@ import {
     updateDoc, 
     deleteDoc,
     setDoc,
-    getDoc, 
     Timestamp, 
     orderBy, 
     getDocs,
@@ -27,7 +26,6 @@ const firebaseConfig = {
   messagingSenderId: "1097108054720",
   appId: "1:1097108054720:web:a53efbaf9882d5086d0325"
 };
-const appID = firebaseConfig.appId;
 
 // --- DATA STATIS ---
 
@@ -46,6 +44,7 @@ const DEFAULT_DPJP_DATA = [
     { name: 'dr. Priyo, Sp.PD', waNumber: '62811220364' },
     { name: 'dr. Risa, Sp.PD', waNumber: '6281316198500' },
     { name: 'dr. Evan, Sp.P', waNumber: '6281210100626' },
+    { name: 'dr. Evi, Sp.JP', waNumber: '6281321453999' },
 ];
 
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
@@ -55,7 +54,7 @@ const LAB_CHECKS = [
     'GDS', 'GDP/2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer',
     'Ureum/Creatinin', 'SGOT/SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
     'Elektrolit (Na/K/Cl)', 'Calsium', 'Analisa Gas Darah (AGD)', 'Lactate',
-    'Profil Lipid (Kolesterol)', 'Asam Urat',
+    'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum',
     'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV',
     'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP'
 ];
@@ -70,12 +69,12 @@ const RADIOLOGY_CHECKS = [
 
 const PROCEDURES = [
     'Pasang Infus', 'Pasang Kateter', 'Pasang NGT', 'Nebulizer', 'Oksigenasi', 'Pemasangan Ventilator',
-    'EKG', 'Ganti Balutan', 'Suction', 'Injeksi Extra', 'Syringe Pump', 'Trnfs PRC', 'Trnfs TC', 'Hemodialisa (HD)', 
+    'EKG', 'Ganti Balutan', 'Suction', 'Injeksi Extra', 'Syringe Pump', 'Trnfs  PRC, on ke , post ke , premed: , Postmed:', 'Trnfs  TC, on ke , post ke , premed: , Postmed:', 'Hemodialisa (HD)', 
     'Rawat Luka', 'Angkat Jahitan', 'Spooling Kateter', 'Bladder Training', 'Biopsi Sumsum Tulang',
     'Parasintesis', 'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites', 'Pungsi Lumbal', 'Aspirasi Sendi'
 ];
 const MEDICATIONS = [
-    'Koreksi KCL', 'Koreksi Meylon', 'Koreksi CaGluconas', 'Drip Insulin', 'Drip Lasix', 'Drip Nicardipine', 'Drip Norepinephrine',
+    'Koreksi KCL  mEq +  500 ml habis dalam', 'Koreksi Meylon  mEq + Ns  100 ml habis dalam', 'Koreksi CaGluconas  gr + D5 100ml', 'Bolus Novorapid 10 iu + D40 2 flash', 'Drip Insulin  iu', 'Drip Lasix  cc/jam', 'Drip Nicardipine  mcg, Kec.  cc/j, Bb  kg', 'Drip Norepinephrine  mcg, Kec.  cc/j, Bb  kg',
     'Drip Amiodarone', 'Drip Fentanyl', 'Injeksi Extra Lasix', 
     '3 Way', '2 Line Infus', 'Trnfs Albumin', 'Drip Heparin', 'Drip Dopamine', 'Drip Dobutamine', 'Drip Epinephrine'
 ];
@@ -89,7 +88,7 @@ const ALL_PLANNING_OPTIONS = [
 ].sort((a, b) => a.label.localeCompare(b.label));
 
 // --- COMPONENTS: LOGIN PAGE (REBRANDED) ---
-const LoginPage = ({ onLogin }) => {
+const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -417,29 +416,7 @@ const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, 
     );
 };
 
-const TabButton = ({ label, currentView, onClick, name }) => (
-    <button
-      onClick={onClick}
-      className={`py-2 px-4 text-xs font-bold border-b-2 transition ${
-        currentView === name
-          ? 'text-indigo-700 border-indigo-600 bg-white'
-          : 'text-gray-500 border-transparent hover:text-indigo-500'
-      }`}
-    >
-      {label}
-    </button>
-);
 
-const QuickActionButton = ({ label, onClick, className, title }) => (
-    <button
-        type="button"
-        onClick={onClick}
-        title={title}
-        className={`text-[10px] font-medium bg-white border px-2 py-1 rounded hover:shadow-sm transition mr-1 mb-1 ${className}`}
-    >
-        {label}
-    </button>
-);
 
 // --- KOMPONEN BARU: FILTER KAMAR DROPDOWN (ANTI-RIBET) ---
 const RoomFilterDropdown = ({ allRooms, selectedRooms, onChange }) => {
@@ -513,14 +490,6 @@ const RoomFilterDropdown = ({ allRooms, selectedRooms, onChange }) => {
     );
 };
 // -------------------------------------------------------------------
-
-const StatCard = ({ title, value, subtext, color }) => (
-    <div className={`bg-white p-4 rounded-lg shadow-md border-l-4 border-${color}-500`}>
-        <div className="text-sm font-medium text-gray-500">{title}</div>
-        <div className="text-2xl font-extrabold text-${color}-700 mt-1">{value}</div>
-        {subtext && <div className="text-xs text-gray-400 mt-1">{subtext}</div>}
-    </div>
-);
 
 // --- MODAL TTV & GCS Calculator ---
 const TtvModal = ({ onClose, onSave }) => {
@@ -693,7 +662,6 @@ const TagSelector = ({ label, options, onSelect, category, placeholder }) => {
 
     const inputStyle = "w-full p-1 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 outline-none";
     
-    const isSearchable = searchTerm.length >= 1; 
 
     return (
         <div className="relative mb-2" ref={wrapperRef}>
@@ -866,34 +834,38 @@ const PrintView = ({ record, closePrint }) => {
 };
 
 const BulkPrintView = ({ records, onClose }) => {
+    // POIN 2: Urutkan berdasarkan kamar sebelum ditampilkan di preview
+    const sortedToPrint = useMemo(() => {
+        return [...records].sort((a, b) => 
+            a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' })
+        );
+    }, [records]);
+
     const onPrint = () => {
         handlePrintWindow('bulk-printable-area', 'Cetak Banyak - APOS');
     };
 
     return (
-        <div className="fixed inset-0 bg-white z-[90] overflow-y-auto">
-            <div className="p-4 bg-indigo-50 flex justify-between items-center no-print sticky top-0 border-b shadow-sm z-50">
+        // POIN 3: z-[150] agar melayang di atas header utama (z-100)
+        <div className="fixed inset-0 bg-white z-[150] overflow-y-auto">
+            <div className="p-4 bg-indigo-50 flex justify-between items-center no-print sticky top-0 z-50 border-b shadow-sm">
                 <div>
-                    <h1 className="font-bold text-indigo-900">Cetak Banyak (Batch Print)</h1>
-                    <p className="text-xs text-gray-600">Total: {records.length} Pasien. Gunakan opsi "Pages" di dialog print browser untuk memilih halaman.</p>
+                    <h1 className="font-bold text-indigo-900">Cetak Banyak ({sortedToPrint.length} Pasien)</h1>
+                    <p className="text-[10px] text-gray-500 italic">*Urutan otomatis berdasarkan nomor kamar</p>
                 </div>
                 <div className="space-x-2">
-                    <button 
-                        onClick={onPrint} 
-                        className="px-6 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 flex items-center inline-flex"
-                    >
-                        <span className="mr-2">🖨️</span> Cetak Semua (A5)
+                    <button onClick={onPrint} className="px-6 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 flex items-center inline-flex transition">
+                        <span className="mr-2">🖨️</span> Cetak A5
                     </button>
-                    <button onClick={onClose} className="px-4 py-2 bg-gray-500 text-white rounded text-sm font-bold">Tutup</button>
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-500 text-white rounded text-sm font-bold hover:bg-gray-600 transition">Tutup</button>
                 </div>
             </div>
 
             <div id="bulk-printable-area" className="p-4 bg-gray-50">
-                {records.map((rec, index) => (
+                {sortedToPrint.map((rec, index) => (
                     <div key={rec.id} className="print-page bg-white shadow mb-8 mx-auto print-break">
-                         {/* Visual separator for screen view only */}
                         <div className="no-print bg-gray-200 text-gray-500 text-[10px] p-1 text-center font-bold uppercase mb-2">
-                            Halaman {index + 1}: {rec.name}
+                            Halaman {index + 1}: {rec.roomNumber} - {rec.name}
                         </div>
                         <PrintLayout record={rec} />
                     </div>
@@ -909,13 +881,6 @@ const BulkPrintView = ({ records, onClose }) => {
 const SINGLE_BED_ROOMS = ['K5B1', 'K7B1', 'K8B1', 'K9B1', 'K12B1', 'K14B1']; 
 // (Catatan: Saya asumsikan penamaan di database pakai B1 semua untuk single, sesuaikan jika beda)
 
-const detectGender = (name) => {
-    if (!name) return 'unknown';
-    const lower = name.toLowerCase();
-    if (lower.includes('tn.') || lower.includes('tn ') || lower.includes('sdr') || lower.includes('lm')) return 'male';
-    if (lower.includes('ny.') || lower.includes('ny ') || lower.includes('nn') || lower.includes('pr')) return 'female';
-    return 'unknown';
-};
 
 // --- LOGIKA WARNA KAMAR (UPDATE: SUPPORT WAITING LIST) ---
 const getRoomColorStatus = (roomName, activeRecords, waitingList = []) => {
@@ -1104,97 +1069,225 @@ const renderObjectiveCell = (text) => {
     );
 };
 
-const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, onBulkPrint, searchTerm, onSearchChange, handleExportExcel }) => {
-    if (records.length === 0 && !searchTerm) {
-        return <div className="text-center p-10 text-gray-400 italic text-sm bg-white h-full border rounded">Belum ada pasien aktif yang sesuai dengan filter.</div>;
-    }
+// --- PATIENT TABLE FINAL (DENGAN MODE CHECKLIST PULANG MASAL) ---
+const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onQuickTtv, onBulkDischarge }) => {
+    
+    const [viewMode, setViewMode] = useState('soap');
+    
+    // --- LOGIKA SELEKSI (CHECKBOX) ---
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState([]);
 
+    // Reset seleksi saat mode checkbox dimatikan
+    useEffect(() => { if (!isSelectionMode) setSelectedIds([]); }, [isSelectionMode]);
+
+    // Fungsi Pilih Semua
+    const handleSelectAll = (e) => {
+        if (e.target.checked) setSelectedIds(records.map(r => r.id));
+        else setSelectedIds([]);
+    };
+
+    // Fungsi Pilih Satu Baris
+    const handleSelectRow = (id) => {
+        setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    };
+
+    // Fungsi Eksekusi Pulang Masal
+    const executeBulkDischarge = () => {
+        if (selectedIds.length === 0) return;
+        if (window.confirm(`Yakin ingin memulangkan ${selectedIds.length} pasien terpilih? Status kamar akan menjadi KOSONG.`)) {
+            onBulkDischarge(selectedIds);
+            setIsSelectionMode(false); // Keluar mode seleksi setelah sukses
+        }
+    };
+
+    // Logika Sortir (Tetap Sama)
     const sortedRecords = useMemo(() => {
-        return [...records].sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' }));
-    }, [records]);
+        if (roomSortOrder && roomSortOrder.length > 0 && roomSortOrder.length < 24) {
+            return [...records].sort((a, b) => {
+                const indexA = roomSortOrder.indexOf(a.roomNumber);
+                const indexB = roomSortOrder.indexOf(b.roomNumber);
+                return indexA - indexB;
+            });
+        }
+        return [...records].sort((a, b) => 
+            a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' })
+        );
+    }, [records, roomSortOrder]);
+
+    // Helpers Tampilan (Tetap Sama)
+    const getPreparationAlert = (planningText) => {
+        if (!planningText) return null;
+        const text = planningText.toLowerCase();
+        const alerts = [];
+        if (text.includes('gdp') || text.includes('2jpp') || text.includes('profil lipid') || text.includes('puasa')) alerts.push('PUASA');
+        if (text.includes('usg') && (text.includes('abdomen') || text.includes('whole'))) alerts.push('PUASA & KKP');
+        if (alerts.length === 0) return null;
+        return (
+            <div className="flex flex-wrap gap-1 mb-1">
+                {alerts.map((alert, idx) => (
+                    <span key={idx} className="bg-red-100 text-red-700 border border-red-200 text-[9px] font-extrabold px-1 rounded whitespace-nowrap">⚠️ {alert}</span>
+                ))}
+            </div>
+        );
+    };
+
+    const renderTtvPlanning = (planningText) => {
+        if (!planningText) return '-';
+        const { labs, rads } = parsePlanning(planningText);
+        if (labs.length === 0 && rads.length === 0) return <span className="text-gray-300">-</span>;
+        return (
+            <div className="text-[10px] leading-tight space-y-1">
+                {labs.length > 0 && <div className="text-red-700 font-medium"><span className="font-bold text-[9px] bg-red-50 border border-red-100 px-1 rounded mr-1">LAB</span>{labs.join(', ')}</div>}
+                {rads.length > 0 && <div className="text-blue-700 font-medium"><span className="font-bold text-[9px] bg-blue-50 border border-blue-100 px-1 rounded mr-1">RAD</span>{rads.join(', ')}</div>}
+            </div>
+        );
+    };
+
+    const getTtvValue = (text, key) => {
+        if (!text) return ''; 
+        const lines = text.split('\n');
+        const regex = new RegExp(`${key}\\s*[:=]?\\s*([0-9\\.,\\/]+)`, 'i');
+        const foundLine = lines.find(l => regex.test(l));
+        return foundLine ? foundLine.match(regex)[1] : '';
+    };
+
+    if (records.length === 0) return <div className="text-center p-10 text-gray-400 italic text-sm bg-white h-full border rounded">Data tidak ditemukan sesuai filter.</div>;
 
     return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
             
-            {/* HEADER TABEL BARU (ADA SEARCH BAR DI TENGAH) */}
-            <div className="bg-indigo-50 p-2 border-b border-indigo-100 flex justify-between items-center gap-3">
-                
-                {/* 1. JUDUL (Kiri) */}
-                <h2 className="text-xs font-bold text-indigo-800 uppercase whitespace-nowrap">
-                    Daftar Pasien ({records.length})
-                </h2>
-
-                {/* 2. SEARCH BAR (Tengah - Flexible) */}
-                <div className="flex-1 max-w-md">
-                    <div className="relative">
-                        <input 
-                            type="text" 
-                            value={searchTerm}
-                            onChange={(e) => onSearchChange(e.target.value)}
-                            className="w-full pl-8 pr-3 py-1 text-xs border border-indigo-200 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-400 transition bg-white text-indigo-900 placeholder-indigo-300"
-                            placeholder="🔍 Cari nama pasien, Dokter, atau diagnosa..."
-                        />
-                        <span className="absolute left-2.5 top-1 text-[10px] text-indigo-400"></span>
+            {/* HEADER: TOMBOL CHECKLIST & SWITCHER */}
+            <div className="flex border-b bg-gray-50 p-1 gap-2 items-center justify-between flex-shrink-0">
+                {isSelectionMode ? (
+                    /* TAMPILAN SAAT MODE CHECKLIST AKTIF */
+                    <div className="flex gap-2 flex-1 items-center px-2 animate-in fade-in slide-in-from-left-5 duration-300 bg-red-50 rounded py-1">
+                        <button onClick={() => setIsSelectionMode(false)} className="text-gray-500 hover:text-gray-700 font-bold text-xs border px-3 py-1 bg-white rounded hover:bg-gray-100 transition">
+                            Batal
+                        </button>
+                        <div className="text-xs font-bold text-red-800 bg-red-100 px-2 py-1 rounded border border-red-200">
+                            {selectedIds.length} Dipilih
+                        </div>
+                        <button 
+                            onClick={executeBulkDischarge}
+                            disabled={selectedIds.length === 0}
+                            className={`px-4 py-1 text-xs font-bold text-white rounded shadow-sm transition flex items-center gap-1 ${selectedIds.length > 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-400 cursor-not-allowed'}`}
+                        >
+                            <span>🚪</span> PULANGKAN {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
+                        </button>
                     </div>
-                </div>
-
-                {/* 3. TOMBOL AKSI (Kanan) */}
-                <div className="flex space-x-2 flex-shrink-0"> 
-                    {/* TOMBOL EXPORT BARU */}
-                    <button
-                        onClick={handleExportExcel}
-                        className="text-[9px] px-3 py-1 bg-white border border-green-200 text-green-700 rounded-full font-bold hover:bg-green-600 hover:text-white shadow-sm flex items-center transition whitespace-nowrap"
-                        title="Download Data Pasien Aktif ke Excel/CSV"
-                    >
-                        <span className="mr-1">⬇️</span> Export Excel
-                    </button>
-                    
-                    {/* TOMBOL CETAK BANYAK LAMA */}
-                    <button 
-                        onClick={onBulkPrint}
-                        className="text-[9px] px-3 py-1 bg-white border border-indigo-200 text-indigo-700 rounded-full font-bold hover:bg-indigo-600 hover:text-white shadow-sm flex items-center transition whitespace-nowrap"
-                        title="Cetak Semua Pasien Aktif"
-                    >
-                        <span className="mr-1">🖨️</span> Cetak Banyak
-                    </button>
-                </div>
+                ) : (
+                    /* TAMPILAN NORMAL */
+                    <div className="flex gap-1 flex-1">
+                        <button onClick={() => setIsSelectionMode(true)} className="px-3 py-1.5 bg-white border border-indigo-300 text-indigo-700 text-[10px] font-bold rounded hover:bg-indigo-50 transition shadow-sm whitespace-nowrap mr-2 flex items-center gap-1">
+                            <span>☑️</span> Pilih Banyak
+                        </button>
+                        <button onClick={() => setViewMode('soap')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'soap' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📝 Mode SOAP</button>
+                        <button onClick={() => setViewMode('ttv')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'ttv' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📊 Mode TTV</button>
+                    </div>
+                )}
+                
+                {/* Tombol Print TTV (Hanya muncul jika TIDAK sedang checklist) */}
+                {viewMode === 'ttv' && !isSelectionMode && (
+                    <button onClick={onPrintTTV} className="px-3 py-1.5 bg-white border border-green-600 text-green-700 text-[10px] font-bold rounded hover:bg-green-50 transition shadow-sm whitespace-nowrap">🖨️ Cetak Lembar TTV</button>
+                )}
             </div>
-            <div className="overflow-auto flex-1">
-                <table className="w-full text-xs border-collapse">
-                    <thead className="bg-gray-100 text-gray-700 sticky top-0 z-10 shadow-sm">
+
+            <div id="ttv-table-area" className="overflow-auto flex-1 custom-scrollbar">
+                <table className={`w-full text-xs border-collapse table-fixed ${viewMode === 'ttv' ? 'min-w-[1000px]' : 'min-w-[1000px]'}`}>
+                    <thead className="bg-gray-100 text-gray-700 sticky top-0 z-20 shadow-sm h-9">
                         <tr>
-                            <th className="p-2 border border-gray-300 w-[15%] text-left">Identitas</th>
-                            <th className="p-2 border border-gray-300 w-[15%] text-left">S (Subjektif)</th>
-                            <th className="p-2 border border-gray-300 w-[15%] text-left">O (Objektif)</th>
-                            <th className="p-2 border border-gray-300 w-[15%] text-left">A (Analisa)</th>
-                            <th className="p-2 border border-gray-300 w-[25%] text-left">P (Planning)</th>
-                            <th className="p-2 border border-gray-300 w-[15%] text-center">Aksi</th>
+                            {/* KOLOM IDENTITAS + CHECKBOX HEADER */}
+                            <th className="p-2 border border-gray-300 w-[160px] text-left sticky left-0 bg-gray-100 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                {isSelectionMode ? (
+                                    <div className="flex items-center gap-2 pl-1 bg-white border border-indigo-200 rounded px-1 py-0.5">
+                                        <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === records.length && records.length > 0} className="w-3.5 h-3.5 cursor-pointer accent-indigo-600"/>
+                                        <span className="text-[10px] text-indigo-800 font-bold">Pilih Semua</span>
+                                    </div>
+                                ) : 'Identitas'}
+                            </th>
+                            
+                            {viewMode === 'soap' ? (
+                                <>
+                                    <th className="p-2 border border-gray-300 w-[200px] text-left">S (Subjektif)</th>
+                                    <th className="p-2 border border-gray-300 w-[200px] text-left">O (Objektif)</th>
+                                    <th className="p-2 border border-gray-300 w-[200px] text-left">A (Analisa)</th>
+                                    <th className="p-2 border border-gray-300 w-[250px] text-left">P (Planning)</th>
+                                </>
+                            ) : (
+                                <>
+                                    <th className="p-1 border border-gray-300 w-[60px] text-center bg-white">TD</th>
+                                    <th className="p-1 border border-gray-300 w-[50px] text-center bg-white">Nadi</th>
+                                    <th className="p-1 border border-gray-300 w-[50px] text-center bg-white">Suhu</th>
+                                    <th className="p-1 border border-gray-300 w-[50px] text-center bg-white">RR</th>
+                                    <th className="p-1 border border-gray-300 w-[50px] text-center bg-white">SpO2</th>
+                                    <th className="p-2 border border-gray-300 w-[250px] text-left bg-gray-50 text-gray-800 font-bold">⚠️ Rencana / Persiapan</th>
+                                </>
+                            )}
+                            <th className="p-2 border border-gray-300 w-[120px] text-center no-print">Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
                         {sortedRecords.map((rec, index) => (
-                            <tr key={rec.id} className={index % 2 === 0 ? 'bg-white hover:bg-indigo-50' : 'bg-gray-50 hover:bg-indigo-50'}>
-                                <td className="p-2 border border-gray-300 align-top">
-                                    <div className="font-bold text-sm text-indigo-900">{rec.name}</div>
-                                    <div className="font-bold bg-yellow-100 inline-block px-1 rounded text-[10px] mt-1 border border-yellow-200">{rec.roomNumber}</div>
-                                    <div className="mt-1 text-gray-600 italic text-[10px]">{rec.dpjpName.split(',')[0]}</div>
-                                    {rec.raberName && <div className="text-[9px] text-blue-600">+ {rec.raberName}</div>}
-                                </td>
-                                <td className="p-2 border border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.subjective || '-'}</td>
-                                <td className="p-2 border border-gray-300 align-top">
-                                    {renderObjectiveCell(rec.objective)}
-                                </td>
-                                <td className="p-2 border border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.analysis || '-'}</td>
-                                <td className="p-2 border border-gray-300 align-top">
-                                    {renderPlanningCell(rec.planning)}
-                                </td>
-                                <td className="p-2 border border-gray-300 align-middle">
-                                    <div className="grid grid-cols-2 gap-1">
-                                        <button onClick={() => onEdit(rec)} className="flex flex-col items-center justify-center p-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 border border-yellow-300" title="Edit Data"><span className="text-sm">✏️</span><span className="text-[8px] font-bold">Edit</span></button>
-                                        <button onClick={() => onPrint(rec)} className="flex flex-col items-center justify-center p-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 border border-gray-300" title="Cetak"><span className="text-sm">🖨️</span><span className="text-[8px] font-bold">Cetak</span></button>
-                                        <button onClick={() => onShowLaporModal(rec)} className="flex flex-col items-center justify-center p-1 bg-green-100 text-green-700 rounded hover:bg-green-200 border border-green-300" title="Lapor WA"><span className="text-sm">📱</span><span className="text-[8px] font-bold">Lapor</span></button>
-                                        <button onClick={() => onDischarge(rec.id, rec.name)} className="flex flex-col items-center justify-center p-1 bg-red-100 text-red-700 rounded hover:bg-red-200 border border-red-300" title="Pulangkan"><span className="text-sm">🚪</span><span className="text-[8px] font-bold">Plg</span></button>
+                            <tr 
+                                key={rec.id} 
+                                // LOGIKA KLIK: Jika Mode Seleksi -> Centang Baris. Jika Normal -> Edit Pasien.
+                                onClick={() => isSelectionMode ? handleSelectRow(rec.id) : onEdit(rec)} 
+                                className={`cursor-pointer transition-colors border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${selectedIds.includes(rec.id) ? '!bg-indigo-100 border-indigo-200' : 'hover:bg-indigo-50/50'}`}
+                            >
+                                {/* IDENTITAS + CHECKBOX BARIS */}
+                                <td className="p-2 border-r border-gray-300 align-top sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-inherit">
+                                    <div className="flex items-start gap-2">
+                                        {isSelectionMode && (
+                                            <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                                                <input type="checkbox" checked={selectedIds.includes(rec.id)} onChange={() => handleSelectRow(rec.id)} className="w-3.5 h-3.5 cursor-pointer accent-indigo-600" />
+                                            </div>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-bold text-sm text-indigo-900 truncate">{rec.name}</div>
+                                            <div className="flex gap-1 mt-1">
+                                                <span className="font-bold bg-yellow-100 px-1 rounded text-[10px] border border-yellow-200">{rec.roomNumber}</span>
+                                                <span className="bg-gray-100 px-1 rounded text-[9px] text-gray-500 border">{rec.gender}</span>
+                                            </div>
+                                            <div className="mt-1 text-gray-600 italic text-[10px] truncate">{rec.dpjpName.split(',')[0]}</div>
+                                        </div>
                                     </div>
+                                </td>
+
+                                {/* KONTEN SOAP / TTV (SAMA SEPERTI SEBELUMNYA) */}
+                                {viewMode === 'soap' ? (
+                                    <>
+                                        <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.subjective || '-'}</td>
+                                        <td className="p-2 border-r border-gray-300 align-top">{renderObjectiveCell(rec.objective)}</td>
+                                        <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.analysis || '-'}</td>
+                                        <td className="p-2 border-r border-gray-300 align-top">{renderPlanningCell(rec.planning)}</td>
+                                    </>
+                                ) : (
+                                    <>
+                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono font-bold">{getTtvValue(rec.objective, 'TD')}</td>
+                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono">{getTtvValue(rec.objective, 'N')}</td>
+                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono">{getTtvValue(rec.objective, 'S')}</td>
+                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono">{getTtvValue(rec.objective, 'RR')}</td>
+                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono">{getTtvValue(rec.objective, 'SpO2')}</td>
+                                        <td className="p-2 border-r border-gray-300 align-top">
+                                            {getPreparationAlert(rec.planning)}
+                                            {renderTtvPlanning(rec.planning)}
+                                        </td>
+                                    </>
+                                )}
+                                
+                                {/* KOLOM AKSI (NON-PRINT) */}
+                                <td className="p-2 border-r border-gray-300 align-middle no-print" onClick={(e) => e.stopPropagation()}>
+                                    {viewMode === 'soap' ? (
+                                        <div className="grid grid-cols-2 gap-1">
+                                            <button onClick={() => onEdit(rec)} className="flex flex-col items-center justify-center p-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 border border-yellow-300" title="Edit"><span className="text-sm">✏️</span><span className="text-[8px] font-bold">Edit</span></button>
+                                            <button onClick={() => onPrint(rec)} className="flex flex-col items-center justify-center p-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 border border-gray-300" title="Cetak"><span className="text-sm">🖨️</span><span className="text-[8px] font-bold">Cetak</span></button>
+                                            <button onClick={() => onShowLaporModal(rec)} className="flex flex-col items-center justify-center p-1 bg-green-100 text-green-700 rounded hover:bg-green-200 border border-green-300" title="Lapor WA"><span className="text-sm">📱</span><span className="text-[8px] font-bold">Lapor</span></button>
+                                            <button onClick={() => onDischarge(rec.id, rec.name)} className="flex flex-col items-center justify-center p-1 bg-red-100 text-red-700 rounded hover:bg-red-200 border border-red-300" title="Pulang"><span className="text-sm">🚪</span><span className="text-[8px] font-bold">Plg</span></button>
+                                        </div>
+                                    ) : (
+                                        <button onClick={() => onQuickTtv(rec)} className="w-full h-full py-2 bg-green-100 text-green-700 rounded border border-green-300 hover:bg-green-200 text-[10px] font-bold shadow-sm flex items-center justify-center" title="Isi TTV Cepat">+ Input TTV</button>
+                                    )}
                                 </td>
                             </tr>
                         ))}
@@ -1206,36 +1299,6 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
 };
 
 // --- Filter Modals ---
-const RoomFilterModal = ({ roomList, selectedRooms, onToggleRoom, onSave, onSelectAll }) => {
-    return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-4 border-2 border-indigo-100">
-                <h3 className="text-sm font-bold text-indigo-800 mb-3 border-b pb-1">Filter Kamar (Multi-Select)</h3>
-                <div className="flex justify-between mb-3 text-xs">
-                    <button onClick={onSelectAll(true)} className="text-blue-600 hover:underline">Pilih Semua</button>
-                    <button onClick={onSelectAll(false)} className="text-red-600 hover:underline">Bersihkan</button>
-                </div>
-                <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto pr-2">
-                    {roomList.map(room => (
-                        <div key={room} className="flex items-center">
-                            <input 
-                                type="checkbox" 
-                                id={`room-${room}`} 
-                                checked={selectedRooms.includes(room)} 
-                                onChange={() => onToggleRoom(room)}
-                                className="w-3 h-3 text-indigo-600 border-gray-300 rounded"
-                            />
-                            <label htmlFor={`room-${room}`} className="ml-2 text-xs font-medium text-gray-700">{room}</label>
-                        </div>
-                    ))}
-                </div>
-                <div className="flex justify-end mt-4">
-                    <button onClick={onSave} className="px-4 py-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold">Terapkan Filter</button>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 // --- HELPER: LOGIKA SALAM DOKTER (TOLERANSI) ---
 const getDoctorGreeting = (drName) => {
@@ -1504,14 +1567,24 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
   const [newDpjpWa, setNewDpjpWa] = useState('');
 
   
+  // --- UPDATE PENCARIAN (Menambahkan Pencarian Nama Dokter) ---
   const filteredActiveRecords = useMemo(() => {
     return activeRecords.filter(rec => {
+        // 1. Filter Dropdown (DPJP & Ruangan)
         const matchesDpjp = !dpjpFilter || rec.dpjpName === dpjpFilter;
-        const matchesRoom = selectedRoomFilter.includes(rec.roomNumber);
-        const matchesSearch = !searchTerm || rec.name.toLowerCase().includes(searchTerm.toLowerCase());       
+        // Logic ruangan: Jika pilih "Semua", true. Jika tidak, cek apakah ruangan ada di list yg dipilih.
+        const matchesRoom = selectedRoomFilter.length === ROOM_LIST.length || selectedRoomFilter.includes(rec.roomNumber);
+        
+        // 2. Filter Search Text (Nama Pasien, Diagnosa/Analisa, DAN NAMA DOKTER)
+        const term = searchTerm.toLowerCase();
+        const matchesSearch = !searchTerm || 
+            rec.name.toLowerCase().includes(term) || 
+            (rec.analysis && rec.analysis.toLowerCase().includes(term)) ||
+            (rec.dpjpName && rec.dpjpName.toLowerCase().includes(term)); // <--- INI TAMBAHANNYA
+
         return matchesDpjp && matchesRoom && matchesSearch;
     });
-}, [activeRecords, dpjpFilter, selectedRoomFilter, searchTerm]); 
+  }, [activeRecords, dpjpFilter, selectedRoomFilter, searchTerm]); 
 
   // --- LOGIC DATABASE BARU (SHARED) ---
   const getCollectionRef = useCallback(() => {
@@ -1553,6 +1626,9 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
       return () => unsubscribe();
   }, [getConfigRef, userId]); // FIX: userId dependency added
 
+  // Baris ini sangat penting agar dropdown di form input mengikuti data dari Cloud
+const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles]);
+
   // 2. Save Settings to Firestore
   const saveConfig = async (newProfiles, newLink) => {
       const ref = getConfigRef();
@@ -1571,26 +1647,52 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
       }
   };
 
-  const handleAddDpjp = () => {
-      if (!newDpjpName.trim()) return;
+  // --- FUNGSI TAMBAH DPJP (SUDAH DISESUAIKAN & DISEMPURNAKAN) ---
+  const handleAddDpjp = async () => {
+      if (!newDpjpName.trim()) {
+          alert("Nama DPJP tidak boleh kosong!");
+          return;
+      }
+
+      // 1. Cek apakah nama sudah ada (Logika asli kamu)
       const existing = dpjpProfiles.some(p => p.name.toLowerCase() === newDpjpName.trim().toLowerCase());
       if (existing) {
           alert("Nama DPJP ini sudah ada!");
           return;
       }
-      const newProfile = { name: newDpjpName.trim(), waNumber: newDpjpWa.trim().replace(/\D/g, '') }; 
+
+      // 2. Format nomor WA (Penyempurnaan: 08 jadi 62)
+      let rawNumber = newDpjpWa.trim().replace(/\D/g, ''); // Hapus karakter non-angka (Logika kamu)
+      if (rawNumber.startsWith('0')) {
+          rawNumber = '62' + rawNumber.slice(1); // Ubah 08... jadi 628...
+      }
+
+      // 3. Gabung & Urutkan (Logika asli kamu)
+      const newProfile = { 
+          name: newDpjpName.trim(), 
+          waNumber: rawNumber 
+      };
       const updated = [...dpjpProfiles, newProfile].sort((a,b) => a.name.localeCompare(b.name));
-      // Save directly to cloud triggers the onSnapshot update
-      saveConfig(updated);
-      setNewDpjpName(''); setNewDpjpWa('');
-  };
-  
-  const handleRemoveDpjp = (name) => {
-      const updated = dpjpProfiles.filter(p => p.name !== name).sort((a,b) => a.name.localeCompare(b.name));
-      saveConfig(updated);
+
+      // 4. Simpan ke Cloud (Pakai await agar pasti terkirim)
+      try {
+          await saveConfig(updated);
+          setNewDpjpName(''); 
+          setNewDpjpWa('');
+          console.log("Berhasil tambah dokter ke Cloud");
+      } catch (err) {
+          alert("Gagal menyimpan ke Cloud. Cek koneksi.");
+      }
   };
 
-
+  // --- FUNGSI HAPUS DPJP ---
+  const handleRemoveDpjp = async (name) => {
+      if (window.confirm(`Hapus ${name} dari daftar?`)) {
+          const updated = dpjpProfiles.filter(p => p.name !== name).sort((a,b) => a.name.localeCompare(b.name));
+          await saveConfig(updated);
+      }
+  };
+    // --- MONITORING DATA UTAMA SECARA REAL-TIME ---
   useEffect(() => {
     if (!userId) return; // FIX: Guard clause added
     const ref = getCollectionRef();
@@ -1654,17 +1756,6 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
       setFormData(p => ({ ...p, [field]: p[field] ? p[field] + '\n' + text : text }));
   };
 
-  const appendPlanning = (category, item) => {
-      let prefix = '';
-      if (category === 'Lab') prefix = 'Lab. R/ ';
-      else if (category === 'Rad') prefix = 'Rad. R/ ';
-      else if (category === 'Med') prefix = 'TM. ';
-      
-      setFormData(p => ({ 
-          ...p, 
-          planning: p.planning ? p.planning + `\n${prefix}${item}` : `${prefix}${item}` 
-      }));
-  };
 
   const handleSubmit = async (e) => {
       e.preventDefault();
@@ -1916,14 +2007,6 @@ const handleSaveQuickTtv = async (ttvString) => {
       );
   };  
   
-  const handleToggleRoomFilter = (room) => {
-        setSelectedRoomFilter(prev => 
-            prev.includes(room) ? prev.filter(r => r !== room) : [...prev, room]
-        );
-    };    
-    const handleSelectAllRooms = (shouldSelect) => () => {
-        setSelectedRoomFilter(shouldSelect ? ROOM_LIST : []);
-    };
   
     // Helper: Normalisasi nomor WA untuk digunakan di wa.me
   const normalizePhone = (num) => {
@@ -2033,6 +2116,121 @@ const handleSaveQuickTtv = async (ttvString) => {
       setRecordForLapor(null); // Tutup modal
   };
 
+  // --- FUNGSI PULANG MASAL (MULTIPLE DISCHARGE) ---
+const handleBulkDischarge = async (ids) => {
+    setLoading(true);
+    try {
+        const ref = getCollectionRef();
+        // Gunakan Promise.all untuk mengeksekusi banyak update sekaligus (Paralel)
+        const updatePromises = ids.map(id => 
+            updateDoc(doc(ref, id), { 
+                isDischarged: true, 
+                updatedAt: Timestamp.now() 
+            })
+        );
+        
+        await Promise.all(updatePromises);
+        alert(`Sukses! ${ids.length} pasien telah dipulangkan.`);
+    } catch (e) {
+        console.error("Bulk Discharge Error:", e);
+        alert("Gagal memproses pulang masal. Cek koneksi.");
+    } finally {
+        setLoading(false);
+    }
+};
+
+    // --- UPDATE: HANDLE PRINT TTV (FIX: A4 PORTRAIT, FIT 1 PAGE) ---
+    const handlePrintTTV = () => {
+        const element = document.getElementById('ttv-table-area');
+        if (!element) {
+            alert("Tabel tidak ditemukan.");
+            return;
+        }
+
+        const content = element.innerHTML;
+        const printWindow = window.open('', '_blank', 'width=1100,height=800');
+        
+        printWindow.document.write(`
+            <html>
+            <head>
+                <title>Lembar Observasi TTV</title>
+                <style>
+                    @page { 
+                        size: A4 portrait; 
+                        margin: 5mm; /* Margin tipis 5mm */
+                    }
+                    
+                    body { 
+                        font-family: Arial, sans-serif; 
+                        -webkit-print-color-adjust: exact; 
+                        print-color-adjust: exact;
+                        padding: 0;
+                        margin: 0;
+                        /* INI RAHASIANYA AGAR MUAT 1 HALAMAN */
+                        zoom: 0.85; 
+                    }
+
+                    table { 
+                        width: 100% !important; 
+                        min-width: 0 !important;
+                        border-collapse: collapse; 
+                        font-size: 9pt; 
+                    }
+
+                    th, td { 
+                        border: 1px solid black; 
+                        padding: 2px 3px; /* Padding diperketat */
+                        vertical-align: middle; 
+                        line-height: 1.2; /* Spasi antar baris teks dirapatkan */
+                    }
+
+                    th { 
+                        background-color: #f0f0f0 !important; 
+                        text-align: center; 
+                        font-weight: bold;
+                        height: 25px;
+                        font-size: 8pt;
+                    }
+                    
+                    /* Rata Tengah untuk Kolom TTV (Kolom ke 2 s/d 6) */
+                    td:nth-child(2), td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6) {
+                        text-align: center; 
+                        font-family: 'Courier New', monospace;
+                        font-weight: bold;
+                        width: 45px; 
+                    }
+
+                    /* Kolom Identitas (Lebar Pas) */
+                    td:nth-child(1) { width: 140px; }
+                    
+                    /* Kolom Persiapan (Biar teks panjang ngebungkus rapi) */
+                    td:nth-child(7) { font-size: 8pt; }
+
+                    /* HILANGKAN KOLOM AKSI */
+                    .no-print { display: none !important; }
+                    
+                    /* Judul */
+                    h3 { margin: 5px 0 2px 0; font-size: 14pt; }
+                    .date-print { margin-bottom: 5px; font-size: 8pt; color: #555; }
+                </style>
+            </head>
+            <body>
+                <div style="text-align: center;">
+                    <h3 style="text-transform: uppercase; font-weight: bold;">Lembar Observasi Tanda Vital & Rencana Harian</h3>
+                    <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
+                </div>
+                
+                ${content}
+                
+                <script>
+                    setTimeout(() => { window.print(); window.close(); }, 500);
+                </script>
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
+    };  
+  
   const handleExportExcel = () => {
       if (!records || records.length === 0) {
           alert("Tidak ada data untuk diexport.");
@@ -2166,57 +2364,57 @@ const handleSaveQuickTtv = async (ttvString) => {
       return s;
   }, [records, activeRecords]);
 
-  // --- TAMPILAN DASHBOARD (V3.2 FINAL - LAYOUT BARU) ---
-  const renderDashboard = () => {
+  // --- TAMPILAN DASHBOARD (V3.3 FINAL - LAYOUT BERSIH TANPA FILTER) ---
+const renderDashboard = () => {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full overflow-hidden">
             
-            {/* KOLOM KIRI: Filter & Peta Kamar (Lebar 5/12) */}
+            {/* KOLOM KIRI: HANYA PETA KAMAR (Lebar 5/12) */}
             <div className="lg:col-span-6 flex flex-col h-[calc(100vh-140px)]">
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mb-2 flex-shrink-0">
-                    <div className="mb-2">
-                        <h3 className="text-[10px] font-bold text-gray-700 uppercase mb-1">Filter Kamar</h3>
-                        <RoomFilterDropdown 
-                            allRooms={ROOM_LIST}
-                            selectedRooms={selectedRoomFilter}
-                            onChange={setSelectedRoomFilter} 
-                        />
-                    </div>
-                    <CustomSelect 
-                        label="Filter DPJP" 
-                        value={dpjpFilter} 
-                        onChange={(e) => setDpjpFilter(e.target.value === 'Semua DPJP' ? '' : e.target.value)} 
-                        options={['Semua DPJP', ...dpjpProfiles.map(p => p.name).sort()]} 
-                        placeholder="Semua DPJP..." 
-                        className="mb-0 text-xs"
-                    />
-                </div>
-
+                
+                {/* WADAH PETA KAMAR */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
+                    
+                    {/* Header Peta Kamar (Pengganti Filter) */}
+                    <div className="flex justify-between items-center px-3 py-2 border-b bg-gray-50 flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                            <span className="text-lg">🗺️</span>
+                            <div>
+                                <h3 className="text-xs font-bold text-indigo-900 uppercase">Denah Kamar</h3>
+                                <p className="text-[9px] text-gray-500">
+                                    {/* Indikator Filter Aktif */}
+                                    {dpjpFilter || selectedRoomFilter.length !== ROOM_LIST.length 
+                                        ? `Filter Aktif: ${dpjpFilter || 'Kamar Tertentu'}` 
+                                        : 'Menampilkan Semua Kamar'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Area Peta (Scrollable) */}
                     <div className="flex-1 overflow-y-auto p-2 bg-gray-50/50">
                         <RoomMap 
                             roomList={ROOM_LIST} 
                             activeRecords={filteredActiveRecords} 
                             onSelectRoom={handleSelectRoom} 
                             onEditRoom={handleEditRoom}
-                            roomFilter={selectedRoomFilter}
+                            roomFilter={selectedRoomFilter} // JANGAN DIHAPUS: Tetap konek ke filter global
                             waitingList={waitingList}
                         />
                     </div>
                 </div>
             </div>
 
-            {/* KOLOM KANAN: Konten Utama (Scrollable - Lebar 7/12) */}
+            {/* KOLOM KANAN: Statistik & Waiting List (Lebar 7/12) - TETAP UTUH */}
             <div className="lg:col-span-6 h-[calc(100vh-140px)] overflow-y-auto space-y-4 pr-1 custom-scrollbar">
                 
-                {/* 1. WAITING LIST (DASHBOARD VIEW - UPDATE) */}
+                {/* 1. WAITING LIST */}
                 <div className="bg-white rounded-lg shadow-sm border border-indigo-200 overflow-hidden">
                     <div className="bg-indigo-600 px-3 py-2 text-white flex justify-between items-center">
                         <div className="flex items-center space-x-2">
                             <span className="text-xs font-bold uppercase tracking-tight">📋 Waiting List</span>
                             <span className="bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] font-mono">{waitingList.length}</span>
                         </div>
-                        {/* TOMBOL TAMBAH DI POJOK KANAN HEADER */}
                         <button 
                             onClick={() => setShowWaitingModal(true)} 
                             className="bg-white text-indigo-700 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50 transition shadow-sm flex items-center"
@@ -2280,7 +2478,7 @@ const handleSaveQuickTtv = async (ttvString) => {
                     </div>
                 </div>
 
-                {/* 3. PASIEN AKTIF PER DPJP (UPDATE: TOMBOL WA LAPOR JUMLAH) */}
+                {/* 3. PASIEN AKTIF PER DPJP */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
                     <h3 className="font-bold text-gray-700 border-b pb-2 mb-3 text-xs uppercase">Pasien Aktif per DPJP</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -2289,14 +2487,12 @@ const handleSaveQuickTtv = async (ttvString) => {
                                 <span className="truncate pr-1 font-medium text-gray-700">{name}</span>
                                 <div className="flex items-center space-x-1">
                                     <span className="font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full min-w-[20px] text-center">{count}</span>
-                                    
-                                    {/* TOMBOL WA KECIL (Muncul saat hover di laptop, selalu muncul di HP) */}
                                     <button 
                                         onClick={() => handleReportDpjpCount(name, count)}
                                         className="text-[9px] bg-green-100 text-green-700 border border-green-200 p-1 rounded-full hover:bg-green-600 hover:text-white transition opacity-80 group-hover:opacity-100"
                                         title={`Lapor jumlah ke ${name}`}
                                     >
-                                        📞
+                                        📱
                                     </button>
                                 </div>
                             </div>
@@ -2304,7 +2500,7 @@ const handleSaveQuickTtv = async (ttvString) => {
                     </div>
                 </div>
 
-                {/* 4. RAWAT BERSAMA (UPDATE: TOMBOL WA PENGINGAT) */}
+                {/* 4. RAWAT BERSAMA */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
                     <h3 className="font-bold text-gray-700 border-b pb-2 mb-2 text-xs uppercase flex justify-between items-center">
                         <span>🤝 Rawat Bersama (Konsul)</span>
@@ -2320,8 +2516,6 @@ const handleSaveQuickTtv = async (ttvString) => {
                                         <div className="font-bold text-indigo-800 mb-0.5">{drName}</div>
                                         <div className="text-gray-600 leading-tight">({patients.join(', ')})</div>
                                     </div>
-                                    
-                                    {/* TOMBOL WA RABER */}
                                     <button 
                                         onClick={() => handleReportRaber(drName, patients)}
                                         className="ml-2 text-[9px] bg-green-100 text-green-700 border border-green-200 px-2 py-1 rounded hover:bg-green-600 hover:text-white transition flex items-center opacity-80 group-hover:opacity-100"
@@ -2335,7 +2529,7 @@ const handleSaveQuickTtv = async (ttvString) => {
                     </div>
                 </div>
 
-                {/* 5. REKAPITULASI BULANAN (SCROLL PALING BAWAH) */}
+                {/* 5. REKAPITULASI BULANAN */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                     <div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase flex justify-between items-center">
                         <span>📊 Rekapitulasi Bulanan</span>
@@ -2366,77 +2560,17 @@ const handleSaveQuickTtv = async (ttvString) => {
                     </table>
                 </div>
 
-                {/* Spasi tambahan di bawah agar nyaman di-scroll */}
                 <div className="h-10"></div>
             </div>
         </div>
     );
 };
 
-  const renderHome = () => {
-  const dpjpOptions = ['Semua DPJP', ...dpjpProfiles.map(p => p.name)].sort();     
-   
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
-            <div className="lg:col-span-3 flex flex-col h-[calc(100vh-140px)]">
-                
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-3 flex-shrink-0">
-                    <h3 className="text-xs font-bold text-gray-700 uppercase mb-2">Filter</h3>                 
-                    <CustomSelect 
-                        label="DPJP" 
-                        value={dpjpFilter} 
-                        onChange={(e) => setDpjpFilter(e.target.value === 'Semua DPJP' ? '' : e.target.value)} 
-                        options={dpjpOptions} 
-                        placeholder="Pilih DPJP..." 
-                        className="mb-0"
-                    />
-                    <div className="mt-2">
-                         <div className="flex justify-between items-center mb-1">
-                             <label className="block text-[10px] font-bold text-gray-600 uppercase">Kamar</label>
-                         </div>
-                         <button 
-                            onClick={() => setRoomFilterModalOpen(true)}
-                            className="w-full p-2 text-sm border border-gray-300 rounded shadow-sm bg-gray-50 text-gray-600 hover:bg-gray-100 transition flex justify-between items-center"
-                         >
-                             <span>{selectedRoomFilter.length === ROOM_LIST.length ? 'Semua Kamar' : `${selectedRoomFilter.length} Kamar Dipilih`}</span>
-                             <span className="text-xs text-indigo-500 font-bold underline">Ubah</span>
-                         </button>
-                    </div>
-                </div>
-
-                <div className="flex-1 min-h-[40vh] mb-4 overflow-hidden">
-                    <RoomMap 
-                        roomList={ROOM_LIST} 
-                        activeRecords={filteredActiveRecords} 
-                        onSelectRoom={handleSelectRoom} 
-                        onEditRoom={handleEditRoom}
-                        roomFilter={selectedRoomFilter}
-                    />
-                </div>
-                {/* DpjpSummary removed from here */}
-            </div>
-
-            <div className="lg:col-span-9 h-[calc(100vh-140px)]">
-                 <PatientTable 
-                    records={filteredActiveRecords} 
-                    onEdit={handleEdit} 
-                    onPrint={(r) => { setSelectedRecordForPrint(r); }} 
-                    onShowLaporModal={setRecordForLapor} 
-                    onDischarge={handleDischarge}
-                    onBulkPrint={() => setShowBulkPrint(true)}
-                    searchTerm={searchTerm}
-                    onSearchChange={setSearchTerm}
-                    handleExportExcel={handleExportExcel} 
-                 />
-            </div>                            
-        </div>
-    );
-  };
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-800 pb-20">
         {/* --- HEADER (REVISI: HAMBURGER MENU + FITUR BARU) --- */}
-        <div className="bg-white shadow-sm px-4 h-16 sticky top-0 z-40 border-b flex justify-between items-center max-w-7xl mx-auto">
+        <div className="bg-white shadow-sm px-4 h-16 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
             
             {/* LOGO KIRI (Gaya Lama Dipertahankan) */}
             <div className="flex flex-col items-center justify-center leading-none text-indigo-800 select-none cursor-default">
@@ -2497,10 +2631,7 @@ const handleSaveQuickTtv = async (ttvString) => {
                             </button>
                             <button onClick={() => { setView('patient-list'); setIsMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center hover:bg-indigo-50 ${view === 'patient-list' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-gray-700'}`}>
                                 <span className="mr-3">📋</span> Daftar Pasien
-                            </button>
-                            <button onClick={() => { setView('ttvmode'); setIsMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center hover:bg-indigo-50 ${view === 'ttvmode' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-gray-700'}`}>
-                                <span className="mr-3">📊</span> TTV Mode
-                            </button>
+                            </button>                            
                             <button onClick={() => { setView('settings'); setIsMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center hover:bg-indigo-50 ${view === 'settings' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-gray-700'}`}>
                                 <span className="mr-3">⚙️</span> Setelan
                             </button>
@@ -2548,36 +2679,103 @@ const handleSaveQuickTtv = async (ttvString) => {
                     {/* VIEW 1: DASHBOARD */}
                     {view === 'dashboard' && renderDashboard()}
                     
-                    {/* VIEW 2: DAFTAR PASIEN */}
+                    {/* VIEW 2: DAFTAR PASIEN (FIX: DROPDOWN TIDAK TERTUTUP) */}
                     {view === 'patient-list' && (
-                        <div className="h-full flex flex-col">
-                            <PatientTable 
-                                records={filteredActiveRecords} 
-                                onEdit={handleEdit} 
-                                onPrint={(r) => { setSelectedRecordForPrint(r); }} 
-                                onShowLaporModal={setRecordForLapor} 
-                                onDischarge={handleDischarge}
-                                onBulkPrint={() => setShowBulkPrint(true)} 
-                                searchTerm={searchTerm}
-                                onSearchChange={setSearchTerm}
-                                handleExportExcel={handleExportExcel}
-                            />
+                        <div className="h-full flex flex-col bg-gray-50">
+                            
+                            {/* --- HEADER UTAMA (BUMPPED Z-INDEX KE z-40) --- */}
+                            <div className="p-3 bg-white border-b shadow-sm sticky top-0 z-40 flex-shrink-0 space-y-2">
+                                
+                                {/* Baris Atas: Judul & Tombol Aksi */}
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="font-bold text-lg text-indigo-800">📂 Daftar Pasien</h2>
+                                        <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-bold">
+                                            {filteredActiveRecords.length} Pasien
+                                        </span>
+                                    </div>
+
+                                    <div className="flex space-x-1">
+                                        <button 
+                                            onClick={handleExportExcel}
+                                            className="text-[10px] px-3 py-1.5 bg-white border border-green-200 text-green-700 rounded-lg font-bold hover:bg-green-600 hover:text-white transition flex items-center shadow-sm"
+                                        >
+                                            Excel
+                                        </button>
+                                        <button 
+                                            onClick={() => setShowBulkPrint(true)}
+                                            className="text-[10px] px-3 py-1.5 bg-white border border-indigo-200 text-indigo-700 rounded-lg font-bold hover:bg-indigo-600 hover:text-white transition flex items-center shadow-sm"
+                                        >
+                                            🖨️ Cetak Banyak
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Baris Bawah: Input & Filter */}
+                                <div className="flex flex-col md:flex-row gap-2">
+                                    
+                                    {/* FILTER KAMAR (Wrapper z-50 untuk memastikan menu melayang) */}
+                                    <div className="w-full md:w-48 relative z-50">
+                                        <RoomFilterDropdown 
+                                            allRooms={ROOM_LIST}
+                                            selectedRooms={selectedRoomFilter}
+                                            onChange={setSelectedRoomFilter} 
+                                        />
+                                    </div>
+
+                                    {/* FILTER DOKTER */}
+                                    <div className="w-full md:w-48">
+                                        <select 
+                                            value={dpjpFilter} 
+                                            onChange={(e) => setDpjpFilter(e.target.value)} 
+                                            className="w-full p-1.5 border border-indigo-200 rounded-lg text-xs bg-white focus:ring-1 focus:ring-indigo-500 font-medium h-[32px]"
+                                        >
+                                            <option value="">Semua Dokter (DPJP)</option>
+                                            {dpjpOptions.map((opt, idx) => (
+                                                <option key={idx} value={opt}>{opt}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* SEARCH BAR TUNGGAL */}
+                                    <div className="relative flex-1">
+                                        <span className="absolute left-2.5 top-2 text-gray-400 text-xs">🔍</span>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Cari Nama / Diagnosa / Dokter..." 
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full pl-8 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 transition h-[32px]"
+                                        />
+                                        {searchTerm && (
+                                            <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs">✕</button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* TABEL PASIEN (z-index biarkan 10 agar tetap di bawah dropdown) */}
+                            <div className="flex-1 overflow-hidden relative z-0">
+                                <PatientTable 
+                                    records={filteredActiveRecords} 
+                                    onEdit={handleEdit} 
+                                    onPrint={(r) => { setSelectedRecordForPrint(r); }} 
+                                    onShowLaporModal={setRecordForLapor} 
+                                    onDischarge={handleDischarge}
+                                    onBulkPrint={() => setShowBulkPrint(true)} 
+                                    roomSortOrder={selectedRoomFilter}
+                                    onPrintTTV={handlePrintTTV}
+                                    onQuickTtv={(rec) => {
+                                        setQuickTtvTarget(rec);
+                                        setShowTtvModal(true);
+                                    }}
+                                    onBulkDischarge={handleBulkDischarge}
+                                />
+                            </div>
                         </div>
                     )}
-                    
-                    {/* VIEW 3: TTV MODE */}
-                    {view === 'ttvmode' && (
-                        <TtvModeView 
-                            records={filteredActiveRecords} 
-                            onEdit={() => {}} 
-                            onQuickTtv={(rec) => {
-                                setQuickTtvTarget(rec);
-                                setShowTtvModal(true);
-                            }}
-                        />
-                    )}
-
-                    {/* VIEW 4: SETELAN */}
+                                        
+                    {/* VIEW 3: SETELAN */}
                     {view === 'settings' && (
                          <div className="bg-white p-6 rounded shadow h-full overflow-y-auto">
                             <h2 className="font-bold text-lg mb-4 text-indigo-800 border-b pb-2">Pengaturan Aplikasi</h2>
@@ -2619,6 +2817,7 @@ const handleSaveQuickTtv = async (ttvString) => {
                         occupiedRooms={occupiedRooms}
                         availableRooms={ROOM_LIST.filter(r => !occupiedRooms.includes(r) || (isEditing && r === formData.roomNumber)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))}
                         dpjpOptions={dpjpProfiles.map(p => p.name).sort()}
+                        dpjpProfiles={dpjpProfiles}
                         showRaber1={showRaber1} setShowRaber1={setShowRaber1}
                         showRaber2={showRaber2} setShowRaber2={setShowRaber2}
                         historyLogs={historyLogs}
@@ -2699,306 +2898,8 @@ const handleSaveQuickTtv = async (ttvString) => {
   );
 };
 // --- KOMPONEN WAITING LIST (UPDATE: NOMOR URUT & ASAL RUANGAN) ---
-const WaitingListView = ({ waitingList, onAdd, onMoveToRoom, onDelete, availableRooms }) => {
-    // Tambah state 'originRoom'
-    const [newWait, setNewWait] = useState({ name: '', plannedRoom: '', waNumber: '', diagnosis: '', originRoom: '' });
 
-    const handleAdd = (e) => {
-        e.preventDefault();
-        if (!newWait.name || !newWait.plannedRoom) return alert("Nama dan Rencana Kamar wajib diisi!");
-        onAdd(newWait);
-        setNewWait({ name: '', plannedRoom: '', waNumber: '', diagnosis: '', originRoom: '' });
-    };
-
-    return (
-        <div className="flex flex-col h-full gap-4 p-4">
-            {/* 1. FORM INPUT ANTREAN */}
-            <div className="bg-white p-4 rounded-lg shadow border border-indigo-100 flex-shrink-0">
-                <h3 className="font-bold text-indigo-800 border-b pb-2 mb-3 text-sm">📝 Daftar Tunggu (Inden Kamar)</h3>
-                <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
-                    <div className="md:col-span-1">
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Rencana Kamar</label>
-                        <select 
-                            className="w-full p-2 text-xs border rounded"
-                            value={newWait.plannedRoom}
-                            onChange={e => setNewWait({...newWait, plannedRoom: e.target.value})}
-                        >
-                            <option value="">- Pilih -</option>
-                            {availableRooms.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                    </div>
-                    <div className="md:col-span-1">
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Nama Pasien</label>
-                        <input type="text" className="w-full p-2 text-xs border rounded" placeholder="Nama..." value={newWait.name} onChange={e => setNewWait({...newWait, name: e.target.value})} />
-                    </div>
-                    {/* INPUT BARU: ASAL RUANGAN */}
-                    <div className="md:col-span-1">
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Asal Ruangan</label>
-                        <input type="text" className="w-full p-2 text-xs border rounded" placeholder="IGD / Poli..." value={newWait.originRoom} onChange={e => setNewWait({...newWait, originRoom: e.target.value})} />
-                    </div>
-                    <div className="md:col-span-1">
-                        <label className="text-[10px] font-bold uppercase text-gray-500">No. HP (Opsional)</label>
-                        <input type="text" className="w-full p-2 text-xs border rounded" placeholder="08xxx" value={newWait.waNumber} onChange={e => setNewWait({...newWait, waNumber: e.target.value})} />
-                    </div>
-                    <div className="md:col-span-1">
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Diagnosa/Ket</label>
-                        <input type="text" className="w-full p-2 text-xs border rounded" placeholder="Ket..." value={newWait.diagnosis} onChange={e => setNewWait({...newWait, diagnosis: e.target.value})} />
-                    </div>
-                    <button type="submit" className="bg-indigo-600 text-white font-bold py-2 px-4 rounded text-xs hover:bg-indigo-700 shadow h-[34px]">+ Catat</button>
-                </form>
-            </div>
-
-            {/* 2. TABEL DAFTAR TUNGGU */}
-            <div className="bg-white rounded-lg shadow border border-gray-200 flex-1 overflow-hidden flex flex-col">
-                <div className="bg-indigo-50 p-2 border-b font-bold text-xs text-indigo-900 flex justify-between">
-                    <span>List Antrean ({waitingList.length})</span>
-                    <span className="text-[10px] font-normal italic text-gray-500">Klik 'Masuk' jika kamar sudah kosong</span>
-                </div>
-                <div className="overflow-y-auto p-0 custom-scrollbar flex-1">
-                    {waitingList.length === 0 ? (
-                        <div className="text-center py-10 text-gray-400 italic text-xs">Tidak ada antrean saat ini.</div>
-                    ) : (
-                        <table className="w-full text-xs text-left">
-                            <thead className="bg-gray-100 text-gray-600 sticky top-0">
-                                <tr>
-                                    <th className="p-3 w-10 text-center">No</th> {/* KOLOM NOMOR */}
-                                    <th className="p-3">Target</th>
-                                    <th className="p-3">Nama Pasien</th>
-                                    <th className="p-3">Asal & Kontak</th>
-                                    <th className="p-3 text-center">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {waitingList.map((w, idx) => (
-                                    <tr key={w.id} className="border-b hover:bg-yellow-50 transition">
-                                        <td className="p-3 text-center font-bold text-gray-400">{idx + 1}</td>
-                                        <td className="p-3 font-bold text-indigo-700 bg-indigo-50/30">{w.plannedRoom}</td>
-                                        <td className="p-3 font-medium">{w.name}</td>
-                                        <td className="p-3">
-                                            <div className="font-bold text-[10px] text-gray-700">{w.originRoom || '-'}</div>
-                                            <div className="font-mono text-gray-500 text-[10px]">{w.waNumber || '-'}</div>
-                                            <div className="text-[9px] text-gray-400 italic truncate max-w-[150px]">{w.diagnosis}</div>
-                                        </td>
-                                        <td className="p-3 text-center space-x-2">
-                                            <button 
-                                                onClick={() => onMoveToRoom(w)}
-                                                className="px-3 py-1 bg-green-600 text-white rounded shadow hover:bg-green-700 font-bold"
-                                                title="Pindahkan ke Dashboard Utama"
-                                            >
-                                                Masuk ➡️
-                                            </button>
-                                            <button 
-                                                onClick={() => onDelete(w.id)}
-                                                className="px-2 py-1 text-red-500 hover:bg-red-50 rounded border border-transparent hover:border-red-200"
-                                            >
-                                                🗑️
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-// --- TTV MODE: TABEL FLOWSHEET (ALA EXCEL) ---
-const TtvModeView = ({ records, onEdit, onQuickTtv }) => {
-    // 1. Urutkan Kamar
-    const sortedRecords = [...records].sort((a, b) => 
-        a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' })
-    );
-
-    // 2. Fungsi Ekstrak Angka dari String Objektif
-    // Contoh: "TD 120/80 mmHg..." -> Diambil "120/80" nya saja
-    const extractValue = (text, type) => {
-        if (!text) return '-';
-        const lower = text.toLowerCase();
-        // Regex sederhana untuk menangkap angka setelah kata kunci
-        let regex;
-        if (type === 'td') regex = /td\s*([0-9\/]+)/i;
-        else if (type === 'n') regex = /n\s*([0-9]+)/i;
-        else if (type === 's') regex = /s\s*([0-9\.]+)/i;
-        else if (type === 'rr') regex = /rr\s*([0-9]+)/i;
-        else if (type === 'spo2') regex = /spo2\s*([0-9]+)/i;
-        
-        const match = lower.match(regex);
-        return match ? match[1] : '-';
-    };
-
-    // 3. Logic Reminder (Sama seperti sebelumnya)
-    const getReminder = (planning = '') => {
-        const p = planning.toLowerCase();
-        const alerts = [];
-        if (p.includes('gds') || p.includes('gdp') || p.includes('2jpp')) alerts.push("PUASA");
-        if (p.includes('lipid') || p.includes('kolesterol')) alerts.push("PUASA");
-        if (p.includes('kontras') || (p.includes('ct scan') && p.includes('kepala'))) alerts.push("PUASA, ureum kreatinin?");
-        if (p.includes('whole abdomen') || p.includes('upper')) alerts.push("PUASA");
-        if (p.includes('lower') || p.includes('kandung')) alerts.push("KKP/TAHAN PIPIS");
-        return alerts;
-    };
-
-    // 4. Fungsi Cetak TTV (Format Lembar Observasi)
-    const handlePrintTTV = () => {
-        const content = document.getElementById('ttv-table-area').innerHTML;
-        const printWindow = window.open('', '_blank', 'width=1100,height=800');
-        printWindow.document.write(`
-            <html>
-            <head>
-                <title>Lembar Observasi TTV</title>
-                <script src="https://cdn.tailwindcss.com"></script>
-                <style>
-                    body { font-family: sans-serif; padding: 20px; }
-                    table { width: 100%; border-collapse: collapse; font-size: 10pt; }
-                    th, td { border: 1px solid black; padding: 4px; text-align: left; }
-                    th { background-color: #f0f0f0; text-align: center; }
-                    .center { text-align: center; }
-                    .print-hide { display: none; }
-                    @media print { .no-print { display: none; } }
-                </style>
-            </head>
-            <body>
-                <h2 class="text-center font-bold text-lg mb-4">LEMBAR OBSERVASI TANDA VITAL & RENCANA HARIAN</h2>
-                <div class="text-xs mb-2">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
-                ${content}
-                <script>window.onload = () => window.print();</script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-    };
-
-    return (
-        <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            {/* Header Toolbar */}
-            <div className="p-3 bg-gray-50 border-b flex justify-between items-center">
-                <h3 className="text-sm font-bold text-gray-700 uppercase">📊 Tabel Observasi TTV ({sortedRecords.length} Pasien)</h3>
-                <button 
-                    onClick={handlePrintTTV}
-                    className="flex items-center bg-gray-700 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-gray-900 transition shadow-sm"
-                >
-                    <span className="mr-2">🖨️</span> Cetak Lembar Checklist
-                </button>
-            </div>
-
-            {/* AREA TABEL UTAMA */}
-            <div className="flex-1 overflow-auto p-0" id="ttv-table-area">
-                <table className="w-full text-xs text-left border-collapse">
-                    <thead className="bg-indigo-600 text-white sticky top-0 z-10">
-                        <tr>
-                            <th className="p-2 border border-indigo-500 w-[5%] text-center">Kamar</th>
-                            <th className="p-2 border border-indigo-500 w-[20%]">Nama Pasien</th>
-                            <th className="p-2 border border-indigo-500 w-[25%]">⚠️ Rencana / Persiapan</th>
-                            {/* KOLOM TTV (Ini yang diminta!) */}
-                            <th className="p-2 border border-indigo-500 w-[8%] text-center bg-indigo-700">TD</th>
-                            <th className="p-2 border border-indigo-500 w-[6%] text-center bg-indigo-700">Nadi</th>
-                            <th className="p-2 border border-indigo-500 w-[6%] text-center bg-indigo-700">Suhu</th>
-                            <th className="p-2 border border-indigo-500 w-[6%] text-center bg-indigo-700">RR</th>
-                            <th className="p-2 border border-indigo-500 w-[6%] text-center bg-indigo-700">SpO2</th>
-                            <th className="p-2 border border-indigo-500 w-[10%] text-center no-print">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody className="text-gray-700">
-                        {sortedRecords.map((rec, idx) => {
-                            const alerts = getReminder(rec.planning);
-                            // Ekstrak data real-time dari kolom O
-                            const td = extractValue(rec.objective, 'td');
-                            const n = extractValue(rec.objective, 'n');
-                            const s = extractValue(rec.objective, 's');
-                            const rr = extractValue(rec.objective, 'rr');
-                            const spo2 = extractValue(rec.objective, 'spo2');
-
-                            return (
-                                <tr key={rec.id} className={`border-b hover:bg-yellow-50 transition ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                                    {/* KAMAR */}
-                                    <td className="p-2 border border-gray-200 text-center font-bold text-indigo-700">
-                                        {rec.roomNumber}
-                                    </td>
-                                    
-                                    {/* NAMA */}
-                                    <td className="p-2 border border-gray-200 font-bold">
-                                        {rec.name}
-                                        <div className="text-[9px] text-gray-500 font-normal">{rec.dpjpName.split(',')[0]}</div>
-                                    </td>
-
-                                    {/* RENCANA (REMINDER) */}
-                                    <td className="p-2 border border-gray-200">
-                                        {alerts.length > 0 ? (
-                                            <div className="flex flex-wrap gap-1 mb-1">
-                                                {alerts.map((a, i) => (
-                                                    <span key={i} className="bg-red-100 text-red-700 px-1 rounded text-[9px] font-extrabold border border-red-200 animate-pulse">
-                                                        {a}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        ) : null}
-                                        <div className="truncate w-48 text-[9px] text-gray-500 italic">
-                                            {rec.planning ? rec.planning.replace(/\n/g, ' ') : '-'}
-                                        </div>
-                                    </td>
-
-                                    {/* KOLOM TTV (Data Dipecah) */}
-                                    <td className="p-2 border border-gray-200 text-center font-mono font-bold text-blue-700">{td}</td>
-                                    <td className="p-2 border border-gray-200 text-center font-mono">{n}</td>
-                                    <td className="p-2 border border-gray-200 text-center font-mono">{s}</td>
-                                    <td className="p-2 border border-gray-200 text-center font-mono">{rr}</td>
-                                    <td className="p-2 border border-gray-200 text-center font-mono">{spo2}</td>
-
-                                    {/* AKSI (Tombol Input) */}
-                                    <td className="p-2 border border-gray-200 text-center no-print">
-                                        <button 
-                                            onClick={() => onQuickTtv(rec)} 
-                                            className="px-2 py-1 bg-green-100 text-green-700 rounded border border-green-300 hover:bg-green-200 text-[10px] font-bold shadow-sm"
-                                        >
-                                            + Input TTV
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                        {/* Baris Kosong untuk Print Manual (Opsional) */}
-                        <tr className="print-only hidden">
-                            <td className="p-4 border"></td><td className="p-4 border"></td><td className="p-4 border"></td>
-                            <td className="p-4 border"></td><td className="p-4 border"></td><td className="p-4 border"></td>
-                            <td className="p-4 border"></td><td className="p-4 border"></td><td className="p-4 border"></td>
-                        </tr>
-                    </tbody>
-                </table>
-                
-                {sortedRecords.length === 0 && (
-                    <div className="p-10 text-center text-gray-400 italic">Tidak ada pasien aktif.</div>
-                )}
-            </div>
-            
-            <div className="p-2 bg-yellow-50 text-[10px] text-yellow-800 text-center border-t border-yellow-200 no-print">
-                💡 <b>Tips:</b> Klik tombol "Cetak Lembar Checklist" untuk print tabel kosong dan isi manual saat keliling (Visite).
-            </div>
-        </div>
-    );
-};
 // --- RUMUS VISUAL TAGS ---
-const formatTags = (text) => {
-  if (!text) return "-";
-  return text.split('\n').map((line, idx) => {
-    let style = "block mb-1 "; // Dasar: Tiap baris dikasih jarak dikit
-    const lower = line.toLowerCase();
-
-    // Logika Deteksi Warna
-    if (lower.includes('lab') || lower.includes('darah') || lower.includes('urine')) {
-      style += "bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded w-fit border border-yellow-200"; // Kuning
-    } else if (lower.includes('rad') || lower.includes('rontgen') || lower.includes('ct') || lower.includes('usg')) {
-      style += "bg-blue-100 text-blue-800 px-2 py-0.5 rounded w-fit border border-blue-200"; // Biru
-    } else if (lower.includes('terapi') || lower.includes('rx') || lower.includes('obat') || lower.includes('inj')) {
-      style += "bg-green-100 text-green-800 px-2 py-0.5 rounded w-fit border border-green-200"; // Hijau
-    } else if (lower.includes('lacak') || lower.includes('konsul') || lower.includes('plan')) {
-      style += "bg-red-100 text-red-800 px-2 py-0.5 rounded w-fit font-bold border border-red-200"; // Merah
-    }
-
-    return <span key={idx} className={style}>{line}</span>;
-  });
-};
 // --- PANEL INPUT WAITING LIST (REVISI: DENGAN WARNA KAMAR) ---
 const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedRooms = [], waitingList = [] }) => {
     if (!show) return null;
@@ -3098,19 +2999,18 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
         </div>
     );
 };
-// --- INPUT SIDE PANEL (VERSI FINAL - DENGAN TOMBOL WA DI RIWAYAT & SIMPAN DI ATAS) ---
+// --- INPUT SIDE PANEL (VERSI MODIFIKASI: FOOTER PINDAH KE HEADER) ---
 const InputSidePanel = ({
     showInputModal, setShowInputModal, handleSubmit, formData, handleInputChange,
-    resetForm, isEditing, currentRecordId, occupiedRooms, availableRooms, dpjpOptions,
+    resetForm, isEditing, currentRecordId, availableRooms, dpjpOptions,
     showRaber1, setShowRaber1, showRaber2, setShowRaber2, historyLogs,
     pullDataForField, setShowTtvModal, appendText, handleDischarge, setSelectedRecordForPrint,
-    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS
-}) => {
+    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS}) => {
     if (!showInputModal) return null;
     
     const lacakOptions = [...LAB_CHECKS, ...RADIOLOGY_CHECKS].sort();
 
-    // Fungsi Helper Tombol Bawah (Footer)
+    // Fungsi Helper Tombol (Tadinya di Footer, sekarang dipakai di Header)
     const handleQuickAction = (action) => {
         const tempRec = { 
             ...formData, 
@@ -3125,51 +3025,85 @@ const InputSidePanel = ({
         if (action === 'discharge') handleDischarge(currentRecordId, formData.name);
     };
 
+    const handleClearSoap = () => {
+        if(window.confirm("Kosongkan semua kolom SOAP untuk operan baru?")) {
+            handleInputChange({ target: { name: 'subjective', value: '' } });
+            handleInputChange({ target: { name: 'objective', value: '' } });
+            handleInputChange({ target: { name: 'analysis', value: '' } });
+            handleInputChange({ target: { name: 'planning', value: '' } });
+        }
+    };
+
     return (
         <div className="h-full bg-white border-l border-gray-300 flex flex-col shadow-xl">
-            {/* 1. HEADER (REVISI: PUTIH & ADA TOMBOL SIMPAN) */}
-            <div className="px-4 py-3 border-b flex justify-between items-center bg-white shadow-sm z-10 flex-shrink-0">
-                <div>
-                    <h2 className="font-bold text-sm text-gray-800">{isEditing ? `Edit: ${formData.name}` : 'Pasien Baru'}</h2>
-                    <p className="text-[10px] text-gray-400">{isEditing ? 'Perbarui data' : 'Input awal'}</p>
+            
+            {/* 1. HEADER BARU (SEMUA TOMBOL NAVIGASI PINDAH KESINI) */}
+            <div className="px-3 py-2 border-b flex justify-between items-center bg-gray-50 shadow-sm z-10 flex-shrink-0">
+                <div className="leading-tight overflow-hidden mr-2">
+                    <h2 className="font-bold text-xs text-gray-800 truncate max-w-[150px]">
+                        {isEditing ? formData.name : 'Pasien Baru'}
+                    </h2>
+                    <p className="text-[9px] text-gray-500 font-bold">{formData.roomNumber || 'Pilih Kamar'}</p>
                 </div>
-                <div className="flex items-center space-x-2">
-                    {/* TOMBOL SIMPAN UTAMA (PINDAH KESINI) */}
+                
+                {/* GRUP TOMBOL (HEADER) */}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {isEditing && (
+                        <>
+                            {/* Tombol Draft/Lapor */}
+                            <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">
+                                📱
+                            </button>
+                            {/* Tombol Print */}
+                            <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print">
+                                🖨️
+                            </button>
+                            {/* Tombol Pulang */}
+                            <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Pulangkan">
+                                🚪
+                            </button>
+                            {/* Pembatas */}
+                            <div className="h-5 w-[1px] bg-gray-300 mx-1"></div>
+                        </>
+                    )}
+                    
+                    {/* TOMBOL SIMPAN (Disket) */}
                     <button 
                         onClick={handleSubmit} 
                         disabled={loading || !isFormReady} 
-                        className={`px-4 py-1.5 rounded text-xs font-bold text-white shadow-sm transition flex items-center ${loading || !isFormReady ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                        className={`p-1.5 rounded text-white shadow-sm transition flex items-center justify-center ${loading || !isFormReady ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                        title="Simpan Data"
                     >
-                        {loading ? '...' : '💾 SIMPAN'}
+                        {loading ? '...' : '💾'}
                     </button>
-                    <button onClick={() => { setShowInputModal(false); resetForm(); }} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 flex items-center justify-center font-bold transition">✕</button>
+
+                    {/* TOMBOL BATAL / TUTUP */}
+                    <button onClick={() => { setShowInputModal(false); resetForm(); }} className="p-1.5 bg-white text-gray-400 border border-gray-200 rounded hover:bg-red-50 hover:text-red-500 transition shadow-sm" title="Tutup">
+                        ✕
+                    </button>
                 </div>
             </div>
             
-            {/* 2. AREA SCROLL */}
+            {/* 2. AREA SCROLL FORM (FORM ASLIMU, HANYA TOMBOL WA DIHAPUS) */}
             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-gray-50/50">
-                
-                {/* A. FORM INPUT (ATAS) */}
                 <div className="p-4">
                     <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3">
                         <form onSubmit={handleSubmit} id="mainForm">
-                            
                             {/* Identitas */}
                             <div className="flex space-x-2 mb-2">
-                                <div className="w-[25%]"><CustomSelect label="Km" value={formData.roomNumber} onChange={(e) => handleInputChange({ target: { name: 'roomNumber', value: e.target.value } })} options={availableRooms} disabled={isEditing} /></div>
+                                <div className="w-[25%]"><CustomSelect label="Km" value={formData.roomNumber} onChange={(e) => handleInputChange({ target: { name: 'roomNumber', value: e.target.value } })} options={availableRooms} /></div>
                                 <div className="w-[25%]">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Gender *</label>
                                     <select className="w-full p-2 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 bg-white" value={formData.gender} onChange={(e) => handleInputChange({ target: { name: 'gender', value: e.target.value } })} required>
                                         <option value="" disabled>-</option><option value="L">Lk</option><option value="P">Pr</option>
                                     </select>
                                 </div>
-                                <div className="w-[50%]"><CustomInput label="Nama Pasien" name="name" value={formData.name} onChange={handleInputChange} disabled={isEditing} /></div>
+                                <div className="w-[50%]"><CustomInput label="Nama Pasien" name="name" value={formData.name} onChange={handleInputChange} /></div>
                             </div>
 
-                            {/* DPJP & Raber Section */}
+                            {/* DPJP & Raber */}
                             <div className="mb-2">
                                 <div className="flex space-x-2 mb-1">
-                                    {/* DPJP Utama */}
                                     <div className="w-1/2">
                                         <CustomSelect 
                                             label="DPJP Utama" 
@@ -3177,18 +3111,12 @@ const InputSidePanel = ({
                                             onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} 
                                             options={dpjpOptions} 
                                         />
+                                        {/* ❌ TOMBOL "HUBUNGI DR..." DIHAPUS DISINI (Sesuai Permintaan) */}
                                     </div>
-                                    
-                                    {/* Raber 1 */}
                                     <div className="w-1/2">
                                         {showRaber1 ? (
                                             <div className="relative">
-                                                <CustomSelect 
-                                                    label="Raber 1" 
-                                                    value={formData.raberName} 
-                                                    onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} 
-                                                    options={dpjpOptions} 
-                                                />
+                                                <CustomSelect label="Raber 1" value={formData.raberName} onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} options={dpjpOptions} />
                                                 <button type="button" onClick={() => { setShowRaber1(false); handleInputChange({ target: { name: 'raberName', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button>
                                             </div>
                                         ) : (
@@ -3196,7 +3124,6 @@ const InputSidePanel = ({
                                         )}
                                     </div>
                                 </div>
-
                                 {/* Raber 2 */}
                                 {showRaber1 && (
                                     <div className="flex space-x-2">
@@ -3217,8 +3144,14 @@ const InputSidePanel = ({
                         </form>
                     </div>
 
-                    {/* SOAP Fields */}
+                    {/* SOAP Fields (TIDAK BERUBAH) */}
                     <div className="space-y-3">
+                        <div className="flex justify-between items-center px-1 mb-2">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Catatan SOAP Hari Ini</span>
+                            <button type="button" onClick={handleClearSoap} className="text-[9px] bg-red-50 text-red-600 px-2 py-1 rounded border border-red-200 hover:bg-red-600 hover:text-white transition font-bold shadow-sm">
+                                🗑️ KOSONGKAN SOAP
+                            </button>
+                        </div>
                         <CustomTextArea label="S (Subjektif)" name="subjective" value={formData.subjective} onChange={handleInputChange} 
                             onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('subjective') : null} pullLabel="Salin S Lalu" />
                         
@@ -3249,7 +3182,7 @@ const InputSidePanel = ({
                     </div>
                 </div>
 
-                {/* B. RIWAYAT (BAWAH) - TETAP ADA TOMBOL WA */}
+                {/* B. RIWAYAT (BAWAH) - TIDAK BERUBAH */}
                 <div className="bg-gray-100 border-t border-gray-300 flex-1 flex flex-col min-h-[300px]">
                     <div className="p-3 bg-gray-200 border-b border-gray-300 shadow-inner">
                         <h3 className="text-[10px] font-bold text-gray-600 uppercase flex justify-between items-center">
@@ -3273,17 +3206,10 @@ const InputSidePanel = ({
                                                         : 'Baru saja'}
                                             </span>
                                         </div>
-                                        {/* TOMBOL WA DI RIWAYAT (DIPERTAHANKAN) */}
-                                        <button 
-                                            type="button" 
-                                            onClick={() => setRecordForLapor(log)} 
-                                            className="px-2 py-0.5 bg-green-100 text-green-700 border border-green-200 rounded text-[9px] font-bold hover:bg-green-200 flex items-center transition"
-                                            title="Lapor catatan ini ke WA"
-                                        >
+                                        <button type="button" onClick={() => setRecordForLapor(log)} className="px-2 py-0.5 bg-green-100 text-green-700 border border-green-200 rounded text-[9px] font-bold hover:bg-green-200 flex items-center transition" title="Lapor catatan ini ke WA">
                                             <span className="mr-1">📱</span> WA
                                         </button>
                                     </div>
-
                                     <div className="space-y-1.5">
                                         <div className="flex gap-2"><span className="font-bold text-red-600 w-3 shrink-0">S:</span> <span className="text-gray-700">{log.subjective || '-'}</span></div>
                                         <div className="flex gap-2"><span className="font-bold text-red-600 w-3 shrink-0">O:</span> <span className="text-gray-700">{log.objective || '-'}</span></div>
@@ -3303,26 +3229,7 @@ const InputSidePanel = ({
                 </div>
             </div>
 
-            {/* 3. FOOTER TOMBOL (Draft, Print, Plg - DIPERTAHANKAN) */}
-            <div className="p-3 border-t bg-white flex justify-between items-center flex-shrink-0">
-                <div className="flex space-x-1">
-                    {isEditing && (
-                        <>
-                            <button type="button" onClick={() => handleQuickAction('lapor')} className="px-3 py-1.5 bg-green-50 text-green-600 border border-green-200 rounded text-[10px] font-bold hover:bg-green-100 transition flex items-center" title="Lapor Draft Saat Ini">
-                                <span className="mr-1">📱</span> Draft
-                            </button>
-                            <button type="button" onClick={() => handleQuickAction('print')} className="px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-300 rounded text-[10px] font-bold hover:bg-gray-200 transition flex items-center">
-                                <span className="mr-1">🖨️</span> Print
-                            </button>
-                            <button type="button" onClick={() => handleQuickAction('discharge')} className="px-3 py-1.5 bg-red-100 text-red-700 border border-red-300 rounded text-[10px] font-bold hover:bg-red-200 transition flex items-center">
-                                <span className="mr-1">🚪</span> Plg
-                            </button>
-                        </>
-                    )}
-                </div>
-                {/* Tombol Batal tetap di bawah sebagai alternatif */}
-                <button onClick={() => { setShowInputModal(false); resetForm(); }} className="px-4 py-1.5 text-xs font-bold text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded">Batal</button>
-            </div>
+            {/* 3. FOOTER LAMA (SUDAH DIHAPUS TOTAL) */}
         </div>
     );
 };
@@ -3336,27 +3243,6 @@ const App = () => {
   const [userRole, setUserRole] = useState(null);
 
 // --- FUNGSI BARU UNTUK MENGAMBIL ROLE ---
-const fetchUserRole = async (userEmail, db) => {
-    if (!userEmail || !db) return null;
-    
-    try {
-        const userProfilesRef = collection(db, 'userProfiles');
-        // Cari dokumen di mana field 'email' sama dengan email pengguna yang login
-        const q = query(userProfilesRef, where('email', '==', userEmail));
-        const querySnapshot = await getDocs(q);
-
-        if (!querySnapshot.empty) {
-            // Jika profil ditemukan, kembalikan field 'role'
-            const userData = querySnapshot.docs[0].data();
-            return userData.role || 'user'; // Default ke 'user' jika role tidak ditemukan
-        }
-        return 'guest'; // Jika profil tidak ditemukan sama sekali
-        
-    } catch (e) {
-        console.error("Error fetching user role:", e);
-        return 'guest';
-    }
-};
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
