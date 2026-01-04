@@ -44,7 +44,22 @@ const DEFAULT_DPJP_DATA = [
     { name: 'dr. Priyo, Sp.PD', waNumber: '62811220364' },
     { name: 'dr. Risa, Sp.PD', waNumber: '6281316198500' },
     { name: 'dr. Evan, Sp.P', waNumber: '6281210100626' },
-    { name: 'dr. Evi, Sp.JP', waNumber: '6281321453999' },
+    { name: 'dr. Evi, Sp.JP', waNumber: '628112223938' },
+    { name: 'dr. Iman, Sp.JP', waNumber: '6281395546887' },
+    { name: 'dr. Murti, Sp.S', waNumber: '6281383315383' },
+    { name: 'dr. Zuhaira, Sp.S', waNumber: '6282121992620' },
+    { name: 'dr. Ganda, Sp.N', waNumber: '6282121759729' },
+    { name: 'dr. Agam, Sp.B', waNumber: '6282218321999' },
+    { name: 'dr. Daniel, Sp.B', waNumber: '6281398906655' },
+    { name: 'dr. Irwan, Sp.B', waNumber: '6285721483198' },
+    { name: 'dr. Eka, Sp.OT', waNumber: '6281380733477' },
+    { name: 'dr. Gamal, Sp.OT', waNumber: '6281312208478' },
+    { name: 'dr. Andre, Sp.BS', waNumber: '6287822462203' },
+    { name: 'dr. Joko, Sp.U', waNumber: '6281322819326' },
+    { name: 'dr. Huda, Sp.OG', waNumber: '628112294881' },
+    { name: 'dr. Sella, Sp.OG', waNumber: '6282226862504' },
+    { name: 'dr. Sri Siswanti, Sp.Kk', waNumber: '6281227153161' },
+    { name: 'dr. Dian Maifara, Sp.BM', waNumber: '62811119879' },
 ];
 
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
@@ -74,9 +89,9 @@ const PROCEDURES = [
     'Parasintesis', 'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites', 'Pungsi Lumbal', 'Aspirasi Sendi'
 ];
 const MEDICATIONS = [
-    'Koreksi KCL  mEq +  500 ml habis dalam', 'Koreksi Meylon  mEq + Ns  100 ml habis dalam', 'Koreksi CaGluconas  gr + D5 100ml', 'Bolus Novorapid 10 iu + D40 2 flash', 'Drip Insulin  iu', 'Drip Lasix  cc/jam', 'Drip Nicardipine  mcg, Kec.  cc/j, Bb  kg', 'Drip Norepinephrine  mcg, Kec.  cc/j, Bb  kg',
+    'Koreksi KCL  mEq +  500 ml/8 Jam,  siklus on ke', 'Koreksi Meylon  mEq + Ns  100 ml/Jam', 'Koreksi CaGluconas  gr + D5 100ml', 'Bolus Novorapid 10 iu + D40 2 flash', 'Drip Insulin  iu', 'Drip Lasix  cc/jam', 'Drip Nicardipine  mcg, Kec.  cc/j, Bb  kg', 'Drip Norepinephrine  mcg, Kec.  cc/j, Bb  kg',
     'Drip Amiodarone', 'Drip Fentanyl', 'Injeksi Extra Lasix', 
-    '3 Way', '2 Line Infus', 'Trnfs Albumin', 'Drip Heparin', 'Drip Dopamine', 'Drip Dobutamine', 'Drip Epinephrine'
+    '3 Way', '2 Line Infus', 'Trnfs Albumin', 'Drip Heparin', 'Drip Dopamine  mcg, Kec.  cc/j, Bb  kg', 'Drip Dobutamine  mcg, Kec.  cc/j, Bb  kg', 'Drip Epinephrine  mcg, Kec.  cc/j, Bb  kg'
 ];
 // --- GABUNGAN UNTUK SMART SEARCH PLANNING ---
 // Format: { label: 'Nama Item', type: 'Lab/Rad/Med/Rx' }
@@ -716,15 +731,14 @@ const TagSelector = ({ label, options, onSelect, category, placeholder }) => {
     );
 };
 
-// --- PRINT LAYOUT & COMPONENTS ---
-
 const PrintLayout = ({ record }) => {
     if (!record) return null;
 
+    // ... (kode tanggal & helper memo SAMA, tidak perlu diubah) ...
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dateString = tomorrow.toLocaleDateString('id-ID', {
-        day: 'numeric', month: 'long', year: 'numeric'
+        day: 'numeric', month: 'numeric', year: 'numeric'
     });
 
     const { others, labs, rads, tms } = useMemo(() => {
@@ -742,63 +756,83 @@ const PrintLayout = ({ record }) => {
         return res;
     }, [record.planning]);
 
+    const hasSubjective = record.subjective && record.subjective !== '-' && record.subjective.trim() !== '';
+
     return (
-        <div className="bg-white p-0 text-xs font-sans leading-snug text-black h-full">
-            {/* Compact Header */}
+        // 👇 1. INI PENGATURAN UKURAN UTAMA (Isi Teks)
+        // Ganti 'text-xs' jadi 'text-sm' (14px) biar lebih besar & terbaca
+        <div className="bg-white p-0 text-sm font-sans leading-snug text-black h-full">
+            
+            {/* Header: DPJP & Raber */}
             <div className="flex justify-between items-start border-b border-black pb-1 mb-2">
-                <div>
-                    <div className="font-bold text-lg uppercase tracking-wide">{record.name} <span className="text-xs font-normal border border-black px-1 ml-2">Km. {record.roomNumber}</span></div>
-                    <div className="text-[10px] mt-0.5 font-bold">DPJP: {record.dpjpName}</div>
-                    {(record.raberName || record.raber2Name) && (
-                        <div className="text-[9px] text-gray-600">Raber: {[record.raberName, record.raber2Name].filter(Boolean).join(', ')}</div>
-                    )}
+                <div className="flex-1">
+                    <div className="font-bold text-lg uppercase tracking-wide flex items-center gap-2">
+                        {/* Nomor Kamar di depan */}
+                        <span className="text-sm font-bold border border-black px-2"> {record.roomNumber ? record.roomNumber.split('B')[0] : ''}</span>
+                        {/* Nama Pasien di belakang */}
+                        <span>{record.name}</span>
+                    </div>
+                    <div className="text-[11px] mt-0.5 flex flex-wrap gap-x-4">
+                        <span className="font-bold">DPJP: {record.dpjpName}</span>
+                        {(record.raberName || record.raber2Name) && (
+                            <span className="text-gray-600 font-medium italic">
+                                Raber: {[record.raberName, record.raber2Name].filter(Boolean).join(', ')}
+                            </span>
+                        )}
+                    </div>
                 </div>
                 <div className="text-right">
                     <div className="font-bold text-xs">{dateString}</div>
                 </div>
             </div>
 
-            {/* 2 Column Grid Layout */}
+            {/* Layout Grid */}
             <div className="grid grid-cols-2 gap-3">
                 
-                {/* Left Column: A (Top) & P (Bottom) */}
+                {/* Kolom Kiri: A & P */}
                 <div className="space-y-3 border-r border-gray-200 pr-2 min-h-[400px] flex flex-col">
                     <div className="flex-1">
-                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1">A (ANALISA)</div>
+                        {/* 👇 2. INI UKURAN JUDUL (A/P/O/S) */}
+                        {/* Ganti text-[9px] jadi text-[11px] atau text-xs biar judulnya jelas */}
+                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1 text-[11px]">A (ANALISA)</div>
                         <div className="whitespace-pre-wrap font-sans mb-3">{record.analysis || '-'}</div>
                     </div>
 
                     <div className="flex-1 border-t border-dashed border-gray-300 pt-2 mt-1">
-                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1">P (PLANNING)</div>
-                        <div className="font-sans text-xs">
+                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1 text-[11px]">P (PLANNING)</div>
+                        
+                        {/* 👇 Isi Planning ikut ukuran wadah utama (text-sm), jadi ini aman */}
+                        <div className="font-sans">
                             {others.length > 0 && (
                                 <div className="whitespace-pre-wrap mb-2 leading-relaxed">
                                     {others.join('\n')}
                                 </div>
                             )}
-                            <div className="space-y-1 mt-1">
-                                {labs.length > 0 && <div className="flex items-start"><span className="font-bold w-16 flex-shrink-0 text-[10px] uppercase pt-0.5">Lab.</span><span className="flex-1">: {labs.join(', ')}</span></div>}
-                                {rads.length > 0 && <div className="flex items-start"><span className="font-bold w-16 flex-shrink-0 text-[10px] uppercase pt-0.5">Rad.</span><span className="flex-1">: {rads.join(', ')}</span></div>}
-                                {tms.length > 0 && <div className="flex items-start"><span className="font-bold w-16 flex-shrink-0 text-[10px] uppercase pt-0.5">Tndkn.</span><span className="flex-1">: {tms.join(', ')}</span></div>}
+                            <div className="space-y-1 mt-1 text-xs"> {/* Item Lab/Rad/dll bisa lebih kecil dikit biar muat */}
+                                {labs.length > 0 && <div className="flex items-start"><span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Lab.</span><span className="flex-1">: {labs.join(', ')}</span></div>}
+                                {rads.length > 0 && <div className="flex items-start"><span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Rad.</span><span className="flex-1">: {rads.join(', ')}</span></div>}
+                                {tms.length > 0 && <div className="flex items-start"><span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Tndkn.</span><span className="flex-1">: {tms.join(', ')}</span></div>}
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Right Column: O (Top) & S (Bottom) */}
+                {/* Kolom Kanan: O & S */}
                 <div className="space-y-3 flex flex-col">
                     <div className="flex-1">
-                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1">O (OBJEKTIF)</div>
+                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1 text-[11px]">O (OBJEKTIF)</div>
                         <div className="mb-2 font-mono text-[10px] grid grid-cols-2 gap-x-2 gap-y-1 text-gray-400 print:text-black border p-1 rounded bg-gray-50 print:bg-white print:border-none">
                             <div>TD : ____</div><div>N  : ____</div><div>S  : ____</div><div>RR : ____</div><div>SpO2: ___</div><div>GCS : ___</div>
                         </div>
                         <div className="whitespace-pre-wrap font-sans">{record.objective || '-'}</div>
                     </div>
 
-                    <div className="flex-1 border-t border-dashed border-gray-300 pt-2 mt-1">
-                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1">S (SUBJEKTIF)</div>
-                        <div className="whitespace-pre-wrap font-sans mb-3">{record.subjective || '-'}</div>
-                    </div>
+                    {hasSubjective && (
+                        <div className="flex-1 border-t border-dashed border-gray-300 pt-2 mt-1">
+                            <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1 text-[11px]">S (SUBJEKTIF)</div>
+                            <div className="whitespace-pre-wrap font-sans mb-3">{record.subjective}</div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -905,7 +939,7 @@ const getRoomColorStatus = (roomName, activeRecords, waitingList = []) => {
     
     const neighbor = activeRecords.find(r => r.roomNumber === neighborRoomName);
     if (neighbor) {
-        if (neighbor.gender === 'L') return { color: 'orange', status: 'Sisa Lk' };
+        if (neighbor.gender === 'L') return { color: 'sky', status: 'Sisa Lk' };
         if (neighbor.gender === 'P') return { color: 'purple', status: 'Sisa Pr' };
     }
 
@@ -942,8 +976,8 @@ const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter
                         // KOSONG TAPI ADA BOOKING -> Kuning Emas
                         colorClass = "bg-yellow-100 border-yellow-400 text-yellow-900 hover:bg-yellow-200 ring-1 ring-yellow-300 animate-pulse";
                         statusText = `Booked: ${booking.name.split(' ')[0]}`;
-                    } else if (color === 'orange') {
-                        colorClass = "bg-orange-50 border-orange-300 text-orange-800 hover:bg-orange-100";
+                    } else if (color === 'sky') {
+                        colorClass = "bg-sky-50 border-sky-300 text-sky-800 hover:bg-sky-100";
                         statusText = "Sisa Lk";
                     } else if (color === 'purple') {
                         colorClass = "bg-purple-50 border-purple-300 text-purple-800 hover:bg-purple-100";
@@ -1007,38 +1041,43 @@ const parsePlanning = (text) => {
     return res;
 };
 
-// --- KODE BARU UNTUK renderPlanningCell (DITAMBAH WARNA UNGU) ---
+// --- UPDATE: RENDER PLANNING CELL (FIX: STATIC CLASSES AGAR TERBACA TAILWIND) ---
 const renderPlanningCell = (text) => {
     if (!text) return '-';
     
-    // Panggil fungsi pemisah data baru (ambil rxs)
+    // Ambil data hasil parsing
     const { labs, rads, tms, rxs, others } = parsePlanning(text);
     
-    // Fungsi untuk membuat label kategori
-    const renderCategory = (title, items, color) => {
+    // Fungsi Helper Tampilan Per Item
+    const renderItem = (title, items, bgClass, borderClass, textClass) => {
         if (items.length === 0) return null;
         
-        const finalColor = color; // Langsung pakai warna dari argumen
-
-        // Tailwind colors: red, blue, green, purple
-        const style = `block mb-1 px-2 py-0.5 rounded w-fit max-w-full text-xs font-medium border border-${finalColor}-200 bg-${finalColor}-100 text-${finalColor}-900`;
         const itemList = items.join('; '); 
 
+        // Class disusun manual, bukan pakai rumus ${}, agar terbaca oleh Tailwind Compiler
         return (
-            <div key={title} className={style}>
-                <span className="font-bold mr-1">{title}:</span>
+            <div key={title} className={`block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm ${bgClass} ${borderClass} ${textClass}`}>
+                <span className="mr-1 uppercase">{title}:</span>
                 {itemList}
             </div>
         );
     };
 
-    // Tampilan Planning yang sudah dirapikan
     return (
         <div className="space-y-1">
-            {renderCategory('Lab', labs, 'red')}     
-            {renderCategory('Rad', rads, 'blue')}    
-            {renderCategory('Tndkn', tms, 'green')}  
-            {renderCategory('Terapi', rxs, 'purple')} {/* INI WARNA UNGU UNTUK TERAPI/OBAT */}
+            {/* 1. LAB: Merah (Tetap) */}
+            {renderItem('Lab', labs, 'bg-red-100', 'border-red-300', 'text-red-500 animate-pulse')}
+            
+            {/* 2. RAD: blue */}
+            {renderItem('Rad', rads, 'bg-blue-100', 'border-blue-400', 'text-blue-500')}
+            
+            {/* 3. TINDAKAN: Emerald (Hijau Zamrud) */}
+            {renderItem('Tndkn', tms, 'bg-emerald-100', 'border-emerald-400', 'text-emerald-500')}
+            
+            {/* 4. TERAPI: Fuchsia (Ungu Pink Cerah) */}
+            {renderItem('Terapi', rxs, 'bg-fuchsia-200', 'border-fuchsia-400', 'text-fuchsia-500')}
+            
+            {/* 5. Lain-lain */}
             {others.map((line, idx) => (
                 <div key={`other-${idx}`} className="text-xs text-gray-700 whitespace-pre-wrap">{line}</div>
             ))}
@@ -1245,11 +1284,23 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                         )}
                                         <div className="flex-1 min-w-0">
                                             <div className="font-bold text-sm text-indigo-900 truncate">{rec.name}</div>
-                                            <div className="flex gap-1 mt-1">
-                                                <span className="font-bold bg-yellow-100 px-1 rounded text-[10px] border border-yellow-200">{rec.roomNumber}</span>
-                                                <span className="bg-gray-100 px-1 rounded text-[9px] text-gray-500 border">{rec.gender}</span>
-                                            </div>
-                                            <div className="mt-1 text-gray-600 italic text-[10px] truncate">{rec.dpjpName.split(',')[0]}</div>
+                                                <div className="flex gap-1 mt-1">
+                                                    <span className="font-bold bg-yellow-100 px-1 rounded text-[10px] border border-yellow-200">{rec.roomNumber}</span>
+                                                    <span className="bg-gray-100 px-1 rounded text-[9px] text-gray-500 border">{rec.gender}</span>
+                                                </div>
+
+                                                {/* DPJP UTAMA */}
+                                                <div className="mt-1 text-gray-600 italic text-[10px] truncate font-medium">
+                                                    Dr: {rec.dpjpName.split(',')[0]}
+                                                </div>
+
+                                                {/* DOKTER RABER (DITAMPILKAN JIKA ADA) */}
+                                                {(rec.raberName || rec.raber2Name) && (
+                                                    <div className="mt-0.5 text-blue-600 font-bold text-[9px] leading-tight">
+                                                        <span className="text-gray-400 font-normal">Rb: </span>
+                                                        {[rec.raberName, rec.raber2Name].filter(Boolean).map(name => name.split(',')[0]).join(', ')}
+                                                    </div>
+                                                )}
                                         </div>
                                     </div>
                                 </td>
@@ -1529,6 +1580,9 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
 
   // State untuk Data Dinamis (Setelan)
   const [dpjpProfiles, setDpjpProfiles] = useState(initialDpjpProfiles.map(p => ({...p, name: p.name})));
+  
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
+ 
   // Menggunakan DEFAULT_JAGA_LINK sebagai nilai awal
   const [jagaGroupLink, setJagaGroupLink] = useState(DEFAULT_JAGA_LINK);
   
@@ -1599,11 +1653,14 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
       return null;
   }, [db, appId]);
 
-  // 1. Load Settings from Firestore
+  // 1. Load Settings from Firestore (VERSI AMAN ANTI-HILANG)
   useEffect(() => {
-      if (!userId) return; // FIX: Guard clause added
+      if (!userId) return; 
       const ref = getConfigRef();
       if (!ref) return;
+
+      // KUNCI DULU SAAT AWAL MEMUAT (Biar gak bisa edit)
+      setIsSettingsLoaded(false);
 
       const unsubscribe = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
@@ -1614,17 +1671,28 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
               if (data.jagaGroupLink) {
                   setJagaGroupLink(data.jagaGroupLink);
               }
+              // ✅ SUKSES: Data Cloud sudah masuk, baru kita buka gemboknya!
+              setIsSettingsLoaded(true);
+              console.log("Settings loaded from Cloud.");
           } else {
-              // First time init: save defaults
+              // Jika dokumen belum ada di Cloud (Aplikasi baru pertama kali dipakai)
+              // Kita buatkan dokumen baru pakai data default
               setDoc(ref, { 
                   dpjpProfiles: initialDpjpProfiles,
                   jagaGroupLink: DEFAULT_JAGA_LINK 
               }).catch(err => console.error("Init settings error:", err));
+              
+              setIsSettingsLoaded(true);
           }
-      }, (err) => console.error("Settings Load Error:", err));
+      }, (err) => {
+          console.error("Settings Load Error:", err);
+          // ❌ GAGAL LOAD: Biarkan terkunci, jangan kasih user ngedit!
+          // Biar user sadar kalau data yang tampil itu cuma data default (palsu)
+          setIsSettingsLoaded(false);
+      });
 
       return () => unsubscribe();
-  }, [getConfigRef, userId]); // FIX: userId dependency added
+  }, [getConfigRef, userId]);
 
   // Baris ini sangat penting agar dropdown di form input mengikuti data dari Cloud
 const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles]);
@@ -1647,34 +1715,41 @@ const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles])
       }
   };
 
-  // --- FUNGSI TAMBAH DPJP (SUDAH DISESUAIKAN & DISEMPURNAKAN) ---
+  // --- FUNGSI TAMBAH DPJP (VERSI AMAN DENGAN SAFETY LOCK) ---
   const handleAddDpjp = async () => {
+      // 🔒 1. CEK GEMBOK PENGAMAN DULU
+      // Jika data Cloud belum berhasil ditarik, tolak aksi ini!
+      if (!isSettingsLoaded) {
+          alert("⛔ PENGAMAN AKTIF: Data belum termuat sempurna dari Cloud!\n\nJangan menambah data dulu agar data lama tidak tertimpa.\nCek koneksi internet, lalu Refresh browser.");
+          return;
+      }
+
       if (!newDpjpName.trim()) {
           alert("Nama DPJP tidak boleh kosong!");
           return;
       }
 
-      // 1. Cek apakah nama sudah ada (Logika asli kamu)
+      // 2. Cek apakah nama sudah ada
       const existing = dpjpProfiles.some(p => p.name.toLowerCase() === newDpjpName.trim().toLowerCase());
       if (existing) {
           alert("Nama DPJP ini sudah ada!");
           return;
       }
 
-      // 2. Format nomor WA (Penyempurnaan: 08 jadi 62)
-      let rawNumber = newDpjpWa.trim().replace(/\D/g, ''); // Hapus karakter non-angka (Logika kamu)
+      // 3. Format nomor WA
+      let rawNumber = newDpjpWa.trim().replace(/\D/g, ''); 
       if (rawNumber.startsWith('0')) {
-          rawNumber = '62' + rawNumber.slice(1); // Ubah 08... jadi 628...
+          rawNumber = '62' + rawNumber.slice(1); 
       }
 
-      // 3. Gabung & Urutkan (Logika asli kamu)
+      // 4. Gabung & Urutkan
       const newProfile = { 
           name: newDpjpName.trim(), 
           waNumber: rawNumber 
       };
       const updated = [...dpjpProfiles, newProfile].sort((a,b) => a.name.localeCompare(b.name));
 
-      // 4. Simpan ke Cloud (Pakai await agar pasti terkirim)
+      // 5. Simpan ke Cloud
       try {
           await saveConfig(updated);
           setNewDpjpName(''); 
@@ -1685,8 +1760,14 @@ const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles])
       }
   };
 
-  // --- FUNGSI HAPUS DPJP ---
+  // --- FUNGSI HAPUS DPJP (VERSI AMAN DENGAN SAFETY LOCK) ---
   const handleRemoveDpjp = async (name) => {
+      // 🔒 1. CEK GEMBOK PENGAMAN DULU
+      if (!isSettingsLoaded) {
+          alert("⛔ PENGAMAN AKTIF: Data belum termuat sempurna dari Cloud!\n\nTunggu sampai indikator merah hilang baru bisa menghapus.");
+          return;
+      }
+
       if (window.confirm(`Hapus ${name} dari daftar?`)) {
           const updated = dpjpProfiles.filter(p => p.name !== name).sort((a,b) => a.name.localeCompare(b.name));
           await saveConfig(updated);
@@ -1718,12 +1799,36 @@ const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles])
   }, [getCollectionRef, userId]); // FIX: userId dependency added
 
  
-  const pullDataForField = (field) => {
-      if (!lastHistoryRecord) return;
-      const val = lastHistoryRecord[field];
-      if (val) setFormData(p => ({ ...p, [field]: val }));
-      else console.log(`Data ${field} kosong di history.`);
-  };
+  // --- FUNGSI SALIN CERDAS (Langkah B) ---
+const pullDataForField = (field) => {
+    // 1. Cek apakah riwayat berhasil ditarik
+    if (!historyLogs || historyLogs.length === 0) {
+        alert("Belum ada riwayat catatan sebelumnya untuk pasien ini.");
+        return;
+    }
+
+    // 2. LOGIKA PENCARIAN MUNDUR (Smart Search)
+    // Cari data pertama di history yang kolom 'field'-nya TIDAK KOSONG.
+    // Jadi kalau log terbaru kosong, dia otomatis cari ke log sebelumnya.
+    const foundLog = historyLogs.find(log => log[field] && log[field].trim().length > 0);
+    
+    if (foundLog) {
+        const val = foundLog[field];
+        
+        // 3. Masukkan data ke Form
+        setFormData(prev => ({ ...prev, [field]: val }));
+        
+        // 4. Efek Visual (Ubah teks tombol jadi "Sukses!" selama 1 detik)
+        const btn = document.activeElement;
+        if(btn && btn.tagName === 'BUTTON') { 
+            const originalText = btn.innerText;
+            btn.innerText = "✅ Sukses!";
+            setTimeout(() => btn.innerText = originalText, 1000);
+        }
+    } else {
+        alert(`Data ${field.toUpperCase()} tidak ditemukan di seluruh riwayat pasien ini.`);
+    }
+};
 
   const handleInputChange = (e) => {
       const { name, value } = e.target;
@@ -1927,63 +2032,80 @@ const handleSaveQuickTtv = async (ttvString) => {
           setLoading(false);
       }
   };
+  // 4. FUNGSI UPDATE KAMAR WAITING LIST (FITUR EDIT PENSIL) ---
+  const updateWaitingListRoom = async (itemId, newRoom) => {
+      // 1. Update Tampilan Layar (Biar cepat)
+      const updatedList = waitingList.map(item => 
+          item.id === itemId ? { ...item, plannedRoom: newRoom } : item
+      );
+      setWaitingList(updatedList);
+      
+      // 2. Simpan Permanen ke Firebase
+      try {
+          const itemRef = doc(db, `artifacts/${appId}/public/data/waitingList`, itemId);
+          await updateDoc(itemRef, { plannedRoom: newRoom });
+          console.log("Sukses ganti kamar antrean");
+      } catch(e) { 
+          console.error("Gagal update WL:", e); 
+      }
+  };
 
 // --- FUNGSI KLIK PASIEN: ISI FORM & TARIK SEMUA RIWAYAT ---
-  const handleEdit = async (rec) => {
-      // 1. Siapkan Form dengan DATA LAMA (agar tidak hilang)
-      setFormData({
-          roomNumber: rec.roomNumber, 
-          name: rec.name, 
-          gender: rec.gender || '', 
-          dpjpName: rec.dpjpName,
-          raberName: rec.raberName || '', 
-          raber2Name: rec.raber2Name || '',
-          
-          // PERBAIKAN: Ambil data dari 'rec', jangan dikosongkan!
-          subjective: rec.subjective || '', 
-          objective: rec.objective || '', 
-          analysis: rec.analysis || '', 
-          planning: rec.planning || '',   
-          
-          isDischarged: false
-      });
+const handleEdit = async (rec) => {
+    // 1. Siapkan Form dengan DATA LAMA (agar tidak hilang)
+    setFormData({
+        roomNumber: rec.roomNumber, 
+        name: rec.name, 
+        gender: rec.gender || '', 
+        dpjpName: rec.dpjpName,
+        raberName: rec.raberName || '', 
+        raber2Name: rec.raber2Name || '',
+        
+        // PERBAIKAN: Ambil data dari 'rec', jangan dikosongkan!
+        subjective: rec.subjective || '', 
+        objective: rec.objective || '', 
+        analysis: rec.analysis || '', 
+        planning: rec.planning || '',   
+        
+        isDischarged: false
+    });
 
-      setCurrentRecordId(rec.id);
-      setIsEditing(true);
-      setShowRaber1(!!rec.raberName);
-      setShowRaber2(!!rec.raber2Name);
-      
-      // 2. TARIK SEMUA RIWAYAT DARI DATABASE (Auto Fetch)
-      setHistoryLogs([]); 
-      if (db && userId) {
-         try {
-             const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${rec.id}/notes`);
-             const q = query(notesRef, orderBy('createdAt', 'desc')); // Urutkan dari terbaru
-             
-             getDocs(q).then((snapshot) => {
-                 const logs = snapshot.docs.map(doc => ({
-                     ...doc.data(),
-                     updatedAt: doc.data().createdAt // Fix tanggal Invalid Date sekalian
-                 }));
+    setCurrentRecordId(rec.id);
+    setIsEditing(true);
+    setShowRaber1(!!rec.raberName);
+    setShowRaber2(!!rec.raber2Name);
+    
+    // 2. TARIK SEMUA RIWAYAT DARI DATABASE (Auto Fetch)
+    setHistoryLogs([]); 
+    if (db && userId) {
+       try {
+           const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${rec.id}/notes`);
+           const q = query(notesRef, orderBy('createdAt', 'desc')); // Urutkan dari terbaru
+           
+           // PERBAIKAN: Pakai await biar data selesai diambil dulu baru lanjut
+           const snapshot = await getDocs(q);
+           
+           const logs = snapshot.docs.map(doc => ({
+               ...doc.data(),
+               // PERBAIKAN: Konversi Timestamp Firebase ke Date Object standar JS
+               updatedAt: doc.data().createdAt?.seconds ? new Date(doc.data().createdAt.seconds * 1000) : new Date()
+           }));
 
-                 // LOGIKA PINTAR ANTI-DUPLIKAT:
-                 if (logs.length > 0) {
-                     // Jika sudah ada arsip notes (pasien baru/sudah pernah disimpan), 
-                     // Pake data logs saja (karena logs[0] sudah pasti data terbaru).
-                     setHistoryLogs(logs);
-                 } else {
-                     // Jika logs KOSONG (pasien lama/belum pernah diedit pakai sistem baru),
-                     // Baru kita pinjam data Dashboard (rec) biar riwayat gak kosong melompong.
-                     setHistoryLogs([rec]);
-                 }
-             });
-         } catch (e) {
-             console.error("Gagal tarik history:", e);
-         }
-      }
+           // LOGIKA PINTAR ANTI-DUPLIKAT:
+           if (logs.length > 0) {
+               // Jika sudah ada arsip notes, pakai itu
+               setHistoryLogs(logs);
+           } else {
+               // Jika kosong, pinjam data Dashboard (rec) biar riwayat gak kosong
+               setHistoryLogs([rec]);
+           }
+       } catch (e) {
+           console.error("Gagal tarik history:", e);
+       }
+    }
 
-      setShowInputModal(true); 
-  };
+    setShowInputModal(true); 
+};
 
   const handleDischarge = (id, name) => {
       const dischargeAction = async () => {
@@ -2468,7 +2590,7 @@ const renderDashboard = () => {
                         <span className="text-[9px] font-bold uppercase">KOSONG</span>
                         <span className="text-xl font-extrabold">{stats.emptyCount}</span>
                     </div>
-                    <div className="flex flex-col items-center justify-center bg-orange-100 border border-orange-300 text-orange-900 rounded p-2 shadow-sm">
+                    <div className="flex flex-col items-center justify-center bg-sky-100 border border-sky-300 text-sky-900 rounded p-2 shadow-sm">
                         <span className="text-[9px] font-bold uppercase">SISA LK</span>
                         <span className="text-xl font-extrabold">{stats.emptyMale}</span>
                     </div>
@@ -2572,8 +2694,11 @@ const renderDashboard = () => {
         {/* --- HEADER (REVISI: HAMBURGER MENU + FITUR BARU) --- */}
         <div className="bg-white shadow-sm px-4 h-16 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
             
-            {/* LOGO KIRI (Gaya Lama Dipertahankan) */}
-            <div className="flex flex-col items-center justify-center leading-none text-indigo-800 select-none cursor-default">
+            {/* LOGO KIRI (Bisa Diklik Kembali ke Dashboard) */}
+            <div 
+                onClick={() => setView('dashboard')} 
+                className="flex flex-col items-center justify-center leading-none text-indigo-800 select-none cursor-pointer hover:opacity-80 transition"
+            >
                 <span className="text-[12px] font-bold tracking-widest">E-</span>
                 <span className="text-sm font-bold tracking-tighter uppercase leading-none">ONTANG</span>
                 <span className="text-sm font-bold tracking-tighter uppercase leading-none">ANTING</span>
@@ -2669,6 +2794,7 @@ const renderDashboard = () => {
                     availableRooms={ROOM_LIST}
                     occupiedRooms={occupiedRooms}
                     waitingList={waitingList}
+                    onUpdateRoom={updateWaitingListRoom}
                 />
             </div>
 
@@ -2775,29 +2901,118 @@ const renderDashboard = () => {
                         </div>
                     )}
                                         
-                    {/* VIEW 3: SETELAN */}
+                    {/* VIEW 3: SETELAN (REVISI: TABEL DITAMPILKAN KEMBALI) */}
                     {view === 'settings' && (
-                         <div className="bg-white p-6 rounded shadow h-full overflow-y-auto">
+                        <div className="bg-white p-6 rounded shadow h-full overflow-y-auto">
                             <h2 className="font-bold text-lg mb-4 text-indigo-800 border-b pb-2">Pengaturan Aplikasi</h2>
-                            <div className="mb-6">
-                                <h3 className="font-bold text-gray-700 mb-2">Daftar DPJP & Nomor WA</h3>
-                                <div className="flex space-x-2 mb-3">
-                                    <input type="text" placeholder="Nama Dokter" value={newDpjpName} onChange={(e) => setNewDpjpName(e.target.value)} className="border p-2 rounded text-xs w-1/2" />
-                                    <input type="text" placeholder="Nomor WA (08xxx)" value={newDpjpWa} onChange={(e) => setNewDpjpWa(e.target.value)} className="border p-2 rounded text-xs w-1/3" />
-                                    <button onClick={handleAddDpjp} className="bg-green-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-green-700">+ Tambah</button>
+                            
+                            {/* INDIKATOR MERAH PENGAMAN */}
+                            {!isSettingsLoaded && (
+                                <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded shadow-sm animate-pulse">
+                                    <p className="font-bold text-sm">⚠️ KONEKSI TIDAK STABIL / LOADING DATA</p>
+                                    <p className="text-xs">
+                                        Sistem sedang mengambil data dokter dari Cloud. Tombol Tambah/Hapus 
+                                        <strong> DIKUNCI SEMENTARA</strong> untuk mencegah data hilang/tertimpa.
+                                        <br/>Silakan tunggu atau Refresh jika macet.
+                                    </p>
                                 </div>
-                                <div className="bg-gray-50 border rounded max-h-60 overflow-y-auto custom-scrollbar">
-                                    <table className="w-full text-xs text-left">
-                                        <thead className="bg-gray-200 text-gray-700 font-bold sticky top-0"><tr><th className="p-2">Nama DPJP</th><th className="p-2">No. WA</th><th className="p-2 text-center">Aksi</th></tr></thead>
+                            )}
+
+                            <div className={`mb-6 ${!isSettingsLoaded ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+                                <h3 className="font-bold text-gray-700 mb-2">Daftar DPJP & Nomor WA</h3>
+                                
+                                {/* Input Tambah Dokter */}
+                                <div className="flex space-x-2 mb-3">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Nama Dokter" 
+                                        value={newDpjpName} 
+                                        onChange={(e) => setNewDpjpName(e.target.value)} 
+                                        className="border p-2 rounded text-xs w-1/2 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                    />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Nomor WA (08xxx)" 
+                                        value={newDpjpWa} 
+                                        onChange={(e) => setNewDpjpWa(e.target.value)} 
+                                        className="border p-2 rounded text-xs w-1/3 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                    />
+                                    <button 
+                                        onClick={handleAddDpjp} 
+                                        disabled={!isSettingsLoaded}
+                                        className="bg-green-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-green-700 transition disabled:bg-gray-400"
+                                    >
+                                        + Tambah
+                                    </button>
+                                </div>
+
+                                {/* TABEL DAFTAR DOKTER (Ini yang tadi hilang) */}
+                                <div className="border rounded overflow-hidden bg-white shadow-sm">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-gray-100 text-xs text-gray-600 border-b">
+                                                <th className="p-2 border-r font-bold uppercase">Nama Dokter</th>
+                                                <th className="p-2 border-r font-bold uppercase">No. WA (System)</th>
+                                                <th className="p-2 text-center font-bold uppercase">Aksi</th>
+                                            </tr>
+                                        </thead>
                                         <tbody>
-                                            {dpjpProfiles.map((p, idx) => (
-                                                <tr key={idx} className="border-b last:border-0 hover:bg-white"><td className="p-2">{p.name}</td><td className="p-2 font-mono text-gray-500">{p.waNumber || '-'}</td><td className="p-2 text-center"><button onClick={() => handleRemoveDpjp(p.name)} className="text-red-500 hover:text-red-700 font-bold">Hapus</button></td></tr>
-                                            ))}
+                                            {dpjpProfiles && dpjpProfiles.length > 0 ? (
+                                                dpjpProfiles.map((p, idx) => (
+                                                    <tr key={idx} className="border-b text-xs hover:bg-indigo-50 transition">
+                                                        <td className="p-2 border-r font-medium text-gray-800">{p.name}</td>
+                                                        <td className="p-2 border-r text-gray-500 font-mono">{p.waNumber}</td>
+                                                        <td className="p-2 text-center">
+                                                            <button 
+                                                                onClick={() => handleRemoveDpjp(p.name)}
+                                                                disabled={!isSettingsLoaded}
+                                                                className="text-red-500 hover:text-red-700 font-bold px-2 py-1 border border-red-200 rounded hover:bg-red-50 transition text-[10px] disabled:text-gray-400 disabled:border-gray-200"
+                                                                title="Hapus Dokter"
+                                                            >
+                                                                🗑️ Hapus
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan="3" className="p-6 text-center text-gray-400 italic bg-gray-50">
+                                                        Belum ada data dokter. Silakan tambah data baru.
+                                                    </td>
+                                                </tr>
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
+                                
+                                <p className="text-[10px] text-gray-400 mt-2 italic">
+                                    * Nomor WA otomatis diubah ke format 628xx untuk keperluan link WhatsApp.
+                                </p>
                             </div>
-                         </div>
+                            
+                            {/* SETTING LAINNYA (JAGA GROUP LINK) */}
+                            <div className="border-t pt-4">
+                                <h3 className="font-bold text-gray-700 mb-2">Link Grup Jaga (WhatsApp)</h3>
+                                <div className="flex space-x-2">
+                                    <input 
+                                        type="text" 
+                                        placeholder="https://chat.whatsapp.com/..." 
+                                        value={jagaGroupLink} 
+                                        onChange={(e) => setJagaGroupLink(e.target.value)} 
+                                        className="border p-2 rounded text-xs flex-1 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                    />
+                                    <button 
+                                        onClick={() => {
+                                            saveConfig(dpjpProfiles); // Simpan link juga saat save config
+                                            alert('Link grup berhasil disimpan!');
+                                        }} 
+                                        className="bg-indigo-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-indigo-700 transition"
+                                    >
+                                        Simpan Link
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>
@@ -2897,120 +3112,212 @@ const renderDashboard = () => {
     </div>
   );
 };
-// --- KOMPONEN WAITING LIST (UPDATE: NOMOR URUT & ASAL RUANGAN) ---
-
-// --- RUMUS VISUAL TAGS ---
-// --- PANEL INPUT WAITING LIST (REVISI: DENGAN WARNA KAMAR) ---
-const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedRooms = [], waitingList = [] }) => {
-    if (!show) return null;
+// --- PANEL INPUT WAITING LIST (FINAL: HEADER BUTTON + EDIT KAMAR) ---
+const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedRooms = [], waitingList = [], onUpdateRoom }) => {
     
+    // State Form Input
     const [form, setForm] = useState({ 
         name: '', plannedRoom: '', originRoom: '', 
         insuranceClass: '', waNumber: '', diagnosis: '' 
     });
 
+    // State Edit Kamar (Pensil)
+    const [editingId, setEditingId] = useState(null);
+    const [tempRoom, setTempRoom] = useState('');
+
+    if (!show) return null;
+
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!form.name || !form.plannedRoom) return alert("Nama dan Rencana Kamar wajib diisi!");
         onAdd(form);
-        // Reset Form
         setForm({ name: '', plannedRoom: '', originRoom: '', insuranceClass: '', waNumber: '', diagnosis: '' });
-        onClose();
+        onClose(); // Opsional: Mau langsung tutup atau tetap buka? (Default tutup)
+    };
+
+    // Fungsi Mulai Edit
+    const startEditing = (item) => {
+        setEditingId(item.id);
+        setTempRoom(item.plannedRoom);
+    };
+
+    // Fungsi Simpan Edit
+    const saveEditing = () => {
+        if (onUpdateRoom && tempRoom) {
+            onUpdateRoom(editingId, tempRoom);
+        }
+        setEditingId(null);
     };
 
     return (
-        <div className="flex flex-col h-full bg-white shadow-2xl border-r border-indigo-200">
-            {/* Header Panel */}
-            <div className="p-4 bg-indigo-700 text-white flex justify-between items-center shadow-md">
-                <h3 className="font-bold text-sm">📝 Input Antrean Baru</h3>
-                <button onClick={onClose} className="text-white hover:bg-white/20 w-6 h-6 rounded-full flex items-center justify-center font-bold">✕</button>
+        <div className="flex flex-col h-full bg-white shadow-2xl border-r border-indigo-200 relative">
+            
+            {/* 1. HEADER (TOMBOL SIMPAN DI ATAS) */}
+            <div className="p-3 bg-indigo-700 text-white flex justify-between items-center shadow-md z-10">
+                <div>
+                    <h3 className="font-bold text-sm">📝 Input Antrean</h3>
+                    <p className="text-[10px] opacity-80">Isi data pasien inden</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={handleSubmit} className="px-3 py-1.5 text-[10px] bg-white text-indigo-700 font-bold rounded shadow hover:bg-indigo-50 transition flex items-center">
+                        💾 Simpan
+                    </button>
+                    <button onClick={onClose} className="text-white hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg">✕</button>
+                </div>
             </div>
 
-            {/* Form Scrollable */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
-                <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Kamar</label>
-                    <select 
-                        className="w-full p-2 text-xs border rounded bg-indigo-50 outline-none font-bold" 
-                        value={form.plannedRoom} 
-                        onChange={e => setForm({...form, plannedRoom: e.target.value})}
-                    >
-                        <option value="">- Pilih Kamar -</option>
-                        {availableRooms.map(r => {
-                            // LOGIKA CEK STATUS KAMAR
-                            const isOccupied = occupiedRooms.includes(r);
-                            const isBooked = waitingList.some(w => w.plannedRoom === r);
-                            
-                            let label = `${r} (Kosong)`;
-                            let style = { color: 'green' };
-
-                            if (isOccupied) {
-                                label = `${r} (🔴 Terisi)`;
-                                style = { color: 'red' };
-                            } else if (isBooked) {
-                                label = `${r} (🟡 Ada Antrean)`;
-                                style = { color: '#b45309' }; // Cokelat/Kuning Gelap
-                            }
-
-                            return <option key={r} value={r} style={style}>{label}</option>
-                        })}
-                    </select>
-                    <p className="text-[9px] text-gray-400 mt-1 italic">*Pilih kamar meskipun terisi/antre untuk masuk daftar tunggu.</p>
-                </div>
+            {/* 2. AREA TENGAH (FORM + TABEL) */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50 flex flex-col">
                 
-                <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Pasien</label>
-                    <input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="Nama lengkap..." value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
+                {/* A. FORM INPUT */}
+                <div className="p-4 space-y-3 bg-white border-b border-gray-200 mb-2 shadow-sm">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Asal Ruangan</label>
-                        <input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="IGD / Poli..." value={form.originRoom} onChange={e => setForm({...form, originRoom: e.target.value})} />
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Kelas / BPJS</label>
-                        <select className="w-full p-2 text-xs border rounded outline-none" value={form.insuranceClass} onChange={e => setForm({...form, insuranceClass: e.target.value})}>
-                            <option value="">- Pilih -</option>
-                            <option value="BPJS Kls 1">BPJS Kls 1</option>
-                            <option value="BPJS Kls 2">BPJS Kls 2</option>
-                            <option value="BPJS Kls 3">BPJS Kls 3</option>
-                            <option value="Umum/Asuransi">Umum/Asuransi</option>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Kamar</label>
+                        <select className="w-full p-2 text-xs border border-gray-300 rounded bg-white outline-none font-bold focus:ring-2 focus:ring-indigo-500" value={form.plannedRoom} onChange={e => setForm({...form, plannedRoom: e.target.value})}>
+                            <option value="">- Pilih Kamar -</option>
+                            {availableRooms.map(r => {
+                                const isOccupied = occupiedRooms.includes(r);
+                                const isBooked = waitingList.some(w => w.plannedRoom === r);
+                                let emoji = '🟢'; let className = 'text-green-700 font-bold';
+                                if (isOccupied) { emoji = '🔴'; className = 'text-red-600 font-bold'; } 
+                                else if (isBooked) { emoji = '🟡'; className = 'text-yellow-700 font-bold'; }
+                                return <option key={r} value={r} className={className}>{emoji} {r} {isOccupied ? '(Terisi)' : isBooked ? '(Antre)' : '(Kosong)'}</option>;
+                            })}
                         </select>
                     </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Pasien</label><input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="Nama..." value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Asal</label><input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="IGD/Poli..." value={form.originRoom} onChange={e => setForm({...form, originRoom: e.target.value})} /></div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Kelas</label>
+                            <select className="w-full p-2 text-xs border rounded outline-none bg-white" value={form.insuranceClass} onChange={e => setForm({...form, insuranceClass: e.target.value})}>
+                                <option value="">- Pilih -</option><option value="BPJS Kls 1">BPJS Kls 1</option><option value="BPJS Kls 2">BPJS Kls 2</option><option value="BPJS Kls 3">BPJS Kls 3</option><option value="Umum/Asuransi">Umum/Asuransi</option>
+                            </select>
+                        </div>
+                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">No. HP</label><input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="08xxx..." value={form.waNumber} onChange={e => setForm({...form, waNumber: e.target.value})} /></div>
+                    </div>
+                    <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Diagnosa</label><textarea rows="2" className="w-full p-2 text-xs border rounded outline-none resize-none" placeholder="Diagnosa..." value={form.diagnosis} onChange={e => setForm({...form, diagnosis: e.target.value})}></textarea></div>
                 </div>
 
-                <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">No. HP / WA</label>
-                    <input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="08xxx..." value={form.waNumber} onChange={e => setForm({...form, waNumber: e.target.value})} />
-                </div>
+                {/* B. TABEL ANTREAN (DENGAN FITUR EDIT KAMAR) */}
+                <div className="p-2">
+                    <h3 className="px-2 mb-1 text-[10px] font-bold text-indigo-800 uppercase tracking-wider">Daftar Antrean ({waitingList.length})</h3>
+                    {waitingList.length === 0 ? (
+                        <div className="text-center py-8 text-gray-400 italic text-xs border-2 border-dashed border-gray-200 rounded">Belum ada pasien antre.</div>
+                    ) : (
+                        <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
+                            <table className="w-full text-left">
+                                <thead className="bg-indigo-50 border-b border-indigo-100 text-[10px] uppercase text-indigo-600 font-bold">
+                                    <tr>
+                                        <th className="p-2">Target Kamar</th>
+                                        <th className="p-2">Pasien</th>
+                                        <th className="p-2 text-center">Asal</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-xs">
+                                    {waitingList.map((item) => (
+                                        <tr key={item.id} className="border-b last:border-0 hover:bg-gray-50 group">
+                                            
+                                            {/* KOLOM TARGET (BISA DIEDIT) */}
+                                            <td className="p-2 font-bold text-indigo-700 w-[130px]">
+                                                {editingId === item.id ? (
+                                                    <div className="flex items-center gap-1 animate-in zoom-in-95 duration-100">
+                                                        <select 
+                                                            className="w-full p-1 text-[10px] border border-indigo-300 rounded bg-white focus:ring-1 focus:ring-indigo-500" 
+                                                            value={tempRoom} 
+                                                            onChange={e => setTempRoom(e.target.value)}
+                                                            autoFocus
+                                                        >
+                                                            {availableRooms.map(r => (
+                                                                <option key={r} value={r}>{r}</option>
+                                                            ))}
+                                                        </select>
+                                                        <button onClick={saveEditing} className="bg-green-100 text-green-700 hover:bg-green-200 p-1 rounded border border-green-300" title="Simpan">✅</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex justify-between items-center group">
+                                                        <span>{item.plannedRoom}</span>
+                                                        <button 
+                                                            onClick={() => startEditing(item)} 
+                                                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition p-1"
+                                                            title="Ganti Kamar"
+                                                        >
+                                                            ✏️
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </td>
 
-                <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Diagnosa / Ket</label>
-                    <textarea rows="3" className="w-full p-2 text-xs border rounded outline-none resize-none" placeholder="Diagnosa medis..." value={form.diagnosis} onChange={e => setForm({...form, diagnosis: e.target.value})}></textarea>
+                                            <td className="p-2">
+                                                <div className="font-bold text-gray-800">{item.name}</div>
+                                                <div className="text-[9px] text-gray-400 truncate max-w-[100px]">{item.diagnosis || '-'}</div>
+                                            </td>
+                                            <td className="p-2 text-center text-gray-500 text-[10px]">
+                                                {item.originRoom || 'IGD'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t bg-gray-50 flex justify-end space-x-2">
-                <button onClick={onClose} className="px-4 py-2 text-xs text-gray-600 font-bold hover:bg-gray-200 rounded transition">Batal</button>
-                <button onClick={handleSubmit} className="px-6 py-2 text-xs bg-indigo-600 text-white font-bold rounded shadow hover:bg-indigo-700 transition">Simpan Antrean</button>
             </div>
         </div>
     );
 };
-// --- INPUT SIDE PANEL (VERSI MODIFIKASI: FOOTER PINDAH KE HEADER) ---
+// --- INPUT SIDE PANEL (VERSI FINAL: HEADER NAVIGASI + SMART PASTE) ---
 const InputSidePanel = ({
     showInputModal, setShowInputModal, handleSubmit, formData, handleInputChange,
     resetForm, isEditing, currentRecordId, availableRooms, dpjpOptions,
     showRaber1, setShowRaber1, showRaber2, setShowRaber2, historyLogs,
     pullDataForField, setShowTtvModal, appendText, handleDischarge, setSelectedRecordForPrint,
-    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS}) => {
+    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS
+}) => {
+    
+    // 1. STATE UNTUK SMART PASTE
+    const [showSmartPaste, setShowSmartPaste] = useState(false);
+    const [rawPasteData, setRawPasteData] = useState('');
+
     if (!showInputModal) return null;
     
-    const lacakOptions = [...LAB_CHECKS, ...RADIOLOGY_CHECKS].sort();
+    const lacakOptions = ['Darah Rutin', 'GDS', 'Ureum/Creatinin', 'SGOT/SGPT', 'Elektrolit', 'Thorax PA', 'EKG', 'USG Abdomen'];
 
-    // Fungsi Helper Tombol (Tadinya di Footer, sekarang dipakai di Header)
+    // 2. FUNGSI SMART PASTE ECALYPTUS (LOGIKA PARSER)
+    const handleProcessSmartPaste = () => {
+        if (!rawPasteData.trim()) return;
+
+        let text = rawPasteData;
+        
+        // Bersihkan kata-kata tabel Ecalyptus yang tidak perlu
+        text = text.replace(/Tanda Vital/gi, '')
+                   .replace(/Angka/gi, '')
+                   .replace(/Catatan/gi, '');
+
+        // Regex untuk memotong S-O-A-P
+        const sMatch = text.match(/Subjektif([\s\S]*?)(?=Objektif)/i);
+        const oMatch = text.match(/Objektif([\s\S]*?)(?=Assesmen|Asesmen)/i);
+        const aMatch = text.match(/(?:Assesmen|Asesmen)([\s\S]*?)(?=Rencana)/i);
+        const pMatch = text.match(/Rencana([\s\S]*)/i);
+
+        // Masukkan ke Form
+        if (sMatch && sMatch[1]) handleInputChange({ target: { name: 'subjective', value: sMatch[1].trim() } });
+        if (oMatch && oMatch[1]) handleInputChange({ target: { name: 'objective', value: oMatch[1].trim() } });
+        if (aMatch && aMatch[1]) handleInputChange({ target: { name: 'analysis', value: aMatch[1].trim() } });
+        if (pMatch && pMatch[1]) {
+            let cleanP = pMatch[1].replace(/No\. Resep[\s\S]*/i, ''); 
+            handleInputChange({ target: { name: 'planning', value: cleanP.trim() || pMatch[1].trim() } });
+        }
+
+        setShowSmartPaste(false);
+        setRawPasteData('');
+    };
+
+    // 3. FUNGSI NAVIGASI HEADER (SESUAI REQUEST ABANG)
     const handleQuickAction = (action) => {
         const tempRec = { 
             ...formData, 
@@ -3035,9 +3342,9 @@ const InputSidePanel = ({
     };
 
     return (
-        <div className="h-full bg-white border-l border-gray-300 flex flex-col shadow-xl">
+        <div className="h-full bg-white border-l border-gray-300 flex flex-col shadow-xl relative">
             
-            {/* 1. HEADER BARU (SEMUA TOMBOL NAVIGASI PINDAH KESINI) */}
+            {/* A. HEADER BARU (NAVIGASI & TOMBOL AKSI) */}
             <div className="px-3 py-2 border-b flex justify-between items-center bg-gray-50 shadow-sm z-10 flex-shrink-0">
                 <div className="leading-tight overflow-hidden mr-2">
                     <h2 className="font-bold text-xs text-gray-800 truncate max-w-[150px]">
@@ -3046,28 +3353,16 @@ const InputSidePanel = ({
                     <p className="text-[9px] text-gray-500 font-bold">{formData.roomNumber || 'Pilih Kamar'}</p>
                 </div>
                 
-                {/* GRUP TOMBOL (HEADER) */}
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                     {isEditing && (
                         <>
-                            {/* Tombol Draft/Lapor */}
-                            <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">
-                                📱
-                            </button>
-                            {/* Tombol Print */}
-                            <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print">
-                                🖨️
-                            </button>
-                            {/* Tombol Pulang */}
-                            <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Pulangkan">
-                                🚪
-                            </button>
-                            {/* Pembatas */}
+                            <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">📱</button>
+                            <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print">🖨️</button>
+                            <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Pulangkan">🚪</button>
                             <div className="h-5 w-[1px] bg-gray-300 mx-1"></div>
                         </>
                     )}
                     
-                    {/* TOMBOL SIMPAN (Disket) */}
                     <button 
                         onClick={handleSubmit} 
                         disabled={loading || !isFormReady} 
@@ -3077,19 +3372,18 @@ const InputSidePanel = ({
                         {loading ? '...' : '💾'}
                     </button>
 
-                    {/* TOMBOL BATAL / TUTUP */}
                     <button onClick={() => { setShowInputModal(false); resetForm(); }} className="p-1.5 bg-white text-gray-400 border border-gray-200 rounded hover:bg-red-50 hover:text-red-500 transition shadow-sm" title="Tutup">
                         ✕
                     </button>
                 </div>
             </div>
             
-            {/* 2. AREA SCROLL FORM (FORM ASLIMU, HANYA TOMBOL WA DIHAPUS) */}
+            {/* B. AREA SCROLL FORM */}
             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-gray-50/50">
                 <div className="p-4">
+                    {/* 1. Form Identitas */}
                     <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3">
                         <form onSubmit={handleSubmit} id="mainForm">
-                            {/* Identitas */}
                             <div className="flex space-x-2 mb-2">
                                 <div className="w-[25%]"><CustomSelect label="Km" value={formData.roomNumber} onChange={(e) => handleInputChange({ target: { name: 'roomNumber', value: e.target.value } })} options={availableRooms} /></div>
                                 <div className="w-[25%]">
@@ -3101,57 +3395,37 @@ const InputSidePanel = ({
                                 <div className="w-[50%]"><CustomInput label="Nama Pasien" name="name" value={formData.name} onChange={handleInputChange} /></div>
                             </div>
 
-                            {/* DPJP & Raber */}
                             <div className="mb-2">
                                 <div className="flex space-x-2 mb-1">
-                                    <div className="w-1/2">
-                                        <CustomSelect 
-                                            label="DPJP Utama" 
-                                            value={formData.dpjpName} 
-                                            onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} 
-                                            options={dpjpOptions} 
-                                        />
-                                        {/* ❌ TOMBOL "HUBUNGI DR..." DIHAPUS DISINI (Sesuai Permintaan) */}
-                                    </div>
+                                    <div className="w-1/2"><CustomSelect label="DPJP Utama" value={formData.dpjpName} onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} options={dpjpOptions} /></div>
                                     <div className="w-1/2">
                                         {showRaber1 ? (
-                                            <div className="relative">
-                                                <CustomSelect label="Raber 1" value={formData.raberName} onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} options={dpjpOptions} />
-                                                <button type="button" onClick={() => { setShowRaber1(false); handleInputChange({ target: { name: 'raberName', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button>
-                                            </div>
-                                        ) : (
-                                            <button type="button" onClick={() => setShowRaber1(true)} className="text-[10px] mt-6 text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 1</button>
-                                        )}
+                                            <div className="relative"><CustomSelect label="Raber 1" value={formData.raberName} onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} options={dpjpOptions} /><button type="button" onClick={() => { setShowRaber1(false); handleInputChange({ target: { name: 'raberName', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button></div>
+                                        ) : (<button type="button" onClick={() => setShowRaber1(true)} className="text-[10px] mt-6 text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 1</button>)}
                                     </div>
                                 </div>
-                                {/* Raber 2 */}
                                 {showRaber1 && (
-                                    <div className="flex space-x-2">
-                                        <div className="w-1/2"></div>
-                                        <div className="w-1/2">
-                                            {showRaber2 ? (
-                                                <div className="relative">
-                                                    <CustomSelect label="Raber 2" value={formData.raber2Name} onChange={(e) => handleInputChange({ target: { name: 'raber2Name', value: e.target.value } })} options={dpjpOptions} />
-                                                    <button type="button" onClick={() => { setShowRaber2(false); handleInputChange({ target: { name: 'raber2Name', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button>
-                                                </div>
-                                            ) : (
-                                                <button type="button" onClick={() => setShowRaber2(true)} className="text-[10px] text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 2</button>
-                                            )}
-                                        </div>
-                                    </div>
+                                    <div className="flex space-x-2"><div className="w-1/2"></div><div className="w-1/2">{showRaber2 ? (<div className="relative"><CustomSelect label="Raber 2" value={formData.raber2Name} onChange={(e) => handleInputChange({ target: { name: 'raber2Name', value: e.target.value } })} options={dpjpOptions} /><button type="button" onClick={() => { setShowRaber2(false); handleInputChange({ target: { name: 'raber2Name', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button></div>) : (<button type="button" onClick={() => setShowRaber2(true)} className="text-[10px] text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 2</button>)}</div></div>
                                 )}
                             </div>
                         </form>
                     </div>
 
-                    {/* SOAP Fields (TIDAK BERUBAH) */}
+                    {/* 2. SOAP Fields dengan Smart Paste */}
                     <div className="space-y-3">
                         <div className="flex justify-between items-center px-1 mb-2">
                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Catatan SOAP Hari Ini</span>
-                            <button type="button" onClick={handleClearSoap} className="text-[9px] bg-red-50 text-red-600 px-2 py-1 rounded border border-red-200 hover:bg-red-600 hover:text-white transition font-bold shadow-sm">
-                                🗑️ KOSONGKAN SOAP
-                            </button>
+                            <div className="flex gap-2">
+                                {/* TOMBOL SMART PASTE DITAMBAHKAN DI SINI */}
+                                <button type="button" onClick={() => setShowSmartPaste(true)} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded border border-indigo-700 hover:bg-indigo-700 transition font-bold shadow-sm flex items-center animate-pulse">
+                                    ⚡ Smart Paste
+                                </button>
+                                <button type="button" onClick={handleClearSoap} className="text-[9px] bg-red-50 text-red-600 px-2 py-1 rounded border border-red-200 hover:bg-red-600 hover:text-white transition font-bold shadow-sm">
+                                    🗑️ Reset
+                                </button>
+                            </div>
                         </div>
+
                         <CustomTextArea label="S (Subjektif)" name="subjective" value={formData.subjective} onChange={handleInputChange} 
                             onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('subjective') : null} pullLabel="Salin S Lalu" />
                         
@@ -3182,16 +3456,15 @@ const InputSidePanel = ({
                     </div>
                 </div>
 
-                {/* B. RIWAYAT (BAWAH) - TIDAK BERUBAH */}
+                {/* 3. RIWAYAT */}
                 <div className="bg-gray-100 border-t border-gray-300 flex-1 flex flex-col min-h-[300px]">
-                    <div className="p-3 bg-gray-200 border-b border-gray-300 shadow-inner">
+                     <div className="p-3 bg-gray-200 border-b border-gray-300 shadow-inner">
                         <h3 className="text-[10px] font-bold text-gray-600 uppercase flex justify-between items-center">
                             <span>🕒 Riwayat Catatan ({historyLogs.length})</span>
                             <span className="text-[9px] font-normal italic text-gray-500">Scroll untuk melihat yg lama ⬇</span>
                         </h3>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-gray-100">
+                     </div>
+                     <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-gray-100">
                         {historyLogs && historyLogs.length > 0 ? (
                             historyLogs.map((log, idx) => (
                                 <div key={idx} className="bg-white p-3 rounded-lg border border-gray-300 text-[11px] shadow-sm relative group hover:border-indigo-300 transition">
@@ -3229,7 +3502,40 @@ const InputSidePanel = ({
                 </div>
             </div>
 
-            {/* 3. FOOTER LAMA (SUDAH DIHAPUS TOTAL) */}
+            {/* C. MODAL SMART PASTE */}
+            {showSmartPaste && (
+                <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-sm rounded-lg shadow-2xl border-2 border-indigo-500 p-4 animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2">
+                                ⚡ Smart Paste Ecalyptus
+                            </h3>
+                            <button onClick={() => setShowSmartPaste(false)} className="text-gray-400 hover:text-red-500">✕</button>
+                        </div>
+                        
+                        <div className="text-[10px] text-gray-600 mb-2 bg-blue-50 p-2 rounded border border-blue-100">
+                            1. Di Ecalyptus, Blok dari <b>"Subjektif"</b> s/d <b>"Rencana"</b>.<br/>
+                            2. Copy (Ctrl+C).<br/>
+                            3. Paste di kotak bawah ini.
+                        </div>
+
+                        <textarea
+                            className="w-full h-32 border border-gray-300 rounded p-2 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none mb-3"
+                            placeholder="Paste teks Ecalyptus di sini..."
+                            value={rawPasteData}
+                            onChange={(e) => setRawPasteData(e.target.value)}
+                            autoFocus
+                        />
+
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowSmartPaste(false)} className="flex-1 py-2 text-xs border rounded hover:bg-gray-100">Batal</button>
+                            <button onClick={handleProcessSmartPaste} className="flex-1 py-2 text-xs bg-indigo-600 text-white font-bold rounded hover:bg-indigo-700 shadow-md">
+                                Proses & Masukkan 🚀
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
