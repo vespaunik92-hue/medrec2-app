@@ -65,19 +65,20 @@ const DEFAULT_DPJP_DATA = [
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
 
 const LAB_CHECKS = [
-    'Darah Rutin', 'Darah Lengkap', 'Masa Pendarahan (BT/CT)', 'PT/APTT/INR',
+    'Darah Rutin', 'HJL', 'Masa Pendarahan (BT/CT)', 'PT/APTT/INR',
     'GDS', 'GDP/2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer',
     'Ureum/Creatinin', 'SGOT/SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
     'Elektrolit (Na/K/Cl)', 'Calsium', 'Analisa Gas Darah (AGD)', 'Lactate',
-    'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum',
+    'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum', 'CD4', 'igG/igM Dengue',
     'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV',
     'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP'
+    
 ];
 
 const RADIOLOGY_CHECKS = [
     'Thorax PA/AP', 'Thorax Lateral', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
     'USG Whole Abdomen', 'USG Upper Abdomen', 'USG Lower Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Ginjal', 'USG Kandung Empedu',
-    'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax', 'CT Scan Abdomen kontras', 'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography',
+    'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Paru non-Kontras', 'CT Scan Abdomen kontras', 'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography',
     'MRI Kepala', 'MRI Vertebra', 'MRI Lutut', 'MRI Pelvis',
     'Echocardiography', 'Endoskopi', 'Kolonoskopi', 'Bronkoskopi', 'Angiography Koroner'
 ];
@@ -2223,7 +2224,7 @@ const handleEdit = async (rec) => {
       ].filter(Boolean).join('\n');
 
       const dpjpInfo = type === 'Forward' ? `\nDPJP: ${rec.dpjpName || '-'}` : ''; // Info DPJP muncul kalau Forward
-      const header = `Dokter Izin Lapor Pasien \na.n *${rec.name}* ${dpjpInfo}`;
+      const header = `Dokter Izin Lapor Pasien \na.n ${rec.name} ${dpjpInfo}`;
       const text = `${header}\n\n*S:*\n${rec.subjective || '-'}\n\n*O:*\n${rec.objective || '-'}\n\n*A:*\n${rec.analysis || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis,\nTerimakasih`;
 
       // 3. Buka WA
@@ -3270,54 +3271,144 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
         </div>
     );
 };
-// --- INPUT SIDE PANEL (VERSI FINAL: HEADER NAVIGASI + SMART PASTE) ---
+// --- INPUT SIDE PANEL (VERSI FINAL: FIX MATEPAD + SMART PASTE RESEP OBAT) ---
 const InputSidePanel = ({
     showInputModal, setShowInputModal, handleSubmit, formData, handleInputChange,
     resetForm, isEditing, currentRecordId, availableRooms, dpjpOptions,
     showRaber1, setShowRaber1, showRaber2, setShowRaber2, historyLogs,
     pullDataForField, setShowTtvModal, appendText, handleDischarge, setSelectedRecordForPrint,
-    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS
+    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS, handleDeleteRecord 
 }) => {
     
-    // 1. STATE UNTUK SMART PASTE
+    // 1. STATE & REF
     const [showSmartPaste, setShowSmartPaste] = useState(false);
     const [rawPasteData, setRawPasteData] = useState('');
+    
+    // REF UNTUK SCROLL (Fix MatePad Blank)
+    const scrollRef = useRef(null); 
+
+    useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = 0;
+        }
+    }, [currentRecordId, showInputModal]);
 
     if (!showInputModal) return null;
     
-    const lacakOptions = ['Darah Rutin', 'GDS', 'Ureum/Creatinin', 'SGOT/SGPT', 'Elektrolit', 'Thorax PA', 'EKG', 'USG Abdomen'];
+    // DATA LACAK LENGKAP
+    const lacakOptions = [
+        'Darah Rutin', 'HJL', 'Masa Pendarahan (BT/CT)', 'PT/APTT/INR',
+        'GDS', 'GDP/2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer',
+        'Ureum/Creatinin', 'SGOT/SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
+        'Elektrolit (Na/K/Cl)', 'Calsium', 'Analisa Gas Darah (AGD)', 'Lactate',
+        'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum', 'CD4', 'igG/igM Dengue',
+        'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV',
+        'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP',
+        'Thorax PA/AP', 'Thorax Lateral', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
+        'USG Whole Abdomen', 'USG Upper Abdomen', 'USG Lower Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Ginjal', 'USG Kandung Empedu',
+        'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Paru non-Kontras', 'CT Scan Abdomen kontras', 'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography',
+        'MRI Kepala', 'MRI Vertebra', 'MRI Lutut', 'MRI Pelvis',
+        'Echocardiography', 'Endoskopi', 'Kolonoskopi', 'Bronkoskopi', 'Angiography Koroner'
+    ];
 
-    // 2. FUNGSI SMART PASTE ECALYPTUS (LOGIKA PARSER)
+    // --- 2. LOGIKA SMART PASTE CERDAS (UPDATE BARU) ---
     const handleProcessSmartPaste = () => {
         if (!rawPasteData.trim()) return;
-
         let text = rawPasteData;
+
+        // A. AMBIL DATA UTAMA (S-O-A)
+        // Kita bersihkan dulu header tabel yang mengganggu tapi biarkan isinya
+        let cleanText = text
+            .replace(/Tanda Vital/gi, '')
+            .replace(/Angka/gi, '')
+            .replace(/Catatan/gi, ''); 
+            // Jangan hapus 'No. Resep' dulu, nanti kita proses
+
+        const sMatch = cleanText.match(/Subjektif([\s\S]*?)(?=Objektif)/i);
+        const oMatch = cleanText.match(/Objektif([\s\S]*?)(?=Assesmen|Asesmen)/i);
+        const aMatch = cleanText.match(/(?:Assesmen|Asesmen)([\s\S]*?)(?=Rencana)/i);
         
-        // Bersihkan kata-kata tabel Ecalyptus yang tidak perlu
-        text = text.replace(/Tanda Vital/gi, '')
-                   .replace(/Angka/gi, '')
-                   .replace(/Catatan/gi, '');
+        // B. AMBIL PLANNING (RENCANA) SAMPAI HABIS
+        // Versi lama stop di "Resep", versi baru ambil semua dulu
+        const pMatch = cleanText.match(/Rencana([\s\S]*)/i);
 
-        // Regex untuk memotong S-O-A-P
-        const sMatch = text.match(/Subjektif([\s\S]*?)(?=Objektif)/i);
-        const oMatch = text.match(/Objektif([\s\S]*?)(?=Assesmen|Asesmen)/i);
-        const aMatch = text.match(/(?:Assesmen|Asesmen)([\s\S]*?)(?=Rencana)/i);
-        const pMatch = text.match(/Rencana([\s\S]*)/i);
-
-        // Masukkan ke Form
         if (sMatch && sMatch[1]) handleInputChange({ target: { name: 'subjective', value: sMatch[1].trim() } });
         if (oMatch && oMatch[1]) handleInputChange({ target: { name: 'objective', value: oMatch[1].trim() } });
         if (aMatch && aMatch[1]) handleInputChange({ target: { name: 'analysis', value: aMatch[1].trim() } });
+
+        // C. PROSES PLANNING KHUSUS (PARSING RESEP TABEL)
         if (pMatch && pMatch[1]) {
-            let cleanP = pMatch[1].replace(/No\. Resep[\s\S]*/i, ''); 
-            handleInputChange({ target: { name: 'planning', value: cleanP.trim() || pMatch[1].trim() } });
+            let rawPlanning = pMatch[1];
+            let finalPlanning = [];
+            let prescriptionList = [];
+
+            // Pecah baris per baris untuk dianalisa
+            const lines = rawPlanning.split('\n');
+            
+            lines.forEach((line, index) => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+
+                // Cek apakah baris ini mengandung pola dosis Ecalyptus? (Contoh: "3 dd 1" atau "1 dd 1")
+                // Regex: Angka + spasi + dd + spasi + Angka
+                const dosageMatch = trimmed.match(/(\d+)\s*dd\s*(\d+)/i);
+
+                if (dosageMatch) {
+                    // JIKA KETEMU POLA "3 dd 1":
+                    // Berarti baris SEBELUMNYA kemungkinan besar adalah NAMA OBATNYA
+                    // (Karena copy dari tabel biasanya Nama Obat [Enter] Dosis)
+                    
+                    let drugName = '';
+                    // Cek baris sebelumnya (index - 1)
+                    if (index > 0) {
+                        drugName = lines[index - 1].trim();
+                        
+                        // Bersihkan jika baris obat mengandung sampah header tabel
+                        drugName = drugName.replace(/Nama Obat/i, '').replace(/No\. Resep/i, '').trim();
+                    }
+
+                    // Ubah "3 dd 1" menjadi "3x1"
+                    const doseX = dosageMatch[1]; // angka depan (3)
+                    const doseY = dosageMatch[2]; // angka belakang (1)
+                    
+                    if (drugName && drugName.length > 2) {
+                        prescriptionList.push(`• ${drugName} (${doseX}x${doseY})`);
+                    }
+                } else {
+                    // Jika BUKAN baris dosis, dan BUKAN header tabel yang tidak berguna
+                    // Masukkan ke teks Planning biasa
+                    if (
+                        !trimmed.includes('Nama Obat') && 
+                        !trimmed.includes('Aturan Pakai') && 
+                        !trimmed.includes('No. Resep') &&
+                        !trimmed.includes('Jml :') // Filter baris jumlah yg terpisah
+                    ) {
+                        // Trik: Jangan masukkan baris yang ternyata adalah Nama Obat yang sudah diambil oleh logika di atas
+                        // (Cek apakah baris *berikutnya* adalah dosis?)
+                        const nextLine = lines[index + 1] || '';
+                        if (!nextLine.match(/(\d+)\s*dd\s*(\d+)/i)) {
+                            finalPlanning.push(trimmed);
+                        }
+                    }
+                }
+            });
+
+            // GABUNGKAN HASIL
+            // 1. Teks Planning Murni (Instruksi non-obat)
+            let resultP = finalPlanning.join('\n').trim();
+            
+            // 2. Jika ada obat yang terdeteksi, tambahkan di bawahnya
+            if (prescriptionList.length > 0) {
+                resultP += `\n\n-- TERAPI OBAT --\n${prescriptionList.join('\n')}`;
+            }
+
+            handleInputChange({ target: { name: 'planning', value: resultP } });
         }
 
-        setShowSmartPaste(false);
-        setRawPasteData('');
+        setShowSmartPaste(false); setRawPasteData('');
     };
 
-    // 3. FUNGSI NAVIGASI HEADER (SESUAI REQUEST ABANG)
+    // 4. NAVIGASI HEADER
     const handleQuickAction = (action) => {
         const tempRec = { 
             ...formData, 
@@ -3326,7 +3417,6 @@ const InputSidePanel = ({
             name: formData.name,
             dpjpName: formData.dpjpName
         };
-
         if (action === 'print') setSelectedRecordForPrint(tempRec);
         if (action === 'lapor') setRecordForLapor(tempRec);
         if (action === 'discharge') handleDischarge(currentRecordId, formData.name);
@@ -3341,11 +3431,12 @@ const InputSidePanel = ({
         }
     };
 
+    // --- RENDER UTAMA ---
     return (
-        <div className="h-full bg-white border-l border-gray-300 flex flex-col shadow-xl relative">
+        <div className="h-full bg-white border-l border-gray-300 flex flex-col shadow-xl relative overflow-hidden">
             
-            {/* A. HEADER BARU (NAVIGASI & TOMBOL AKSI) */}
-            <div className="px-3 py-2 border-b flex justify-between items-center bg-gray-50 shadow-sm z-10 flex-shrink-0">
+            {/* A. HEADER BARU (STICKY) */}
+            <div className="px-3 py-2 border-b flex justify-between items-center bg-gray-50 shadow-sm z-20 flex-shrink-0 relative">
                 <div className="leading-tight overflow-hidden mr-2">
                     <h2 className="font-bold text-xs text-gray-800 truncate max-w-[150px]">
                         {isEditing ? formData.name : 'Pasien Baru'}
@@ -3359,6 +3450,10 @@ const InputSidePanel = ({
                             <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">📱</button>
                             <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print">🖨️</button>
                             <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Pulangkan">🚪</button>
+                            
+                            {handleDeleteRecord && (
+                                <button type="button" onClick={() => handleDeleteRecord(currentRecordId, formData.name)} className="p-1.5 bg-red-600 text-white border border-red-700 rounded text-[10px] shadow-sm hover:bg-red-800 ml-1" title="Hapus Data Permanen">🗑️</button>
+                            )}
                             <div className="h-5 w-[1px] bg-gray-300 mx-1"></div>
                         </>
                     )}
@@ -3379,7 +3474,7 @@ const InputSidePanel = ({
             </div>
             
             {/* B. AREA SCROLL FORM */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-gray-50/50">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-gray-50/50 relative z-0">
                 <div className="p-4">
                     {/* 1. Form Identitas */}
                     <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3">
@@ -3411,12 +3506,11 @@ const InputSidePanel = ({
                         </form>
                     </div>
 
-                    {/* 2. SOAP Fields dengan Smart Paste */}
+                    {/* 2. SOAP Fields */}
                     <div className="space-y-3">
                         <div className="flex justify-between items-center px-1 mb-2">
                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Catatan SOAP Hari Ini</span>
                             <div className="flex gap-2">
-                                {/* TOMBOL SMART PASTE DITAMBAHKAN DI SINI */}
                                 <button type="button" onClick={() => setShowSmartPaste(true)} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded border border-indigo-700 hover:bg-indigo-700 transition font-bold shadow-sm flex items-center animate-pulse">
                                     ⚡ Smart Paste
                                 </button>
@@ -3514,7 +3608,7 @@ const InputSidePanel = ({
                         </div>
                         
                         <div className="text-[10px] text-gray-600 mb-2 bg-blue-50 p-2 rounded border border-blue-100">
-                            1. Di Ecalyptus, Blok dari <b>"Subjektif"</b> s/d <b>"Rencana"</b>.<br/>
+                            1. Di Ecalyptus, Blok dari <b>"Subjektif"</b> s/d <b>Akhir Tabel Obat</b>.<br/>
                             2. Copy (Ctrl+C).<br/>
                             3. Paste di kotak bawah ini.
                         </div>
