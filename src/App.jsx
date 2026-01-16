@@ -30,12 +30,11 @@ const firebaseConfig = {
 // --- DATA STATIS ---
 
 const ROOM_LIST = [
-  'K1B1', 'K1B2', 'K2B1', 'K2B2', 'K3B1', 'K3B2', 'K4B1', 'K4B2', 'K5B1',
-  'K6B1', 'K6B2', 'K7B1', 'K8B1', 'K9B1', 'K10B1', 'K10B2', 'K11B1', 'K11B2',
+  'K1B1', 'K1B2', 'K2B1', 'K2B2', 'K3B1', 'K3B2', 'K4B1', 'K4B2', 'K5B1', 'K5B2',
+  'K6B1', 'K6B2', 'K7B1', 'K8B1', 'K9B1', 'K10B1', 'K10B2', 'K11B1',
   'K12B1', 'K13B1', 'K13B2', 'K14B1', 'K15B1', 'K15B2'
 ];
 
-const DEFAULT_JAGA_LINK = '6285133343824'; 
 
 const DEFAULT_DPJP_DATA = [
     { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },
@@ -65,7 +64,7 @@ const DEFAULT_DPJP_DATA = [
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
 
 const LAB_CHECKS = [
-    'Darah Rutin', 'HJL', 'Masa Pendarahan (BT/CT)', 'PT/APTT/INR',
+    'Darah Rutin', 'HJL', 'Masa Pendarahan (BT/CT)', 'CA125', 'PT/APTT/INR',
     'GDS', 'GDP/2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer',
     'Ureum/Creatinin', 'SGOT/SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
     'Elektrolit (Na/K/Cl)', 'Calsium', 'Analisa Gas Darah (AGD)', 'Lactate',
@@ -77,7 +76,7 @@ const LAB_CHECKS = [
 
 const RADIOLOGY_CHECKS = [
     'Thorax PA/AP', 'Thorax Lateral', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
-    'USG Whole Abdomen', 'USG Upper Abdomen', 'USG Lower Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Ginjal', 'USG Kandung Empedu',
+    'USG Whole Abdomen', 'USG Upper Abdomen', 'USG Lower Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Ginjal', 'USG Kandung Empedu', 'USG Jantung',
     'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Paru non-Kontras', 'CT Scan Abdomen kontras', 'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography',
     'MRI Kepala', 'MRI Vertebra', 'MRI Lutut', 'MRI Pelvis',
     'Echocardiography', 'Endoskopi', 'Kolonoskopi', 'Bronkoskopi', 'Angiography Koroner'
@@ -87,7 +86,8 @@ const PROCEDURES = [
     'Pasang Infus', 'Pasang Kateter', 'Pasang NGT', 'Nebulizer', 'Oksigenasi', 'Pemasangan Ventilator',
     'EKG', 'Ganti Balutan', 'Suction', 'Injeksi Extra', 'Syringe Pump', 'Trnfs  PRC, on ke , post ke , premed: , Postmed:', 'Trnfs  TC, on ke , post ke , premed: , Postmed:', 'Hemodialisa (HD)', 
     'Rawat Luka', 'Angkat Jahitan', 'Spooling Kateter', 'Bladder Training', 'Biopsi Sumsum Tulang',
-    'Parasintesis', 'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites', 'Pungsi Lumbal', 'Aspirasi Sendi'
+    'Parasintesis', 'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites', 'Pungsi Lumbal', 'Aspirasi Sendi',
+    'Nefrostomi', 'Trakeostomi', 'Debridemen', 'Monitor UOP'
 ];
 const MEDICATIONS = [
     'Koreksi KCL  mEq +  500 ml/8 Jam,  siklus on ke', 'Koreksi Meylon  mEq + Ns  100 ml/Jam', 'Koreksi CaGluconas  gr + D5 100ml', 'Bolus Novorapid 10 iu + D40 2 flash', 'Drip Insulin  iu', 'Drip Lasix  cc/jam', 'Drip Nicardipine  mcg, Kec.  cc/j, Bb  kg', 'Drip Norepinephrine  mcg, Kec.  cc/j, Bb  kg',
@@ -161,7 +161,7 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen font-sans bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col md:flex-row overflow-hidden max-h-[600px]">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col md:flex-row md:overflow-hidden md:max-h-[600px] h-auto">
         
         {/* Left Side: Visual/Branding */}
         <div className="w-full md:w-1/2 bg-gradient-to-br from-blue-600 to-indigo-800 p-10 text-white flex flex-col justify-center relative">
@@ -187,7 +187,7 @@ const LoginPage = () => {
         </div>
 
         {/* Right Side: Form */}
-        <div className="w-full md:w-1/2 p-10 bg-white flex flex-col justify-center">
+        <div className="w-full md:w-1/2 p-6 md:p-10 bg-white flex flex-col justify-center">
             <div className="mb-6 text-center md:text-left">
                 <h2 className="text-2xl font-bold text-gray-800">Selamat Datang</h2>
                 <p className="text-gray-500 text-sm">Silakan login untuk memulai sesi jaga.</p>
@@ -732,16 +732,18 @@ const TagSelector = ({ label, options, onSelect, category, placeholder }) => {
     );
 };
 
+// --- COMPONENT PRINT LAYOUT (VERSI HIGH CONTRAST - PASTI KELIHATAN) ---
 const PrintLayout = ({ record }) => {
     if (!record) return null;
 
-    // ... (kode tanggal & helper memo SAMA, tidak perlu diubah) ...
+    // Helper Tanggal Besok
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dateString = tomorrow.toLocaleDateString('id-ID', {
         day: 'numeric', month: 'numeric', year: 'numeric'
     });
 
+    // Helper Memilah Isi Planning
     const { others, labs, rads, tms } = useMemo(() => {
         if (!record.planning) return { others: [], labs: [], rads: [], tms: [] };
         const lines = record.planning.split('\n');
@@ -759,18 +761,37 @@ const PrintLayout = ({ record }) => {
 
     const hasSubjective = record.subjective && record.subjective !== '-' && record.subjective.trim() !== '';
 
+    // --- FUNGSI HIGHLIGHT (VERSI BORDER HITAM) ---
+    const renderHighlightedOthers = (textArray) => {
+        return textArray.map((line, idx) => {
+            const lower = line.toLowerCase();
+            const keywords = ['lab', 'radiologi', 'rontgen', 'usg', 'ct-scan', 'mri', 'cek darah', 'konsul', 'puasa', 'operasi', 'cito'];
+            
+            const isImportant = keywords.some(k => lower.includes(k));
+
+            if (isImportant) {
+                // Style: BORDER HITAM TEBAL + BACKGROUND GELAP DIKIT
+                return (
+                    <div key={idx} className="font-extrabold border-2 border-black bg-gray-200 px-2 py-1 my-1 rounded text-black">
+                        ⚠️ {line}
+                    </div>
+                );
+            }
+            return <div key={idx} className="my-0.5">{line}</div>;
+        });
+    };
+
     return (
-        // 👇 1. INI PENGATURAN UKURAN UTAMA (Isi Teks)
-        // Ganti 'text-xs' jadi 'text-sm' (14px) biar lebih besar & terbaca
+        // Container Utama Print
         <div className="bg-white p-0 text-sm font-sans leading-snug text-black h-full">
             
             {/* Header: DPJP & Raber */}
-            <div className="flex justify-between items-start border-b border-black pb-1 mb-2">
+            <div className="flex justify-between items-start border-b-2 border-black pb-1 mb-2">
                 <div className="flex-1">
                     <div className="font-bold text-lg uppercase tracking-wide flex items-center gap-2">
-                        {/* Nomor Kamar di depan */}
-                        <span className="text-sm font-bold border border-black px-2"> {record.roomNumber ? record.roomNumber.split('B')[0] : ''}</span>
-                        {/* Nama Pasien di belakang */}
+                        <span className="text-sm font-bold border-2 border-black px-2 py-0.5"> 
+                            {record.roomNumber ? record.roomNumber.split('B')[0] : ''}
+                        </span>
                         <span>{record.name}</span>
                     </div>
                     <div className="text-[11px] mt-0.5 flex flex-wrap gap-x-4">
@@ -787,32 +808,47 @@ const PrintLayout = ({ record }) => {
                 </div>
             </div>
 
-            {/* Layout Grid */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Layout Grid Dua Kolom */}
+            <div className="grid grid-cols-2 gap-4">
                 
                 {/* Kolom Kiri: A & P */}
-                <div className="space-y-3 border-r border-gray-200 pr-2 min-h-[400px] flex flex-col">
+                <div className="space-y-3 border-r-2 border-gray-300 pr-2 min-h-[400px] flex flex-col">
                     <div className="flex-1">
-                        {/* 👇 2. INI UKURAN JUDUL (A/P/O/S) */}
-                        {/* Ganti text-[9px] jadi text-[11px] atau text-xs biar judulnya jelas */}
-                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1 text-[11px]">A (ANALISA)</div>
-                        <div className="whitespace-pre-wrap font-sans mb-3">{record.analysis || '-'}</div>
+                        <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">A (ANALISA)</div>
+                        <div className="whitespace-pre-wrap font-sans mb-3 pl-1">{record.analysis || '-'}</div>
                     </div>
 
-                    <div className="flex-1 border-t border-dashed border-gray-300 pt-2 mt-1">
-                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1 text-[11px]">P (PLANNING)</div>
+                    <div className="flex-1 border-t-2 border-dashed border-gray-400 pt-2 mt-1">
+                        <div className="font-bold underline mb-2 bg-gray-100 inline-block px-1 text-xs">P (PLANNING)</div>
                         
-                        {/* 👇 Isi Planning ikut ukuran wadah utama (text-sm), jadi ini aman */}
-                        <div className="font-sans">
+                        <div className="font-sans pl-1">
+                            {/* 1. Teks Manual (Yang akan di-Highlight) */}
                             {others.length > 0 && (
-                                <div className="whitespace-pre-wrap mb-2 leading-relaxed">
-                                    {others.join('\n')}
+                                <div className="mb-3 leading-relaxed whitespace-pre-wrap">
+                                    {renderHighlightedOthers(others)}
                                 </div>
                             )}
-                            <div className="space-y-1 mt-1 text-xs"> {/* Item Lab/Rad/dll bisa lebih kecil dikit biar muat */}
-                                {labs.length > 0 && <div className="flex items-start"><span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Lab.</span><span className="flex-1">: {labs.join(', ')}</span></div>}
-                                {rads.length > 0 && <div className="flex items-start"><span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Rad.</span><span className="flex-1">: {rads.join(', ')}</span></div>}
-                                {tms.length > 0 && <div className="flex items-start"><span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Tndkn.</span><span className="flex-1">: {tms.join(', ')}</span></div>}
+
+                            {/* 2. Item Smart Planning (Lab/Rad/Tindakan) */}
+                            <div className="space-y-2 mt-2 text-xs border-t border-dotted pt-2"> 
+                                {labs.length > 0 && (
+                                    <div className="flex items-start bg-gray-100 border border-black p-1 rounded">
+                                        <span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Lab.</span>
+                                        <span className="flex-1 font-bold underline">: {labs.join(', ')}</span>
+                                    </div>
+                                )}
+                                {rads.length > 0 && (
+                                    <div className="flex items-start bg-gray-100 border border-black p-1 rounded">
+                                        <span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Rad.</span>
+                                        <span className="flex-1 font-bold underline">: {rads.join(', ')}</span>
+                                    </div>
+                                )}
+                                {tms.length > 0 && (
+                                    <div className="flex items-start">
+                                        <span className="font-bold w-12 flex-shrink-0 uppercase pt-0.5">Tndkn.</span>
+                                        <span className="flex-1">: {tms.join(', ')}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -821,17 +857,19 @@ const PrintLayout = ({ record }) => {
                 {/* Kolom Kanan: O & S */}
                 <div className="space-y-3 flex flex-col">
                     <div className="flex-1">
-                        <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1 text-[11px]">O (OBJEKTIF)</div>
-                        <div className="mb-2 font-mono text-[10px] grid grid-cols-2 gap-x-2 gap-y-1 text-gray-400 print:text-black border p-1 rounded bg-gray-50 print:bg-white print:border-none">
-                            <div>TD : ____</div><div>N  : ____</div><div>S  : ____</div><div>RR : ____</div><div>SpO2: ___</div><div>GCS : ___</div>
+                        <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">O (OBJEKTIF)</div>
+                        <div className="mb-2 font-mono text-lg grid grid-cols-2 gap-x-2 gap-y-1 border border-black p-1.5 rounded bg-white">
+                            <div>TD : ____</div><div>N  : ____</div>
+                            <div>S  : ____</div><div>RR : ____</div>
+                            <div>SpO2: ___</div><div>GCS : ___</div>
                         </div>
-                        <div className="whitespace-pre-wrap font-sans">{record.objective || '-'}</div>
+                        <div className="whitespace-pre-wrap font-sans pl-1">{record.objective || '-'}</div>
                     </div>
 
                     {hasSubjective && (
-                        <div className="flex-1 border-t border-dashed border-gray-300 pt-2 mt-1">
-                            <div className="font-bold underline mb-0.5 bg-gray-100 print:bg-transparent inline-block px-1 text-[11px]">S (SUBJEKTIF)</div>
-                            <div className="whitespace-pre-wrap font-sans mb-3">{record.subjective}</div>
+                        <div className="flex-1 border-t-2 border-dashed border-gray-400 pt-2 mt-1">
+                            <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">S (SUBJEKTIF)</div>
+                            <div className="whitespace-pre-wrap font-sans mb-3 pl-1">{record.subjective}</div>
                         </div>
                     )}
                 </div>
@@ -913,7 +951,7 @@ const BulkPrintView = ({ records, onClose }) => {
 // --- LOGIKA WARNA KAMAR CANGGIH ---
 
 // Daftar Kamar Single Bed (Bed Sendiri)
-const SINGLE_BED_ROOMS = ['K5B1', 'K7B1', 'K8B1', 'K9B1', 'K12B1', 'K14B1']; 
+const SINGLE_BED_ROOMS = ['K7B1', 'K8B1', 'K9B1', 'K11B1', 'K12B1', 'K14B1']; 
 // (Catatan: Saya asumsikan penamaan di database pakai B1 semua untuk single, sesuaikan jika beda)
 
 
@@ -1160,8 +1198,9 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
         if (!planningText) return null;
         const text = planningText.toLowerCase();
         const alerts = [];
-        if (text.includes('gdp') || text.includes('2jpp') || text.includes('profil lipid') || text.includes('puasa')) alerts.push('PUASA');
-        if (text.includes('usg') && (text.includes('abdomen') || text.includes('whole'))) alerts.push('PUASA & KKP');
+        if (text.includes('gdp') || text.includes('2jpp') || text.includes('profil lipid') || text.includes('asam urat') || text.includes('scan')) alerts.push('PUASA');
+        if (text.includes('whole')) alerts.push('PUASA & KKP');
+        if (text.includes('lower')) alerts.push('KKP Saja');
         if (alerts.length === 0) return null;
         return (
             <div className="flex flex-wrap gap-1 mb-1">
@@ -1424,7 +1463,7 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles) 
     let emptyCount = 0; let emptyMale = 0; let emptyFemale = 0; let emptyIso = 0;
     const occupiedRooms = activeRecords.map(r => r.roomNumber);
     const isoRooms = ['K14B1', 'K15B1', 'K15B2'];
-    const allRooms = ['K1B1', 'K1B2', 'K2B1', 'K2B2', 'K3B1', 'K3B2', 'K4B1', 'K4B2', 'K5B1', 'K6B1', 'K6B2', 'K7B1', 'K8B1', 'K9B1', 'K10B1', 'K10B2', 'K11B1', 'K11B2', 'K12B1', 'K13B1', 'K13B2', 'K14B1', 'K15B1', 'K15B2'];
+    const allRooms = ROOM_LIST;
 
     allRooms.forEach(room => {
         if (!occupiedRooms.includes(room)) {
@@ -1582,11 +1621,7 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
   // State untuk Data Dinamis (Setelan)
   const [dpjpProfiles, setDpjpProfiles] = useState(initialDpjpProfiles.map(p => ({...p, name: p.name})));
   
-  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
- 
-  // Menggunakan DEFAULT_JAGA_LINK sebagai nilai awal
-  const [jagaGroupLink, setJagaGroupLink] = useState(DEFAULT_JAGA_LINK);
-  
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);    
   const [historyLogs, setHistoryLogs] = useState([]); // Ganti jadi Array
 
   const [view, setView] = useState('dashboard'); 
@@ -1668,10 +1703,7 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
               const data = snap.data();
               if (data.dpjpProfiles && Array.isArray(data.dpjpProfiles)) {
                   setDpjpProfiles(data.dpjpProfiles);
-              }
-              if (data.jagaGroupLink) {
-                  setJagaGroupLink(data.jagaGroupLink);
-              }
+              }              
               // ✅ SUKSES: Data Cloud sudah masuk, baru kita buka gemboknya!
               setIsSettingsLoaded(true);
               console.log("Settings loaded from Cloud.");
@@ -1679,8 +1711,7 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
               // Jika dokumen belum ada di Cloud (Aplikasi baru pertama kali dipakai)
               // Kita buatkan dokumen baru pakai data default
               setDoc(ref, { 
-                  dpjpProfiles: initialDpjpProfiles,
-                  jagaGroupLink: DEFAULT_JAGA_LINK 
+                  dpjpProfiles: initialDpjpProfiles,                  
               }).catch(err => console.error("Init settings error:", err));
               
               setIsSettingsLoaded(true);
@@ -1704,10 +1735,8 @@ const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles])
       if (!ref) return;
       
       const payload = {};
-      if (newProfiles !== undefined) payload.dpjpProfiles = newProfiles;
-      if (newLink !== undefined) payload.jagaGroupLink = newLink;
-      
-      try {
+      if (newProfiles !== undefined) payload.dpjpProfiles = newProfiles;     
+            try {
           await setDoc(ref, payload, { merge: true });
           console.log("Settings saved to cloud.");
       } catch(e) {
@@ -2353,7 +2382,196 @@ const handleBulkDischarge = async (ids) => {
         `);
         printWindow.document.close();
     };  
-  
+    // --- FUNGSI CETAK CPO (FINAL: HEADER LENGKAP + PAGINATION) ---
+const handlePrintCPO = (record) => {
+    if (!record) return;
+
+    // 1. Logic Pemotongan Kamar (Misal: K1B1 -> K1)
+    const rawRoom = record.roomNumber || '';
+    // Ambil karakter sebelum huruf 'B' (misal K1B1 jadi K1)
+    // Kalau tidak ada huruf B, tampilkan apa adanya.
+    const cleanRoom = rawRoom.includes('B') ? rawRoom.split('B')[0] : rawRoom;
+
+    // 2. Ekstrak Obat
+    const extractMeds = (text) => {
+        if (!text) return [];
+        const lines = text.split('\n');
+        const meds = [];
+        let isObatSection = false;
+
+        lines.forEach(line => {
+            const t = line.trim();
+            if (t.includes('-- TERAPI OBAT --')) { isObatSection = true; return; }
+            if (isObatSection && t.startsWith('•')) {
+                const parts = t.replace('•', '').split('(');
+                const nama = parts[0].trim();
+                const dosis = parts[1] ? parts[1].replace(')', '').trim() : '';
+                meds.push({ nama, dosis });
+            }
+        });
+        
+        if (meds.length === 0) {
+             lines.forEach(line => {
+                 if (line.match(/\d\s*x\s*\d/i) || line.toLowerCase().includes('mg') || line.toLowerCase().includes('infus')) {
+                     meds.push({ nama: line, dosis: '' });
+                 }
+             });
+        }
+        return meds;
+    };
+
+    const fullMedList = extractMeds(record.planning);
+
+    // --- LOGIKA PAGINATION ---
+    const MAX_ROWS = 7; 
+    const pages = [];
+    for (let i = 0; i < fullMedList.length; i += MAX_ROWS) {
+        pages.push(fullMedList.slice(i, i + MAX_ROWS));
+    }
+
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    
+    // 3. HTML SYSTEM
+    const htmlContent = `
+        <html>
+        <head>
+            <title>Print CPO - ${record.name}</title>
+            <style>
+                @page { size: 330mm 215mm; margin: 0; }
+                
+                body { 
+                    margin: 0; padding: 0; 
+                    font-family: 'Courier New', Courier, monospace; 
+                    font-size: 10pt; 
+                    font-weight: bold; 
+                    -webkit-print-color-adjust: exact;
+                }
+
+                .page-container {
+                    position: relative;
+                    width: 330mm;
+                    height: 215mm;
+                    overflow: hidden;
+                    page-break-after: always;
+                }
+                .page-container:last-child { page-break-after: auto; }
+
+                /* Background Image */
+                .scan-background {
+                    position: absolute;
+                    top: 0; left: 0;
+                    width: 100%; height: 100%;
+                    z-index: -1;
+                    opacity: 0.4;
+                }
+                @media print { .scan-background { display: none !important; } }
+
+                /* --- CSS BARU: HEADER KIRI (RUANGAN & DPJP) --- */
+                .header-ruangan {
+                    position: absolute;
+                    top: 47mm;      /* Perkiraan tinggi kolom Ruangan */
+                    left: 13mm;      /* Mepet Kiri */
+                    width: 35mm;    /* Lebar kolom Ruangan */
+                    text-align: center;
+                    font-size: 9pt;
+                    line-height: 1.4;
+                }
+
+                .header-dpjp {
+                    position: absolute;
+                    top: 50mm;      /* Sejajar dengan Ruangan (agak turun dikit biar tengah) */
+                    left: 50mm;     /* Geser ke kolom Dokter */
+                    width: 100mm;
+                    text-align: left;
+                    font-size: 10pt;
+                }
+
+                /* --- CSS LAMA: NAMA PASIEN --- */
+                .patient-box {
+                    position: absolute;
+                    top: 14mm; right: 15mm; width: 90mm;   
+                    font-size: 10pt; text-align: left; line-height: 1.5; 
+                }
+
+                /* --- CSS LAMA: OBAT --- */
+                .med-row {
+                    position: absolute;
+                    left: 51mm; 
+                    height: 8mm; 
+                    display: flex;
+                    align-items: center;
+                    width: 150mm; 
+                }
+                .col-nama { 
+                    width: 38mm; 
+                    white-space: nowrap; 
+                    overflow: hidden; 
+                    text-overflow: ellipsis; 
+                }
+                .col-dosis { 
+                    position: absolute;
+                    left: 40mm; 
+                    width: 35mm;
+                    text-align: left;
+                    padding-left: 2mm;
+                }
+
+            </style>
+        </head>
+        <body>
+            ${pages.map((pageMeds, pageIndex) => `
+                <div class="page-container">
+                    
+                    <img src="/cpo-overlay.png" class="scan-background" alt="Mal CPO">
+
+                    <div class="header-ruangan">
+                        <div>MELATI</div>
+                        <div style="font-size: 12pt; margin-top: 2mm;">${cleanRoom}</div>
+                    </div>
+
+                    <div class="header-dpjp">
+                        ${record.dpjpName || '-'}
+                    </div>
+
+                    <div class="patient-box">
+                        <div style="padding-left: 70mm; margin-top: 2mm;">
+                            ${record.name.substring(0,25)}
+                        </div> 
+                    </div>
+
+                    ${pageMeds.map((obat, idx) => {                        
+                        const startY = 78; 
+                        const rowHeight = 18; 
+                        
+                        const currentTop = startY + (idx * rowHeight);
+                        
+                        return `
+                        <div class="med-row" style="top: ${currentTop}mm;">
+                            <div class="col-nama">${obat.nama}</div>
+                            <div class="col-dosis">${obat.dosis}</div>
+                        </div>
+                        `;
+                    }).join('')}
+
+                    ${pages.length > 1 ? `
+                        <div style="position:absolute; bottom:5mm; right:5mm; font-size:8pt;">
+                            Hal ${pageIndex + 1}/${pages.length}
+                        </div>
+                    ` : ''}
+
+                </div>
+            `).join('')}
+
+            <script>
+                setTimeout(() => { window.print(); }, 1500);
+            </script>
+        </body>
+        </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+};
   const handleExportExcel = () => {
       if (!records || records.length === 0) {
           alert("Tidak ada data untuk diexport.");
@@ -2785,7 +3003,7 @@ const renderDashboard = () => {
         <div className="relative flex flex-row max-w-7xl mx-auto lg:h-[calc(100vh-64px)] overflow-hidden">
             
             {/* 1. PANEL INPUT WAITING LIST (OVERLAY KIRI) */}
-            <div className={`absolute top-0 left-0 h-full w-full md:w-[400px] z-[60] bg-white transition-transform duration-300 ease-in-out shadow-2xl border-r ${
+            <div className={`fixed top-16 left-0 bottom-0 w-full md:w-[400px] z-[60] bg-white transition-transform duration-300 ease-in-out shadow-2xl border-r ${
                 showWaitingModal ? 'translate-x-0' : '-translate-x-full'
             }`}>
                 <WaitingListInputPanel 
@@ -2989,30 +3207,7 @@ const renderDashboard = () => {
                                 <p className="text-[10px] text-gray-400 mt-2 italic">
                                     * Nomor WA otomatis diubah ke format 628xx untuk keperluan link WhatsApp.
                                 </p>
-                            </div>
-                            
-                            {/* SETTING LAINNYA (JAGA GROUP LINK) */}
-                            <div className="border-t pt-4">
-                                <h3 className="font-bold text-gray-700 mb-2">Link Grup Jaga (WhatsApp)</h3>
-                                <div className="flex space-x-2">
-                                    <input 
-                                        type="text" 
-                                        placeholder="https://chat.whatsapp.com/..." 
-                                        value={jagaGroupLink} 
-                                        onChange={(e) => setJagaGroupLink(e.target.value)} 
-                                        className="border p-2 rounded text-xs flex-1 focus:ring-2 focus:ring-indigo-500 outline-none" 
-                                    />
-                                    <button 
-                                        onClick={() => {
-                                            saveConfig(dpjpProfiles); // Simpan link juga saat save config
-                                            alert('Link grup berhasil disimpan!');
-                                        }} 
-                                        className="bg-indigo-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-indigo-700 transition"
-                                    >
-                                        Simpan Link
-                                    </button>
-                                </div>
-                            </div>
+                            </div>                                                       
                         </div>
                     )}
                 </div>
@@ -3020,7 +3215,7 @@ const renderDashboard = () => {
 
             {/* 3. PANEL INPUT SOAP (OVERLAY KANAN) */}
             {showInputModal && (
-                <div className="absolute top-0 right-0 h-full w-full md:w-[500px] z-50 bg-white shadow-2xl border-l transition-all duration-300">
+                <div className="fixed top-16 right-0 bottom-0 w-full md:w-[500px] z-[90] bg-white shadow-2xl border-l transition-all duration-300 flex flex-col">
                     <InputSidePanel 
                         showInputModal={showInputModal} 
                         setShowInputModal={setShowInputModal}
@@ -3046,6 +3241,7 @@ const renderDashboard = () => {
                         isFormReady={formData.name && formData.roomNumber && formData.dpjpName}
                         loading={loading}
                         ALL_PLANNING_OPTIONS={ALL_PLANNING_OPTIONS}
+                        onPrintCPO={() => handlePrintCPO({ ...formData, id: currentRecordId })}
                     />
                 </div>
             )}
@@ -3058,8 +3254,7 @@ const renderDashboard = () => {
             <LaporConfirmationModal
                 patientName={recordForLapor.name}
                 // Logika pencarian nomor HP yang aman
-                dpjpNumber={dpjpProfiles.find(p => p.name === recordForLapor.dpjpName)?.waNumber}
-                jagaNumber={jagaGroupLink || DEFAULT_JAGA_LINK} 
+                dpjpNumber={dpjpProfiles.find(p => p.name === recordForLapor.dpjpName)?.waNumber}                
                 onLaporDpjp={() => handleLapor(recordForLapor, 'DPJP')}
                 onLaporJaga={() => handleLapor(recordForLapor, 'Forward')}
                 onCancel={() => setRecordForLapor(null)}
@@ -3271,141 +3466,384 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
         </div>
     );
 };
-// --- INPUT SIDE PANEL (VERSI FINAL: FIX MATEPAD + SMART PASTE RESEP OBAT) ---
+// --- INPUT SIDE PANEL (VERSI FINAL: BERSIH DARI SAMPAH TABEL & TEXT RAPI) ---
 const InputSidePanel = ({
     showInputModal, setShowInputModal, handleSubmit, formData, handleInputChange,
     resetForm, isEditing, currentRecordId, availableRooms, dpjpOptions,
     showRaber1, setShowRaber1, showRaber2, setShowRaber2, historyLogs,
     pullDataForField, setShowTtvModal, appendText, handleDischarge, setSelectedRecordForPrint,
-    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS, handleDeleteRecord 
+    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS, handleDeleteRecord, onPrintCPO
 }) => {
     
     // 1. STATE & REF
     const [showSmartPaste, setShowSmartPaste] = useState(false);
     const [rawPasteData, setRawPasteData] = useState('');
-    
-    // REF UNTUK SCROLL (Fix MatePad Blank)
     const scrollRef = useRef(null); 
+    const [showLabModal, setShowLabModal] = useState(false); 
+    const [rawLabData, setRawLabData] = useState('');
+    const [showLabTrend, setShowLabTrend] = useState(false);
+    const [labTrends, setLabTrends] = useState({});
+    const [showRadModal, setShowRadModal] = useState(false);
+    const [rawRadData, setRawRadData] = useState('');
 
     useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = 0;
-        }
+        if (scrollRef.current) scrollRef.current.scrollTop = 0;
     }, [currentRecordId, showInputModal]);
 
     if (!showInputModal) return null;
     
     // DATA LACAK LENGKAP
     const lacakOptions = [
-        'Darah Rutin', 'HJL', 'Masa Pendarahan (BT/CT)', 'PT/APTT/INR',
-        'GDS', 'GDP/2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer',
-        'Ureum/Creatinin', 'SGOT/SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
-        'Elektrolit (Na/K/Cl)', 'Calsium', 'Analisa Gas Darah (AGD)', 'Lactate',
-        'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum', 'CD4', 'igG/igM Dengue',
-        'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV',
-        'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP',
-        'Thorax PA/AP', 'Thorax Lateral', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
-        'USG Whole Abdomen', 'USG Upper Abdomen', 'USG Lower Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Ginjal', 'USG Kandung Empedu',
-        'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Paru non-Kontras', 'CT Scan Abdomen kontras', 'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography',
-        'MRI Kepala', 'MRI Vertebra', 'MRI Lutut', 'MRI Pelvis',
-        'Echocardiography', 'Endoskopi', 'Kolonoskopi', 'Bronkoskopi', 'Angiography Koroner'
+        ...LAB_CHECKS,
+        ...RADIOLOGY_CHECKS,
+        ...MEDICATIONS,
+        ...PROCEDURES,
     ];
 
-    // --- 2. LOGIKA SMART PASTE CERDAS (UPDATE BARU) ---
+    // --- HELPER: UBAH HURUF KAPITAL JADI BIASA (Title Case) ---
+    const toTitleCase = (str) => {
+        return str.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
+    };
+
+    // --- [UPDATE V4] SMART PASTE (KEYWORD DETECTIVE: S/O/A/P AUTO-SORT) ---
     const handleProcessSmartPaste = () => {
         if (!rawPasteData.trim()) return;
-        let text = rawPasteData;
 
-        // A. AMBIL DATA UTAMA (S-O-A)
-        // Kita bersihkan dulu header tabel yang mengganggu tapi biarkan isinya
+        // --- 1. HELPER FUNCTIONS ---
+        const toTitleCase = (str) => str.toLowerCase().replace(/(?:^|\s)\w/g, match => match.toUpperCase());
+        const cleanCase = (str) => {
+            if (!str) return '';
+            return str.toLowerCase().replace(/(^\s*\w|[\.\!\?]\s*\w|\n\s*\w)/g, c => c.toUpperCase());
+        };
+
+        let text = rawPasteData;
+        
+        // Bersihkan Header Ecalyptus umum
         let cleanText = text
             .replace(/Tanda Vital/gi, '')
             .replace(/Angka/gi, '')
             .replace(/Catatan/gi, ''); 
-            // Jangan hapus 'No. Resep' dulu, nanti kita proses
 
-        const sMatch = cleanText.match(/Subjektif([\s\S]*?)(?=Objektif)/i);
-        const oMatch = cleanText.match(/Objektif([\s\S]*?)(?=Assesmen|Asesmen)/i);
-        const aMatch = cleanText.match(/(?:Assesmen|Asesmen)([\s\S]*?)(?=Rencana)/i);
-        
-        // B. AMBIL PLANNING (RENCANA) SAMPAI HABIS
-        // Versi lama stop di "Resep", versi baru ambil semua dulu
+        // --- 2. CEK HEADER STANDAR (Skenario Ideal) ---
+        const sMatch = cleanText.match(/Subjektif([\s\S]*?)(?=Objektif|$)/i);
+        const oMatch = cleanText.match(/Objektif([\s\S]*?)(?=Assesmen|Asesmen|$)/i);
+        const aMatch = cleanText.match(/(?:Assesmen|Asesmen)([\s\S]*?)(?=Rencana|$)/i);
         const pMatch = cleanText.match(/Rencana([\s\S]*)/i);
 
-        if (sMatch && sMatch[1]) handleInputChange({ target: { name: 'subjective', value: sMatch[1].trim() } });
-        if (oMatch && oMatch[1]) handleInputChange({ target: { name: 'objective', value: oMatch[1].trim() } });
-        if (aMatch && aMatch[1]) handleInputChange({ target: { name: 'analysis', value: aMatch[1].trim() } });
-
-        // C. PROSES PLANNING KHUSUS (PARSING RESEP TABEL)
-        if (pMatch && pMatch[1]) {
-            let rawPlanning = pMatch[1];
-            let finalPlanning = [];
-            let prescriptionList = [];
-
-            // Pecah baris per baris untuk dianalisa
-            const lines = rawPlanning.split('\n');
+        // Jika Header Ditemukan, gunakan cara lama (Aman)
+        if (sMatch || oMatch || aMatch || pMatch) {
+            if (sMatch && sMatch[1]) handleInputChange({ target: { name: 'subjective', value: cleanCase(sMatch[1].trim()) } });
+            if (oMatch && oMatch[1]) handleInputChange({ target: { name: 'objective', value: cleanCase(oMatch[1].trim()) } });
+            if (aMatch && aMatch[1]) handleInputChange({ target: { name: 'analysis', value: cleanCase(aMatch[1].trim()) } });
             
-            lines.forEach((line, index) => {
-                const trimmed = line.trim();
-                if (!trimmed) return;
+            // Proses Planning Khusus (Untuk CPO)
+            if (pMatch && pMatch[1]) processPlanningText(pMatch[1]);
+            
+        } else {
+            // --- 3. SKENARIO "POLOSAN" (Tanpa Header) -> MODE DETEKTIF AKTIF! ---
+            
+            // Siapkan wadah untuk setiap kamar
+            let sLines = [], oLines = [], aLines = [], pLines = [];
+            
+            const lines = cleanText.split('\n');
 
-                // Cek apakah baris ini mengandung pola dosis Ecalyptus? (Contoh: "3 dd 1" atau "1 dd 1")
-                // Regex: Angka + spasi + dd + spasi + Angka
-                const dosageMatch = trimmed.match(/(\d+)\s*dd\s*(\d+)/i);
+            // DATABASE KATA KUNCI (UPDATE: SUPPORT RADIOLOGI & KESAN)
+            const keywords = {
+                S: ['mengeluh', 'keluhan', 'riwayat', 'datang', 'mual', 'muntah', 'pusing', 'nyeri', 'demam', 'batuk', 'sesak', 'bab', 'bak'],
+                
+                // Tambahkan 'thorax', 'usg', 'rontgen', 'foto' ke O
+                O: ['lacak', 'mmhg', 'gcs', 'nadi', 'suhu', 'rr', 'spo2', 'td', 'compos', 'mentis', 'apatis', 'somnolen', 'sopor', 'coma', 'akral', 'crt', 'thorax', 'usg', 'rontgen', 'foto', 'ct scan', 'mri', 'kesan', 'kesimpulan'],
+                
+                // A (Analisa) tetap fokus ke diagnosa
+                A: ['diagnosa', 'diagnosis', 'susp', 'dd', 'post op', 'post'],
+                
+                P: ['rencana', 'terapi', 'instruksi', 'infus', 'inj', 'tab', 'cap', 'drip', 'diet', 'monitor', 'nebu', 'inhalasi', 'o2', 'lpm', 'tpm', 'ml/jam', 'cc/jam', 'pro', 'konsul', 'rawat', 'pulang', 'kontrol', 'x1', 'x 1']
+            };
 
-                if (dosageMatch) {
-                    // JIKA KETEMU POLA "3 dd 1":
-                    // Berarti baris SEBELUMNYA kemungkinan besar adalah NAMA OBATNYA
-                    // (Karena copy dari tabel biasanya Nama Obat [Enter] Dosis)
-                    
-                    let drugName = '';
-                    // Cek baris sebelumnya (index - 1)
-                    if (index > 0) {
-                        drugName = lines[index - 1].trim();
-                        
-                        // Bersihkan jika baris obat mengandung sampah header tabel
-                        drugName = drugName.replace(/Nama Obat/i, '').replace(/No\. Resep/i, '').trim();
-                    }
+            lines.forEach(line => {
+                const lower = line.toLowerCase().trim();
+                if (!lower) return;
 
-                    // Ubah "3 dd 1" menjadi "3x1"
-                    const doseX = dosageMatch[1]; // angka depan (3)
-                    const doseY = dosageMatch[2]; // angka belakang (1)
-                    
-                    if (drugName && drugName.length > 2) {
-                        prescriptionList.push(`• ${drugName} (${doseX}x${doseY})`);
-                    }
-                } else {
-                    // Jika BUKAN baris dosis, dan BUKAN header tabel yang tidak berguna
-                    // Masukkan ke teks Planning biasa
-                    if (
-                        !trimmed.includes('Nama Obat') && 
-                        !trimmed.includes('Aturan Pakai') && 
-                        !trimmed.includes('No. Resep') &&
-                        !trimmed.includes('Jml :') // Filter baris jumlah yg terpisah
-                    ) {
-                        // Trik: Jangan masukkan baris yang ternyata adalah Nama Obat yang sudah diambil oleh logika di atas
-                        // (Cek apakah baris *berikutnya* adalah dosis?)
-                        const nextLine = lines[index + 1] || '';
-                        if (!nextLine.match(/(\d+)\s*dd\s*(\d+)/i)) {
-                            finalPlanning.push(trimmed);
-                        }
+                // Cek Kategori berdasarkan Prioritas
+                // 1. Cek P (Planning) dulu karena paling banyak variasi obat
+                if (keywords.P.some(k => lower.includes(k)) || /\d+\s*x\s*\d+/.test(lower) || /\d+\s*mg/.test(lower) || /\d+\s*gr/.test(lower)) {
+                    pLines.push(line);
+                }
+                // 2. Cek A (Analisa)
+                else if (keywords.A.some(k => lower.includes(k))) {
+                    aLines.push(line);
+                }
+                // 3. Cek O (Objektif) - Termasuk "Lacak"
+                else if (keywords.O.some(k => lower.includes(k))) {
+                    oLines.push(line);
+                }
+                // 4. Cek S (Subjektif)
+                else if (keywords.S.some(k => lower.includes(k))) {
+                    sLines.push(line);
+                }
+                // 5. Kalau tidak ada keyword? (Gelandangan)
+                else {
+                    // Logika Tambahan: Kalau baris sebelumnya masuk P, kemungkinan ini lanjutannya P (misal nama obat di baris baru)
+                    if (pLines.length > 0 && sLines.length === 0 && oLines.length === 0 && aLines.length === 0) {
+                        pLines.push(line);
+                    } else {
+                        // Default aman: Masukkan ke S (Catatan umum) atau P (Instruksi)?
+                        // Kita masukkan ke P saja karena biasanya instruksi pendek tanpa keyword
+                        pLines.push(line);
                     }
                 }
             });
 
-            // GABUNGKAN HASIL
-            // 1. Teks Planning Murni (Instruksi non-obat)
-            let resultP = finalPlanning.join('\n').trim();
+            // Masukkan hasil detektif ke Form
+            if (sLines.length > 0) handleInputChange({ target: { name: 'subjective', value: cleanCase(sLines.join('\n')) } });
+            if (oLines.length > 0) handleInputChange({ target: { name: 'objective', value: cleanCase(oLines.join('\n')) } });
+            if (aLines.length > 0) handleInputChange({ target: { name: 'analysis', value: cleanCase(aLines.join('\n')) } });
             
-            // 2. Jika ada obat yang terdeteksi, tambahkan di bawahnya
-            if (prescriptionList.length > 0) {
-                resultP += `\n\n-- TERAPI OBAT --\n${prescriptionList.join('\n')}`;
-            }
-
-            handleInputChange({ target: { name: 'planning', value: resultP } });
+            // Proses Planning (CPO) untuk baris-baris P
+            if (pLines.length > 0) processPlanningText(pLines.join('\n'));
         }
 
         setShowSmartPaste(false); setRawPasteData('');
+    };
+
+    // --- FUNGSI PROSES PLANNING (DIPISAH BIAR RAPI) ---
+    const processPlanningText = (rawText) => {
+        // Helper case functions (sama kayak di atas, perlu didefine ulang atau di-scope luar)
+        const toTitleCase = (str) => str.toLowerCase().replace(/(?:^|\s)\w/g, match => match.toUpperCase());
+        const cleanCase = (str) => { if (!str) return ''; return str.toLowerCase().replace(/(^\s*\w|[\.\!\?]\s*\w|\n\s*\w)/g, c => c.toUpperCase()); };
+
+        let finalPlanning = [];
+        let prescriptionList = [];
+        const lines = rawText.split('\n');
+
+        lines.forEach((line, index) => {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+            const lowerLine = trimmed.toLowerCase();
+
+            // Filter Sampah Header
+            if (lowerLine.match(/nama obat|nama resep|aturan pakai|cara penggunaan|no\. resep|^resep -|^-$|^_$/)) return;
+
+            let isMedicine = false;
+            let drugName = '';
+            let dosage = '';
+
+            // DETEKSI POLA OBAT
+            const tableMatch = trimmed.match(/(\d+)\s*dd\s*(\d+)/i); // 3 dd 1
+            const manualMatch = trimmed.match(/(.*?)\s+(\d+\s*[xX]\s*[\d\.,]+.*)/); // 3x1
+            const infusMatch = trimmed.match(/(.*?)\s+(\d+\s*(?:tpm|cc\/jam|ml\/jam|tetes))/i); // 20 tpm
+            const nebuMatch = trimmed.match(/(?:nebu|inhalasi|uap)\s+(.*)/i); // Nebu Ventolin
+            const freqMatch = trimmed.match(/(.*?)\s+(\/\s*\d+\s*(?:jam|j)|k\/p|prn)/i); // / 8jam
+
+            if (tableMatch) {
+                if (index > 0) {
+                    let prevLine = lines[index - 1].trim().replace(/Nama Obat|No\. Resep|-/gi, '').trim();
+                    if (prevLine.length > 2) { drugName = prevLine; dosage = `${tableMatch[1]}x${tableMatch[2]}`; isMedicine = true; }
+                }
+            } 
+            else if (manualMatch) { drugName = manualMatch[1].trim(); dosage = manualMatch[2].trim().replace(/\s*[xX]\s*/, 'x'); if (drugName.length > 2) isMedicine = true; }
+            else if (infusMatch) { drugName = infusMatch[1].trim(); dosage = infusMatch[2].trim(); if (!drugName) drugName = "Cairan Infus"; isMedicine = true; }
+            else if (nebuMatch) { drugName = "Nebu " + nebuMatch[1].trim(); dosage = "Sesuai Jadwal"; isMedicine = true; }
+            else if (freqMatch) { drugName = freqMatch[1].trim(); dosage = freqMatch[2].trim(); if (drugName.length > 2) isMedicine = true; }
+
+            if (isMedicine) {
+                prescriptionList.push(`• ${toTitleCase(drugName)} (${dosage})`);
+            } else {
+                const nextLine = lines[index + 1] || '';
+                if (!nextLine.match(/(\d+)\s*dd\s*(\d+)/i)) {
+                    finalPlanning.push(cleanCase(trimmed));
+                }
+            }
+        });
+
+        let resultP = finalPlanning.join('\n').trim();
+        if (prescriptionList.length > 0) {
+            resultP += `\n\n-- TERAPI OBAT --\n${prescriptionList.join('\n')}`;
+        }
+        handleInputChange({ target: { name: 'planning', value: resultP } });
+    };
+
+// --- [UPDATE] FUNGSI SMART LAB (VERTICAL & AUTO CLEAN) ---
+    const processLabData = () => {
+        if (!rawLabData) return;
+        
+        // 1. Pecah per baris
+        const lines = rawLabData.split('\n');
+        let cleanResults = [];
+
+        // Database Pola Regex (Untuk Standardisasi biar Terbaca di Tren)
+        const patterns = [
+            { key: 'GDS', reg: /(?:GDS|Gula Darah Sewaktu)/i },
+            { key: 'Na', reg: /(?:Natrium|Na)/i }, // Cukup deteksi nama dulu
+            { key: 'K', reg: /(?:Kalium|K)/i },
+            { key: 'Cl', reg: /(?:Clorida|Cl|Klorida)/i },
+            { key: 'Ur', reg: /(?:Ureum|Ur)/i },
+            { key: 'Cr', reg: /(?:Kreatinin|Creatinin|Cr)/i },
+            { key: 'Hb', reg: /(?:Hemoglobin|Hb)/i },
+            { key: 'Leu', reg: /(?:Leukosit|Leu)/i },
+            { key: 'Plt', reg: /(?:Trombosit|Plt)/i },
+            { key: 'Ht', reg: /(?:Hematokrit|Ht)/i },
+            { key: 'SGOT', reg: /(?:SGOT|AST|Aspartate)/i },
+            { key: 'SGPT', reg: /(?:SGPT|ALT|Alanine)/i },
+            { key: 'Alb', reg: /(?:Albumin|Alb)/i },
+            { key: 'PT', reg: /\bPT\b/i }, // Pakai \b biar ga ketuker sama aPTT
+            { key: 'APTT', reg: /APTT/i },
+            { key: 'INR', reg: /INR/i },
+        ];
+
+        lines.forEach(line => {
+            // 2. Bersihkan Spasi Aneh Ecalyptus
+            // Mengubah "Hemoglobin       12.5      g/dL" jadi "Hemoglobin 12.5 g/dL"
+            let cleanLine = line.replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
+            
+            if (!cleanLine) return;
+
+            // 3. Buang Header Tabel Sampah
+            if (cleanLine.match(/^(pemeriksaan|hasil|satuan|nilai rujukan|status|riwayat|nama tes)$/i)) return;
+            if (cleanLine.match(/----------/)) return;
+
+            let matchedKey = null;
+            let value = '';
+
+            // 4. CEK APAKAH INI ITEM YANG DIKENAL?
+            for (let p of patterns) {
+                if (cleanLine.match(p.reg)) {
+                    matchedKey = p.key;
+                    
+                    // Coba ambil angkanya saja dari baris itu
+                    // Cari angka (bisa desimal, bisa ribuan pake titik)
+                    const numMatch = cleanLine.match(/(\d{1,3}(?:\.\d{3})*(?:,\d+)?(?:\.\d+)?)/);
+                    if (numMatch) {
+                        value = numMatch[0];
+                    }
+                    break; 
+                }
+            }
+
+            if (matchedKey && value) {
+                // SKENARIO A: Item Dikenal (Hb, Plt, dll) -> FORMAT ULANG STANDAR
+                // Hasil: "Hb 10.5" (Rapi, Trend Aman)
+                cleanResults.push(`${matchedKey} ${value}`);
+            } else {
+                // SKENARIO B: Item Tidak Dikenal (CA125, Ferritin, dll) -> MASUKKAN APA ADANYA
+                // Syarat: Harus ada angka di baris itu (biar bukan judul doang)
+                if (/\d/.test(cleanLine)) {
+                     // Bersihkan kata-kata sampah "High/Low/Normal" dari Ecalyptus
+                     let cleanedUnknown = cleanLine
+                        .replace(/(High|Low|Normal|\*)/ig, '')
+                        .replace(/mg\/dL|mmol\/L|g\/dL|\/uL|U\/L/g, '') // Hapus satuan biar singkat (Opsional)
+                        .trim();
+                     
+                     cleanResults.push(cleanedUnknown);
+                }
+            }
+        });
+
+        if (cleanResults.length > 0) {
+            // 5. GABUNG PAKAI ENTER (\n) - SESUAI REQUEST
+            const finalString = "Lab:\n" + cleanResults.join('\n');
+            
+            // Masukkan ke kolom O
+            appendText('objective', finalString);
+        } else {
+            alert("Data tidak terbaca. Pastikan copy text yang mengandung angka hasil lab.");
+        }
+        
+        setRawLabData('');
+        setShowLabModal(false);
+    };
+
+    // --- FUNGSI PROSES RADIOLOGI (SIMPLE) ---
+    const processRadData = () => {
+        if (!rawRadData.trim()) return;
+
+        // Bersihkan spasi berlebih
+        let cleanText = rawRadData.trim();
+
+        // Format: "Rad: [Isi Kesan]"
+        const finalString = `Rad:\n${cleanText}`;
+
+        // Masukkan ke kolom O
+        appendText('objective', finalString);
+
+        setRawRadData('');
+        setShowRadModal(false);
+    };
+
+    // --- [BARU] FUNGSI 2: ANALISA TREN LAB DARI RIWAYAT (MINING DATA) ---
+    const analyzeLabTrends = () => {
+        // Gabung Data Hari Ini + Riwayat Lama
+        const currentData = { 
+            objective: formData.objective, 
+            updatedAt: new Date() 
+        };
+        // Balik urutan: Dari Lama -> Baru
+        const allLogs = [...historyLogs].reverse(); 
+        allLogs.push(currentData); 
+
+        const trends = {
+            'Hb': [], 'Leu': [], 'Plt': [], 'Ht': [], 
+            'GDS': [], 'Na': [], 'K': [], 'Cl': [], 'Alb': [], 'Cr': [], 'Ur': []
+        };
+
+        const patterns = {
+            'Hb': /(?:Hb|Hemoglobin)[\s:.-]*(\d+(?:\.\d+)?)/i,
+            'Leu': /(?:Leu|Leukosit)[\s:.-]*(\d{1,3}(?:\.?\d{3})*)/i,
+            'Plt': /(?:Plt|Trombosit|Trombo)[\s:.-]*(\d{1,3}(?:\.?\d{3})*)/i,
+            'Ht': /(?:Ht|Hematokrit)[\s:.-]*(\d+(?:\.\d+)?)/i,
+            'GDS': /(?:GDS|Gula Darah)[\s:.-]*(\d{2,3})/i,
+            'Na': /(?:Na|Natrium)[\s:.-]*(\d{2,3})/i,
+            'K': /(?:K|Kalium)[\s:.-]*(\d+(?:\.\d+)?)/i,
+            'Cl': /(?:Cl|Clorida)[\s:.-]*(\d{2,3})/i,
+            'Ur': /(?:Ur|Ureum)[\s:.-]*(\d{2,3})/i,
+            'Cr': /(?:Cr|Kreatinin)[\s:.-]*(\d+(?:\.\d+)?)/i,
+            'Alb': /(?:Alb|Albumin)[\s:.-]*(\d+(?:\.\d+)?)/i,
+        };
+
+        allLogs.forEach(log => {
+            if (!log.objective) return;
+            const text = log.objective;
+            
+            // Format Tanggal (Tgl/Bln)
+            const dateObj = log.updatedAt && log.updatedAt.seconds ? new Date(log.updatedAt.seconds * 1000) : (log.updatedAt || new Date());
+            const dateStr = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'numeric' });
+
+            Object.keys(patterns).forEach(key => {
+                const match = text.match(patterns[key]);
+                if (match) {
+                    trends[key].push({ date: dateStr, val: match[1] });
+                }
+            });
+        });
+
+        setLabTrends(trends);
+        setShowLabTrend(!showLabTrend); // Buka/Tutup Panel
+    };
+
+    // --- [UPDATE] MASUKKAN TREN KE KOLOM O (DENGAN TANGGAL) ---
+    const insertTrendToO = (key) => {
+        const data = labTrends[key];
+        if (!data || data.length === 0) return;
+
+        // 1. Ambil maksimal 4 data terakhir biar gak kepanjangan
+        const lastItems = data.slice(-4);
+
+        // 2. Cek Tanggal Hari Ini (Format: 14/1)
+        const todayObj = new Date();
+        const todayStr = todayObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'numeric' });
+
+        // 3. Susun Format: "Angka (Tanggal)"
+        const valueChain = lastItems.map(d => {
+            // Kalau tanggalnya sama dengan hari ini, tulis "Hari ini" (opsional, atau tetap tanggal)
+            const dateLabel = d.date === todayStr ? 'Hari ini' : d.date;
+            return `${d.val} (${dateLabel})`;
+        }).join(' -> ');
+
+        // 4. Format Akhir: "Hb: 10.5 (12/1) -> 11.0 (Hari ini)"
+        // (Kata "Tren" SUDAH DIHAPUS sesuai request)
+        const finalString = `${key}: ${valueChain}`;
+
+        appendText('objective', finalString);
     };
 
     // 4. NAVIGASI HEADER
@@ -3431,11 +3869,32 @@ const InputSidePanel = ({
         }
     };
 
+    // --- [LOGIKA BARU] URUTAN DPJP PRIORITAS (VIP LIST) ---
+    const priorityDocs = [
+        "dr. Delvi, Sp.PD",
+        "dr. Dian Ekowati, Sp.PD",
+        "dr. Evan, Sp.P",
+        "dr. Priyo, Sp.PD",
+        "dr. Risa, Sp.PD",
+        "dr. Susilo, Sp.PD"
+    ];
+
+    // Sorting: Dokter VIP di atas, sisanya urut Abjad
+    const sortedDpjpOptions = [...(dpjpOptions || [])].sort((a, b) => {
+        const idxA = priorityDocs.indexOf(a);
+        const idxB = priorityDocs.indexOf(b);
+
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB; // Sesama VIP urut sesuai list
+        if (idxA !== -1) return -1; // A adalah VIP -> naik
+        if (idxB !== -1) return 1;  // B adalah VIP -> naik
+        return a.toString().localeCompare(b.toString()); // Sisanya A-Z
+    });
+
     // --- RENDER UTAMA ---
     return (
         <div className="h-full bg-white border-l border-gray-300 flex flex-col shadow-xl relative overflow-hidden">
             
-            {/* A. HEADER BARU (STICKY) */}
+            {/* A. HEADER BARU */}
             <div className="px-3 py-2 border-b flex justify-between items-center bg-gray-50 shadow-sm z-20 flex-shrink-0 relative">
                 <div className="leading-tight overflow-hidden mr-2">
                     <h2 className="font-bold text-xs text-gray-800 truncate max-w-[150px]">
@@ -3447,9 +3906,11 @@ const InputSidePanel = ({
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                     {isEditing && (
                         <>
+                            {/* TOMBOL OBAT (CPO) - Sambungkan onPrintCPO disini */}
+                            <button type="button" onClick={onPrintCPO} className="p-1.5 bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] shadow-sm hover:bg-blue-200 ml-1" title="Cetak CPO (Obat)">💊</button>
                             <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">📱</button>
-                            <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print">🖨️</button>
-                            <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Pulangkan">🚪</button>
+                            <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print">🖨️</button>                            
+                            <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Pulangkan">🚪</button>                            
                             
                             {handleDeleteRecord && (
                                 <button type="button" onClick={() => handleDeleteRecord(currentRecordId, formData.name)} className="p-1.5 bg-red-600 text-white border border-red-700 rounded text-[10px] shadow-sm hover:bg-red-800 ml-1" title="Hapus Data Permanen">🗑️</button>
@@ -3492,7 +3953,7 @@ const InputSidePanel = ({
 
                             <div className="mb-2">
                                 <div className="flex space-x-2 mb-1">
-                                    <div className="w-1/2"><CustomSelect label="DPJP Utama" value={formData.dpjpName} onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} options={dpjpOptions} /></div>
+                                    <CustomSelect label="DPJP Utama" value={formData.dpjpName} onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} options={sortedDpjpOptions} />
                                     <div className="w-1/2">
                                         {showRaber1 ? (
                                             <div className="relative"><CustomSelect label="Raber 1" value={formData.raberName} onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} options={dpjpOptions} /><button type="button" onClick={() => { setShowRaber1(false); handleInputChange({ target: { name: 'raberName', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button></div>
@@ -3510,9 +3971,9 @@ const InputSidePanel = ({
                     <div className="space-y-3">
                         <div className="flex justify-between items-center px-1 mb-2">
                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Catatan SOAP Hari Ini</span>
-                            <div className="flex gap-2">
-                                <button type="button" onClick={() => setShowSmartPaste(true)} className="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded border border-indigo-700 hover:bg-indigo-700 transition font-bold shadow-sm flex items-center animate-pulse">
-                                    ⚡ Smart Paste
+                            <div className="flex gap-1">                                
+                                <button type="button" onClick={() => setShowSmartPaste(true)} className="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded border border-indigo-700 hover:bg-indigo-700 transition font-bold shadow-sm flex items-center animate-pulse">
+                                    ⚡ Paste
                                 </button>
                                 <button type="button" onClick={handleClearSoap} className="text-[9px] bg-red-50 text-red-600 px-2 py-1 rounded border border-red-200 hover:bg-red-600 hover:text-white transition font-bold shadow-sm">
                                     🗑️ Reset
@@ -3520,15 +3981,81 @@ const InputSidePanel = ({
                             </div>
                         </div>
 
+                        {/* PANEL TREN LAB (AKAN MUNCUL JIKA DIKLIK) */}
+                        {showLabTrend && (
+                            <div className="mb-2 bg-orange-50 border border-orange-200 rounded-lg p-2 animate-in slide-in-from-top-2">
+                                <div className="flex justify-between items-center mb-2 border-b border-orange-200 pb-1">
+                                    <h4 className="text-[10px] font-bold text-orange-800 uppercase">Riwayat Hasil Lab (Auto-Detect)</h4>
+                                    <button onClick={() => setShowLabTrend(false)} className="text-orange-400 hover:text-orange-600 font-bold text-xs">✕</button>
+                                </div>
+                                
+                                <div className="grid grid-cols-3 gap-2">
+                                    {Object.keys(labTrends).map(key => {
+                                        const items = labTrends[key];
+                                        if (items.length < 2) return null; // Sembunyikan kalau datanya cuma 1 (Gak ada tren)
+
+                                        // Ambil 4 data terakhir
+                                        const lastItems = items.slice(-4); 
+                                        const displayStr = lastItems.map(i => i.val).join(' → ');
+
+                                        return (
+                                            <button 
+                                                key={key} 
+                                                type="button"
+                                                onClick={() => insertTrendToO(key)}
+                                                className="col-span-3 text-left bg-white border border-orange-100 p-2 rounded hover:bg-orange-100 transition group flex flex-col shadow-sm"
+                                                title={`Klik untuk masukkan tren ${key} ke kolom O`}
+                                            >
+                                                <div className="flex justify-between w-full">
+                                                    <span className="font-bold text-[10px] text-gray-700">{key}</span>
+                                                    <span className="text-[9px] text-green-600 font-bold opacity-0 group-hover:opacity-100">+ Masukkan</span>
+                                                </div>
+                                                <div className="text-[10px] font-mono text-indigo-900 mt-1 truncate w-full">
+                                                    {displayStr}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {Object.values(labTrends).every(arr => arr.length < 2) && (
+                                    <div className="text-center text-[10px] text-gray-400 italic py-2">
+                                        Data kurang untuk membentuk tren (Min. 2 hari).
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <CustomTextArea label="S (Subjektif)" name="subjective" value={formData.subjective} onChange={handleInputChange} 
                             onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('subjective') : null} pullLabel="Salin S Lalu" />
                         
                         <CustomTextArea label="O (Objektif)" name="objective" value={formData.objective} onChange={handleInputChange} 
                             onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('objective') : null} pullLabel="Salin O Lalu"
-                            extraButtons={<button type="button" onClick={() => setShowTtvModal(true)} className="text-[9px] bg-green-100 text-green-700 px-2 rounded border border-green-300 font-bold hover:bg-green-200">+ TTV</button>} 
+                            extraButtons={
+                                <div className="flex gap-1">
+                                    {/* 1. TOMBOL TREN */}
+                                    <button type="button" onClick={analyzeLabTrends} className={`text-[9px] px-2 py-0.5 rounded border font-bold shadow-sm transition ${showLabTrend ? 'bg-orange-600 text-white border-orange-700' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'}`} title="Lihat Grafik Tren Lab">
+                                        📈 Tren
+                                    </button>
+
+                                    {/* 2. TOMBOL LAB */}
+                                    <button type="button" onClick={() => setShowLabModal(true)} className="text-[9px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition font-bold shadow-sm" title="Input Hasil Lab">
+                                        🧪 Lab
+                                    </button>
+
+                                    {/* 3. TOMBOL RAD (SUDAH AKTIF) */}
+                                    <button type="button" onClick={() => setShowRadModal(true)} className="text-[9px] bg-gray-50 text-gray-700 px-2 py-0.5 rounded border border-gray-200 hover:bg-gray-100 transition font-bold shadow-sm" title="Input Kesan Radiologi">
+                                        ☢️ Rad
+                                    </button>
+
+                                    {/* 4. TOMBOL TTV (YANG LAMA) */}
+                                    <button type="button" onClick={() => setShowTtvModal(true)} className="text-[9px] bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-200 hover:bg-green-100 transition font-bold shadow-sm">
+                                        + TTV
+                                    </button>
+                                </div>
+                            } 
                         >
                             <div className="mb-1">
-                                <TagSelector label="" options={lacakOptions} placeholder="Lacak Lab/Rad..." category="Lacak" onSelect={(_, item) => appendText('objective', `Lacak ${item}`)} />
+                                <TagSelector label="" options={lacakOptions} placeholder="Lacak Lab/Rad..." category="Lacak" onSelect={(_, item) => appendText('objective', `Lacak/Lapor ${item}`)} />
                             </div>
                         </CustomTextArea>
 
@@ -3630,6 +4157,69 @@ const InputSidePanel = ({
                     </div>
                 </div>
             )}
+            {showLabModal && (
+                <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-sm rounded-lg shadow-2xl border-2 border-blue-500 p-4 animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
+                                🧪 Paste Hasil Lab
+                            </h3>
+                            <button onClick={() => setShowLabModal(false)} className="text-gray-400 hover:text-red-500">✕</button>
+                        </div>
+                        
+                        <div className="text-[10px] text-gray-600 mb-2 bg-blue-50 p-2 rounded border border-blue-100">
+                            Paste hasil lab mentah (GDS, Elektrolit, dll) di bawah. Sistem akan merapikannya ke kolom O.
+                        </div>
+
+                        <textarea
+                            className="w-full h-32 border border-gray-300 rounded p-2 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none mb-3"
+                            placeholder="Contoh Paste:&#10;Gula Darah Sewaktu 199 High&#10;Natrium 137..."
+                            value={rawLabData}
+                            onChange={(e) => setRawLabData(e.target.value)}
+                            autoFocus
+                        />
+
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowLabModal(false)} className="flex-1 py-2 text-xs border rounded hover:bg-gray-100">Batal</button>
+                            <button onClick={processLabData} className="flex-1 py-2 text-xs bg-blue-600 text-white font-bold rounded hover:bg-blue-700 shadow-md">
+                                Proses ke O ⬇️
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* --- MODAL RADIOLOGI BARU --- */}
+            {showRadModal && (
+                <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-sm rounded-lg shadow-2xl border-2 border-gray-500 p-4 animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                ☢️ Input Radiologi
+                            </h3>
+                            <button onClick={() => setShowRadModal(false)} className="text-gray-400 hover:text-red-500">✕</button>
+                        </div>
+                        
+                        <div className="text-[10px] text-gray-600 mb-2 bg-gray-50 p-2 rounded border border-gray-100">
+                            Paste bagian <b>"KESAN"</b> atau <b>"KESIMPULAN"</b> saja dari hasil bacaan radiologi.
+                        </div>
+
+                        <textarea
+                            className="w-full h-32 border border-gray-300 rounded p-2 text-xs font-mono focus:ring-2 focus:ring-gray-500 outline-none mb-3"
+                            placeholder="Contoh:&#10;Cor tak membesar&#10;Pulmo: Infiltrat di apeks kanan..."
+                            value={rawRadData}
+                            onChange={(e) => setRawRadData(e.target.value)}
+                            autoFocus
+                        />
+
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowRadModal(false)} className="flex-1 py-2 text-xs border rounded hover:bg-gray-100">Batal</button>
+                            <button onClick={processRadData} className="flex-1 py-2 text-xs bg-gray-700 text-white font-bold rounded hover:bg-gray-800 shadow-md">
+                                Masukkan ke O ⬇️
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -3643,7 +4233,6 @@ const App = () => {
   const [userRole, setUserRole] = useState(null);
 
 // --- FUNGSI BARU UNTUK MENGAMBIL ROLE ---
-
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
