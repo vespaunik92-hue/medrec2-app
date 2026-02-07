@@ -91,7 +91,7 @@ const PROCEDURES = [
     'EKG', 'Ganti Balutan', 'Suction', 'Injeksi Extra', 'Syringe Pump', 'Hemodialisa (HD)', 
     'Rawat Luka', 'Angkat Jahitan', 'Spooling NGT', 'Spooling Kateter', 'Bladder Training', 'Biopsi Sumsum Tulang',
     'Parasintesis', 'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites', 'Pungsi Lumbal', 'Aspirasi Sendi',
-    'Nefrostomi', 'Trakeostomi', 'Debridemen', 'Monitor UOP'
+    'Nefrostomi', 'Trakeostomi', 'Debridemen', 'Monitor UOP', 'Balance Cairan', 'Pasang CDL'
 ];
 const MEDICATIONS = [
     'Koreksi KCL  mEq +  500 ml/8 Jam,  siklus on ke', 'Koreksi Meylon  mEq + Ns  100 ml/j', 'Koreksi CaGluconas  gr + D5 100ml', 'Bolus Novorapid 10 iu + D40 2 flash',
@@ -765,7 +765,7 @@ const PrintLayout = ({ record }) => {
             const lower = line.toLowerCase();
             
             // 1. KELOMPOK HORE (BLPL)
-            const dischargeKeywords = ['blpl', 'rblpl', 'pulang', 'boleh pulang', 'aps'];
+            const dischargeKeywords = ['blpl', 'rblpl', 'pulang', 'boleh pulang'];
             if (dischargeKeywords.some(k => lower.includes(k))) {
                 return (
                     // GANTI text-[10px] JADI text-xs
