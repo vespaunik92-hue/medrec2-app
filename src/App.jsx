@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { 
     getFirestore, 
     collection, 
@@ -14,8 +13,16 @@ import {
     Timestamp, 
     orderBy, 
     getDocs,
-    where,
+    getDoc,
 } from 'firebase/firestore';
+
+import Cashflow from './components/Cashflow';
+import { 
+    LEFT_ROOMS, RIGHT_ROOMS, ROOM_LIST, 
+    DEFAULT_DPJP_DATA, LAB_CHECKS, RADIOLOGY_CHECKS, 
+    PROCEDURES, MEDICATIONS 
+} from './constants';
+import { LogOut, Wallet, FileText, ChevronLeft } from 'lucide-react';
 
 // --- Global Firebase Configuration ---
 const firebaseConfig = {
@@ -27,220 +34,7 @@ const firebaseConfig = {
   appId: "1:1097108054720:web:a53efbaf9882d5086d0325"
 };
 
-// --- DATA STATIS ---
-
-const ROOM_LIST = [
-  'K1B1', 'K1B2', 'K2B1', 'K2B2', 'K3B1', 'K3B2', 'K4B1', 'K4B2', 'K5B1', 'K5B2',
-  'K6B1', 'K6B2', 'K7B1', 'K8B1', 'K9B1', 'K10B1', 'K10B2', 'K11B1',
-  'K12B1', 'K13B1', 'K13B2', 'K14B1', 'K15B1', 'K15B2'
-];
-
-
-const DEFAULT_DPJP_DATA = [
-    { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },
-    { name: 'dr. Susilo, Sp.PD', waNumber: '6282119395835' },
-    { name: 'dr. Dian Ekowati, Sp.PD', waNumber: '6281210680279' },
-    { name: 'dr. Priyo, Sp.PD', waNumber: '62811220364' },
-    { name: 'dr. Risa, Sp.PD', waNumber: '6281316198500' },
-    { name: 'dr. Evan, Sp.P', waNumber: '6281210100626' },
-    { name: 'dr. Evi, Sp.JP', waNumber: '628112223938' },
-    { name: 'dr. Iman, Sp.JP', waNumber: '6281395546887' },
-    { name: 'dr. Murti, Sp.S', waNumber: '6281383315383' },
-    { name: 'dr. Zuhaira, Sp.S', waNumber: '6282121992620' },
-    { name: 'dr. Ganda, Sp.N', waNumber: '6282121759729' },
-    { name: 'dr. Agam, Sp.B', waNumber: '6282218321999' },
-    { name: 'dr. Daniel, Sp.B', waNumber: '6281398906655' },
-    { name: 'dr. Irwan, Sp.B', waNumber: '6285721483198' },
-    { name: 'dr. Eka, Sp.OT', waNumber: '6281380733477' },
-    { name: 'dr. Gamal, Sp.OT', waNumber: '6281312208478' },
-    { name: 'dr. Andre, Sp.BS', waNumber: '6287822462203' },
-    { name: 'dr. Joko, Sp.U', waNumber: '6281322819326' },
-    { name: 'dr. Huda, Sp.OG', waNumber: '628112294881' },
-    { name: 'dr. Sella, Sp.OG', waNumber: '6282226862504' },
-    { name: 'dr. Sri Siswanti, Sp.Kk', waNumber: '6281227153161' },
-    { name: 'dr. Dian Maifara, Sp.BM', waNumber: '62811119879' },
-];
-
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
-
-const LAB_CHECKS = [
-    'Darah Rutin', 'HJL', 'Masa Pendarahan (BT/CT)', 'CA125', 'PT/APTT/INR',
-    'GDS', 'GDP/2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer',
-    'Ureum/Creatinin', 'SGOT/SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
-    'Elektrolit (Na/K/Cl)', 'Calsium', 'Analisa Gas Darah (AGD)', 'Lactate', 'IgG//igM Cikungunya',
-    'Hemokultur', 'Darah Tepi', 'LED', 'PCR Covid-19', 'Swab Antigen', 'Rapid Test Covid-19',
-    'Sero Dengue (NS1)', 'Malaria (Tetesan Darah)', 'Widal Test', 'Fungsi Tiroid Lengkap',
-    'Fungsi Hati Lengkap', 'Fungsi Ginjal Lengkap', 'Panel Lipid Lengkap',
-    'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum', 'CD4', 'igG/igM Dengue', 'igG/igM Leptospirosis',
-    'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV',
-    'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP', 'SADT'
-    
-];
-
-const RADIOLOGY_CHECKS = [
-    'Thorax PA/AP', 'Thorax Lateral', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
-    'USG Whole Abdomen', 'USG Upper Abdomen', 'USG Lower Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Ginjal', 'USG Kandung Empedu', 'USG Jantung',
-    'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Paru non-Kontras', 'CT Scan Abdomen kontras',
-    'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography', 'CT Scan Cardiac',
-    'MRI Kepala', 'MRI Vertebra', 'MRI Lutut', 'MRI Pelvis',
-    'Echocardiography', 'Endoskopi', 'Kolonoskopi', 'Bronkoskopi', 'Angiography Koroner'
-];
-
-const PROCEDURES = [
-    'Pasang Infus', 'Pasang Kateter', 'Pasang NGT', 'Nebulizer', 'Oksigenasi', 'Pemasangan Ventilator',
-    'EKG', 'Ganti Balutan', 'Suction', 'Injeksi Extra', 'Syringe Pump', 'Hemodialisa (HD)', 
-    'Rawat Luka', 'Angkat Jahitan', 'Spooling NGT', 'Spooling Kateter', 'Bladder Training', 'Biopsi Sumsum Tulang',
-    'Parasintesis', 'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites', 'Pungsi Lumbal', 'Aspirasi Sendi',
-    'Nefrostomi', 'Trakeostomi', 'Debridemen', 'Monitor UOP', 'Balance Cairan', 'Pasang CDL'
-];
-const MEDICATIONS = [
-    'Koreksi KCL  mEq +  500 ml/8 Jam,  siklus on ke', 'Koreksi Meylon  mEq + Ns  100 ml/j', 'Koreksi CaGluconas  gr + D5 100ml', 'Bolus Novorapid 10 iu + D40 2 flash',
-    'Drip Insulin/Novorapid  iu/j', 'Drip Lasix  cc/j', 'Drip Nicardipine  mcg, Kec.  cc/j, Bb  kg', 'Drip Norepinephrine  mcg, Kec.  cc/j, Bb  kg',
-    'Drip Amiodarone', 'Drip Fentanyl', 'Injeksi Extra Lasix', 'Trnfs  PRC, on ke , post ke , premed: , Postmed:', 'Trnfs  TC, on ke , post ke , premed: , Postmed:',
-    '3 Way', '2 Line Infus', 'Trnfs Albumin', 'Drip Heparin', 'Drip Dopamine  mcg, Kec.  cc/j, Bb  kg', 'Drip Dobutamine  mcg, Kec.  cc/j, Bb  kg', 'Drip Epinephrine  mcg, Kec.  cc/j, Bb  kg'
-];
-// --- GABUNGAN UNTUK SMART SEARCH PLANNING ---
-// Format: { label: 'Nama Item', type: 'Lab/Rad/Med/Rx' }
-const ALL_PLANNING_OPTIONS = [
-    ...LAB_CHECKS.map(i => ({ label: i, type: 'Lab' })),
-    ...RADIOLOGY_CHECKS.map(i => ({ label: i, type: 'Rad' })),
-    ...PROCEDURES.map(i => ({ label: i, type: 'Med' })), // Tindakan Medis
-    ...MEDICATIONS.map(i => ({ label: i, type: 'Rx' })) // Obat/Therapy Khusus
-].sort((a, b) => a.label.localeCompare(b.label));
-
-// --- COMPONENTS: LOGIN PAGE (REBRANDED) ---
-const LoginPage = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!username || !password) {
-        alert("Mohon isi Email/Nama Pengguna dan Password.");
-        return;
-    }
-
-    const auth = getAuth();
-    // Inisiasi Firestore dari aplikasi auth, karena db belum di-pass ke LoginPage
-    const db = getFirestore(auth.app); 
-    let loginEmail = username; 
-
-    try {
-        // --- 1. Cek apakah input adalah Nama Pengguna (tanpa @) ---
-        if (!username.includes('@')) {
-            
-            // --- Pencarian Nama Pengguna di Firestore ---
-            // Cari dokumen di koleksi userProfiles di mana field 'username' == input pengguna
-            const userRef = collection(db, 'userProfiles'); 
-            const q = query(userRef, where('username', '==', username));
-            const querySnapshot = await getDocs(q);
-
-            if (querySnapshot.empty) {
-                // Jika username tidak ditemukan di Firestore
-                alert(`Login Gagal: Nama Pengguna "${username}" tidak terdaftar.`);
-                return;
-            }
-
-            // Jika ditemukan, ambil email yang terkait
-            const userData = querySnapshot.docs[0].data();
-            loginEmail = userData.email; 
-        }
-        
-        // --- 2. Lakukan Otentikasi Firebase menggunakan EMAIL yang telah diproses ---
-        await signInWithEmailAndPassword(auth, loginEmail, password); 
-        
-    } catch (error) {
-        console.error("Login Error:", error);
-        let pesan = "Login Gagal. Cek koneksi atau coba lagi.";
-        
-        // Pesan error spesifik dari Firebase
-        if (error.code === 'auth/wrong-password') pesan = "Password salah.";
-        if (error.code === 'auth/user-not-found') pesan = "Email tidak terdaftar.";
-        if (error.code === 'auth/invalid-credential') pesan = "Email atau Password salah.";
-        
-        alert(pesan);
-    }
-  };
-
-  return (
-    <div className="min-h-screen font-sans bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col md:flex-row md:overflow-hidden md:max-h-[600px] h-auto">
-        
-        {/* Left Side: Visual/Branding */}
-        <div className="w-full md:w-1/2 bg-gradient-to-br from-blue-600 to-indigo-800 p-10 text-white flex flex-col justify-center relative">
-            <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/medical-icons.png')]"></div>
-            <div className="relative z-10">
-                
-                {/* LOGO WRAPPER: w-fit agar lebar mengikuti teks terpanjang, items-center agar E- di tengah */}
-                <div className="flex flex-col items-center w-fit mb-6">
-                    <h1 className="text-4xl font-extrabold tracking-tight leading-none">E-</h1>
-                    <h1 className="text-4xl font-extrabold tracking-tight leading-none">Ontang-Anting</h1>
-                </div>
-
-                <p className="text-blue-100 text-sm mb-8">Aplikasi Bantu Operan Jaga & Manajemen Pasien</p>
-                <div className="space-y-3 text-xs font-medium text-blue-200">
-                    <div className="flex items-center"><span className="mr-2">✓</span> SOAP Record</div>
-                    <div className="flex items-center"><span className="mr-2">✓</span> Real-time Collaboration</div>
-                    <div className="flex items-center"><span className="mr-2">✓</span> Print Formatting</div>
-                </div>
-            </div>
-            <div className="mt-10 text-[10px] text-blue-300">
-                &copy; 2025 Creative Workflow Tools
-            </div>
-        </div>
-
-        {/* Right Side: Form */}
-        <div className="w-full md:w-1/2 p-6 md:p-10 bg-white flex flex-col justify-center">
-            <div className="mb-6 text-center md:text-left">
-                <h2 className="text-2xl font-bold text-gray-800">Selamat Datang</h2>
-                <p className="text-gray-500 text-sm">Silakan login untuk memulai sesi jaga.</p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                    <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Username</label>
-                    <input 
-                        type="text" 
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition bg-gray-50"
-                        placeholder="Nama Pengguna"
-                    />
-                </div>
-                <div>
-                    <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Password</label>
-                    <div className="relative">
-                        <input 
-                            type={showPassword ? "text" : "password"} 
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition bg-gray-50"
-                            placeholder="Kata Sandi"
-                        />
-                        <button 
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 text-xs"
-                        >
-                            {showPassword ? 'Sembunyikan' : 'Lihat'}
-                        </button>
-                    </div>
-                </div>
-
-                <button 
-                    type="submit" 
-                    className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition shadow-lg mt-4 flex justify-center items-center group"
-                >
-                    Masuk Aplikasi <span className="ml-2 group-hover:translate-x-1 transition">→</span>
-                </button>
-            </form>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // --- UTILS: PRINT HANDLER ---
 const handlePrintWindow = (elementId, title) => {
@@ -352,10 +146,13 @@ const CustomTextArea = ({ label, name, value, onChange, children, extraButtons, 
   </div>
 );
 
+// --- COMPONENT CUSTOM SELECT (UPDATE: KEYBOARD NAVIGATION & HIGHLIGHT) ---
 const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, required, className = '' }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isOpen, setIsOpen] = useState(false);
+    const [highlightedIndex, setHighlightedIndex] = useState(-1); // State untuk kursor keyboard
     const wrapperRef = useRef(null);
+    const optionsRef = useRef([]); // Referensi untuk auto-scroll
 
     const filteredOptions = options.filter(opt => 
         opt.toLowerCase().includes(searchTerm.toLowerCase())
@@ -364,6 +161,11 @@ const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, 
     useEffect(() => {
         if (!value) setSearchTerm('');
     }, [value]);
+
+    // Reset highlight tiap kali ketik pencarian
+    useEffect(() => {
+        setHighlightedIndex(-1);
+    }, [searchTerm, isOpen]);
 
     const handleSelect = (opt) => {
         onChange({ target: { value: opt } }); 
@@ -386,6 +188,53 @@ const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, 
         if (!isOpen) setIsOpen(true);
     };
 
+    // --- LOGIKA NAVIGASI KEYBOARD ---
+    const handleKeyDown = (e) => {
+        if (!isOpen) {
+            if (e.key === 'ArrowDown' || e.key === 'Enter') {
+                e.preventDefault();
+                setIsOpen(true);
+            }
+            return;
+        }
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            // Mentok di item terakhir (termasuk tombol tambah manual jika ada)
+            const maxIndex = (searchTerm && !filteredOptions.includes(searchTerm)) ? filteredOptions.length : filteredOptions.length - 1;
+            setHighlightedIndex(prev => (prev < maxIndex ? prev + 1 : prev));
+        } 
+        else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedIndex(prev => (prev > 0 ? prev - 1 : prev));
+        } 
+        else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+                handleSelect(filteredOptions[highlightedIndex]);
+            } else if (highlightedIndex === filteredOptions.length && searchTerm) {
+                handleSelect(searchTerm); // Pilih "Gunakan manual"
+            } else if (filteredOptions.length > 0) {
+                handleSelect(filteredOptions[0]); // Default pilih paling atas kalau belum di-highlight
+            } else if (searchTerm) {
+                handleSelect(searchTerm);
+            }
+        } 
+        else if (e.key === 'Escape') {
+            setIsOpen(false);
+        }
+    };
+
+    // Auto-scroll mengikuti highlight keyboard
+    useEffect(() => {
+        if (isOpen && highlightedIndex >= 0 && optionsRef.current[highlightedIndex]) {
+            optionsRef.current[highlightedIndex].scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+            });
+        }
+    }, [highlightedIndex, isOpen]);
+
     const displayValue = isOpen ? searchTerm : (value || '');
 
     return (
@@ -396,24 +245,30 @@ const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, 
             <div className="relative">
                 <input 
                     type="text"
-                    className={`w-full p-2 text-sm border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 outline-none ${disabled ? 'bg-gray-100' : 'bg-white'}`}
+                    className={`w-full p-2 text-sm border border-gray-300 rounded shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none transition ${disabled ? 'bg-gray-100' : 'bg-white'}`}
                     placeholder={placeholder}
                     value={displayValue}
                     onChange={handleInputChange}
                     onClick={() => !disabled && setIsOpen(true)}
+                    onKeyDown={handleKeyDown} // MENDENGARKAN KEYBOARD
                     disabled={disabled}
                     required={required}
+                    autoComplete="off"
                 />
                 <span className="absolute right-2 top-2 text-gray-400 text-xs pointer-events-none">▼</span>
             </div>
             
             {isOpen && !disabled && (
                 <div className="absolute z-50 w-full bg-white border border-gray-300 mt-1 max-h-48 overflow-y-auto shadow-lg rounded text-sm">
-                    {filteredOptions.map(opt => (
+                    {filteredOptions.map((opt, index) => (
                         <div 
                             key={opt} 
-                            className="p-2 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 last:border-0"
+                            ref={el => optionsRef.current[index] = el} // Referensi untuk scroll
+                            className={`p-2 cursor-pointer border-b border-gray-50 last:border-0 transition-colors ${
+                                highlightedIndex === index ? 'bg-indigo-100 text-indigo-800 font-bold' : 'hover:bg-indigo-50 text-gray-700'
+                            }`}
                             onClick={() => handleSelect(opt)}
+                            onMouseEnter={() => setHighlightedIndex(index)} // Highlight juga ikut mouse
                         >
                             {opt}
                         </div>
@@ -425,8 +280,12 @@ const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, 
                     
                     {searchTerm && !filteredOptions.includes(searchTerm) && (
                          <div 
-                            className="p-2 bg-indigo-50 text-indigo-700 font-bold cursor-pointer border-t"
+                            ref={el => optionsRef.current[filteredOptions.length] = el}
+                            className={`p-2 text-indigo-700 font-bold cursor-pointer border-t transition-colors ${
+                                highlightedIndex === filteredOptions.length ? 'bg-indigo-200' : 'bg-indigo-50 hover:bg-indigo-100'
+                            }`}
                             onClick={() => handleSelect(searchTerm)}
+                            onMouseEnter={() => setHighlightedIndex(filteredOptions.length)}
                         >
                             Gunakan "{searchTerm}"
                         </div>
@@ -436,8 +295,6 @@ const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, 
         </div>
     );
 };
-
-
 
 // --- KOMPONEN BARU: FILTER KAMAR DROPDOWN (ANTI-RIBET) ---
 const RoomFilterDropdown = ({ allRooms, selectedRooms, onChange }) => {
@@ -510,7 +367,6 @@ const RoomFilterDropdown = ({ allRooms, selectedRooms, onChange }) => {
         </div>
     );
 };
-// -------------------------------------------------------------------
 
 // --- MODAL TTV & GCS Calculator ---
 const TtvModal = ({ onClose, onSave }) => {
@@ -655,22 +511,19 @@ const LaporConfirmationModal = ({ onLaporDpjp, onLaporJaga, onCancel, patientNam
     );
 };
 
-// --- Tag Selector ---
-const TagSelector = ({ label, options, onSelect, category, placeholder }) => {
+// --- COMPONENT TAG SELECTOR (UPDATE: KEYBOARD NAVIGATION & HIGHLIGHT) ---
+const TagSelector = ({ label, options, placeholder, onSelect, category }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isOpen, setIsOpen] = useState(false);
+    const [highlightedIndex, setHighlightedIndex] = useState(-1); // State untuk highlight keyboard
     const wrapperRef = useRef(null);
+    const optionsRef = useRef([]); // Referensi untuk auto-scroll
 
-    const filteredOptions = options.filter(opt =>
+    const filteredOptions = options.filter(opt => 
         opt.toLowerCase().includes(searchTerm.toLowerCase())
-    ).slice(0, 15);
+    );
 
-    const handleSelect = (opt) => {
-        onSelect(category, opt);
-        setSearchTerm('');
-        setIsOpen(false);
-    };
-
+    // Tutup dropdown jika klik di luar area
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
@@ -681,52 +534,104 @@ const TagSelector = ({ label, options, onSelect, category, placeholder }) => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const inputStyle = "w-full p-1 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 outline-none";
-    
+    // Reset highlight tiap kali ketikan berubah
+    useEffect(() => {
+        setHighlightedIndex(-1);
+    }, [searchTerm, isOpen]);
+
+    const handleSelect = (val) => {
+        onSelect(category, val);
+        setSearchTerm('');
+        setIsOpen(false);
+    };
+
+    // --- LOGIKA NAVIGASI KEYBOARD ---
+    const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            setIsOpen(false);
+            return;
+        }
+        
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (!isOpen) setIsOpen(true);
+            // Mentok di item terakhir (termasuk tombol "+ Tambah manual" jika ada)
+            const maxIndex = (searchTerm && !filteredOptions.includes(searchTerm)) ? filteredOptions.length : filteredOptions.length - 1;
+            setHighlightedIndex(prev => (prev < maxIndex ? prev + 1 : prev));
+        } 
+        else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedIndex(prev => (prev > 0 ? prev - 1 : prev));
+        } 
+        else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (!isOpen) return;
+            
+            // Eksekusi pilihan berdasarkan posisi highlight
+            if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+                handleSelect(filteredOptions[highlightedIndex]);
+            } else if (highlightedIndex === filteredOptions.length && searchTerm) {
+                handleSelect(searchTerm); // Pilih tambah manual
+            } else if (filteredOptions.length > 0) {
+                handleSelect(filteredOptions[0]); // Default pilih yang paling atas
+            } else if (searchTerm) {
+                handleSelect(searchTerm);
+            }
+        }
+    };
+
+    // Auto-scroll mengikuti highlight
+    useEffect(() => {
+        if (isOpen && highlightedIndex >= 0 && optionsRef.current[highlightedIndex]) {
+            optionsRef.current[highlightedIndex].scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+            });
+        }
+    }, [highlightedIndex, isOpen]);
 
     return (
-        <div className="relative mb-2" ref={wrapperRef}>
-            <label className="block text-[9px] font-bold text-gray-700 uppercase mb-0.5">{label}</label>
-            <input
-                type="text"
-                className={inputStyle}
-                placeholder={placeholder || `Ketik min. 3 huruf...`}
-                value={searchTerm}
-                onChange={e => {
-                    setSearchTerm(e.target.value);
-                    if (e.target.value.length >= 1) setIsOpen(true);
-                }}
-                onFocus={() => {
-                    if (searchTerm.length >= 1) setIsOpen(true);
-                }}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter' && filteredOptions.length > 0 && isOpen) {
-                        e.preventDefault();
-                        handleSelect(filteredOptions[0]);
-                    }
-                }}
+        <div className="relative" ref={wrapperRef}>
+            {label && <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">{label}</label>}
+            <input 
+                type="text" 
+                className="w-full p-2 border border-blue-200 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none transition" 
+                placeholder={placeholder} 
+                value={searchTerm} 
+                onChange={(e) => { setSearchTerm(e.target.value); setIsOpen(true); }}
+                onClick={() => setIsOpen(true)}
+                onKeyDown={handleKeyDown} // PASANG LISTENER KEYBOARD
+                autoComplete="off"
             />
-
-            {isOpen && searchTerm.length > 0 && (
-                <div className="absolute z-50 w-full bg-white border border-gray-300 mt-1 max-h-48 overflow-y-auto shadow-lg rounded text-xs">
-                    {filteredOptions.length > 0 ? (
-                        filteredOptions.map((opt, index) => (
-                            <div
-                                key={index}
-                                className="p-1.5 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 last:border-0"
-                                onClick={() => handleSelect(opt)}
-                            >
-                                {opt}
-                            </div>
-                        ))
-                    ) : (
-                        <div className="p-1.5 text-gray-400 italic">"{searchTerm}" tidak ditemukan.</div>
+            
+            {isOpen && (
+                <div className="absolute z-50 w-full bg-white border border-gray-300 mt-1 max-h-40 overflow-y-auto shadow-xl rounded-md text-xs">
+                    {filteredOptions.map((opt, index) => (
+                        <div 
+                            key={opt}
+                            ref={el => optionsRef.current[index] = el}
+                            className={`p-2 cursor-pointer border-b border-gray-50 last:border-0 transition-colors ${
+                                highlightedIndex === index ? 'bg-indigo-100 text-indigo-800 font-bold' : 'hover:bg-blue-50 text-gray-700'
+                            }`}
+                            onClick={() => handleSelect(opt)}
+                            onMouseEnter={() => setHighlightedIndex(index)} // Highlight juga ikut mouse
+                        >
+                            {opt}
+                        </div>
+                    ))}
+                    
+                    {filteredOptions.length === 0 && !searchTerm && (
+                        <div className="p-2 text-gray-400 italic text-center">Ketik untuk mencari...</div>
                     )}
                     
                     {searchTerm && !filteredOptions.includes(searchTerm) && (
-                         <div 
-                            className="p-1.5 bg-green-50 text-green-700 font-bold cursor-pointer border-t text-xs"
+                        <div 
+                            ref={el => optionsRef.current[filteredOptions.length] = el}
+                            className={`p-2 text-green-700 font-bold cursor-pointer transition-colors border-t border-green-100 ${
+                                highlightedIndex === filteredOptions.length ? 'bg-green-200' : 'bg-green-50 hover:bg-green-100'
+                            }`}
                             onClick={() => handleSelect(searchTerm)}
+                            onMouseEnter={() => setHighlightedIndex(filteredOptions.length)}
                         >
                             + Tambah manual: "{searchTerm}"
                         </div>
@@ -803,7 +708,7 @@ const PrintLayout = ({ record }) => {
                 <div className="flex-1">
                     <div className="font-bold text-lg uppercase tracking-wide flex items-center gap-2">
                         <span className="text-sm font-bold border-2 border-black px-2 py-0.5"> 
-                            {record.roomNumber ? record.roomNumber.split('B')[0] : ''}
+                            {record.roomNumber ? record.roomNumber.replace(/[AB]$/, '') : ''}
                         </span>
                         <span>{record.name}</span>
                     </div>
@@ -998,14 +903,12 @@ const BulkPrintView = ({ records, onClose }) => {
     );
 };
 
-// --- LOGIKA WARNA KAMAR CANGGIH ---
+// --- LOGIKA WARNA KAMAR CANGGIH (UPDATE FORMAT K1A / K1B) ---
 
-// Daftar Kamar Single Bed (Bed Sendiri)
-const SINGLE_BED_ROOMS = ['K7B1', 'K8B1', 'K9B1', 'K11B1', 'K12B1', 'K14B1']; 
-// (Catatan: Saya asumsikan penamaan di database pakai B1 semua untuk single, sesuaikan jika beda)
+// Daftar Kamar Single Bed (Bed Sendiri) - NAMA SUDAH DIUPDATE
+const SINGLE_BED_ROOMS = ['K7A', 'K8A', 'K9A', 'K11A', 'K12A', 'K14A']; 
 
-
-// --- LOGIKA WARNA KAMAR (UPDATE: SUPPORT WAITING LIST) ---
+// --- LOGIKA WARNA KAMAR (SUPPORT WAITING LIST & FORMAT BARU) ---
 const getRoomColorStatus = (roomName, activeRecords, waitingList = []) => {
     // 1. Cek apakah kamar ini TERISI di Dashboard?
     const patient = activeRecords.find(r => r.roomNumber === roomName);
@@ -1020,94 +923,289 @@ const getRoomColorStatus = (roomName, activeRecords, waitingList = []) => {
         return { color: 'green', status: 'Kosong' };
     }
 
-    // 4. Logika Double Bed (Cek Tetangga Lk/Pr)
-    const roomCode = roomName.split('B')[0]; 
-    const bedCode = roomName.split('B')[1];
-    const neighborBed = bedCode === '1' ? '2' : '1';
-    const neighborRoomName = `${roomCode}B${neighborBed}`;
-    
-    const neighbor = activeRecords.find(r => r.roomNumber === neighborRoomName);
-    if (neighbor) {
-        if (neighbor.gender === 'L') return { color: 'sky', status: 'Sisa Lk' };
-        if (neighbor.gender === 'P') return { color: 'purple', status: 'Sisa Pr' };
+    // 4. Logika Double Bed (Deteksi Tetangga Lk/Pr pakai Regex format A/B)
+    const match = roomName.match(/^(K\d+)([AB])$/);
+    if (match) {
+        const roomCode = match[1]; // misal: "K1"
+        const bedCode = match[2];  // misal: "A" atau "B"
+        const neighborBed = bedCode === 'A' ? 'B' : 'A';
+        const neighborRoomName = `${roomCode}${neighborBed}`; // misal menjadi "K1B"
+        
+        const neighbor = activeRecords.find(r => r.roomNumber === neighborRoomName);
+        if (neighbor) {
+            if (neighbor.gender === 'L') return { color: 'sky', status: 'Sisa Lk' };
+            if (neighbor.gender === 'P') return { color: 'purple', status: 'Sisa Pr' };
+        }
     }
 
+    // Jika tidak ada tetangga atau format kamar tidak terdeteksi, anggap kosong
     return { color: 'green', status: 'Kosong' };
 };
 
-// --- UI Peta Kamar (Update: Support Warna Booking Waiting List) ---
-const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList = [] }) => {
-    const filteredRoomList = roomList.filter(room => roomFilter.includes(room));
-    
-    return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
-        <div className="p-2 overflow-y-auto custom-scrollbar">
-             <div className="grid grid-cols-4 gap-2">
-                {filteredRoomList.map(room => {
-                    // 1. Cek Status Penghuni (Merah/Hijau/Ungu/Oren)
-                    const { color, patient, booking } = getRoomColorStatus(room, activeRecords, waitingList);
-                    
-                    // 2. Cek Status Booking (Waiting List)
-                    const isOccupied = !!patient;   
-                    const isBooked = !!booking;
-                    const displayName = patient ? (patient.name.split(' ')[0] + (patient.name.length > 8 ? '...' : '')) : room;
-                    const displayDr = patient ? (patient.dpjpName.split(',')[0]) : '';
+// --- COMPONENT: DENAH KAMAR (RESPONSIVE: MOBILE, TABLET, LAPTOP) ---
+const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList }) => {
+    const renderRoom = (roomNumber) => {
+        const record = activeRecords.find(r => r.roomNumber === roomNumber);
+        const booked = waitingList?.find(w => w.plannedRoom === roomNumber);
+        const isHidden = roomFilter.length !== roomList.length && !roomFilter.includes(roomNumber);
 
-                    // 3. Tentukan Warna Akhir
-                    let colorClass = "";
-                    let statusText = "";
+        if (isHidden) return null;
 
-                    if (isOccupied) {
-                        // Kalo terisi, tetap Merah (Status Booking kalah prioritas)
-                        colorClass = "bg-red-50 border-red-300 text-red-900 hover:bg-red-100";
-                        statusText = "Terisi";
-                    } else if (isBooked) {
-                        // KOSONG TAPI ADA BOOKING -> Kuning Emas
-                        colorClass = "bg-yellow-100 border-yellow-400 text-yellow-900 hover:bg-yellow-200 ring-1 ring-yellow-300 animate-pulse";
-                        statusText = `Booked: ${booking.name.split(' ')[0]}`;
-                    } else if (color === 'sky') {
-                        colorClass = "bg-sky-50 border-sky-300 text-sky-800 hover:bg-sky-100";
-                        statusText = "Sisa Lk";
-                    } else if (color === 'purple') {
-                        colorClass = "bg-purple-50 border-purple-300 text-purple-800 hover:bg-purple-100";
-                        statusText = "Sisa Pr";
-                    } else {
-                        colorClass = "bg-green-50 border-green-200 text-green-800 hover:bg-green-100";
-                        statusText = "Kosong";
-                    }
+        // Logika Status & Warna Sisa Bed
+        let statusText = 'Kosong';
+        let statusColor = 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'; 
+        
+        const match = roomNumber.match(/^(K\d+)([AB])$/);
+        if (!record && !booked && match) {
+            const roomCode = match[1];
+            const neighborBed = match[2] === 'A' ? 'B' : 'A';
+            const neighborRecord = activeRecords.find(r => r.roomNumber === `${roomCode}${neighborBed}`);
+            if (neighborRecord) {
+                if (neighborRecord.gender === 'L') {
+                    statusText = 'Sisa Lk';
+                    statusColor = 'bg-sky-100 border-sky-400 text-sky-800 hover:bg-sky-200';
+                } else {
+                    statusText = 'Sisa Pr';
+                    statusColor = 'bg-purple-100 border-purple-400 text-purple-800 hover:bg-purple-200';
+                }
+            }
+        }
 
-                    return (
-                    <div 
-                        key={room} 
-                        className={`p-1 text-center rounded border transition flex flex-col items-center justify-center min-h-[50px] cursor-pointer shadow-sm relative ${colorClass}`}
-                        onClick={() => isOccupied ? onEditRoom(patient) : onSelectRoom(room)} 
-                    >
-                        {/* Indikator Booking (Icon Kecil di Pojok) */}
-                        {!isOccupied && isBooked && (
-                            <span className="absolute top-0 right-0 text-[8px] bg-yellow-400 text-white px-1 rounded-bl">WL</span>
-                        )}
-
-                        <div className="text-[10px] font-bold">{room}</div>
-                        
-                        {isOccupied ? (
-                            <>
-                                <div className="text-[9px] font-medium leading-tight mt-0.5 truncate w-full px-1 bg-white/50 rounded">{displayName}</div>
-                                <div className="text-[7px] opacity-70 leading-tight truncate w-full">{displayDr}</div>
-                            </>
-                        ) : (
-                            <div className={`text-[8px] mt-1 truncate w-full px-1 ${isBooked ? 'font-bold text-yellow-800' : 'opacity-50'}`}>
-                                {statusText}
-                            </div>
+        // 1. RENDER: TERISI (PASIEN)
+        if (record) {
+            const isMale = record.gender === 'L';
+            return (
+                <div key={roomNumber} onClick={() => onEditRoom(record)} className={`relative flex flex-col p-1.5 rounded-lg border-2 cursor-pointer shadow-sm transition-all hover:shadow-md ${isMale ? 'bg-blue-200 border-blue-400' : 'bg-rose-100 border-rose-400'}`}>
+                    <div className="flex justify-between items-center mb-0.5 border-b border-white/60 pb-0.5">
+                        <span className={`font-extrabold text-[11px] ${isMale ? 'text-blue-900' : 'text-rose-900'}`}>{roomNumber}</span>
+                        <span className="text-[9px] bg-white/50 rounded px-1">{isMale ? '🚹' : '🚺'}</span>
+                    </div>
+                    <div className="flex-1 flex flex-col justify-center">
+                        <span className="font-bold text-xs text-gray-800 leading-none truncate mb-0.5">{record.name}</span>
+                        <span className="text-[9px] text-gray-600 font-medium truncate">{record.dpjpName}</span>
+                        {(record.raberName || record.raber2Name) && (
+                            <span className="text-[7px] bg-yellow-200 text-yellow-800 px-1 rounded w-fit mt-0.5">Raber: {record.raberName || record.raber2Name}</span>
                         )}
                     </div>
-                    );
-                })}
+                </div>
+            );
+        }
+        
+        // 2. RENDER: DIBOOKING (WAITING LIST)
+        if (booked) {
+            return (
+                <div key={roomNumber} className="relative flex flex-col p-1.5 rounded-lg border-2 bg-yellow-50 border-yellow-400 shadow-sm cursor-not-allowed opacity-90 animate-pulse">
+                    <div className="flex justify-between items-center mb-0.5 border-b border-yellow-300 pb-0.5">
+                        <span className="font-extrabold text-[11px] text-yellow-900">{roomNumber}</span>
+                        <span className="text-[9px]">⏳</span>
+                    </div>
+                    <div className="flex-1 flex flex-col justify-center items-center text-center">
+                        <span className="font-bold text-[10px] text-yellow-800 leading-tight">Dipesan a.n</span>
+                        <span className="text-[9px] text-yellow-900 font-medium truncate w-full">{booked.name}</span>
+                    </div>
+                </div>
+            );
+        }
+
+        // 3. RENDER: KOSONG / SISA BED
+        return (
+            <div key={roomNumber} onClick={() => onSelectRoom(roomNumber)} className={`relative flex flex-col items-center justify-center p-1 rounded-lg border-2 border-dashed cursor-pointer transition-all ${statusColor}`}>
+                <span className="font-extrabold text-[11px] mb-0.5">{roomNumber}</span>
+                <span className="text-[9px] font-bold px-1.5 py-px rounded-full bg-white/80 shadow-sm">{statusText}</span>
             </div>
-             {filteredRoomList.length === 0 && (
-                 <div className="text-center p-4 text-xs text-gray-400 italic">Tidak ada kamar yang ditampilkan. Cek Filter Kamar.</div>
-             )}
+        );
+    };
+
+    return (
+        <div className="flex justify-center w-full px-1 py-1">
+            {/* WRAPPER UTAMA: flex-col (HP/Portrait) -> md:flex-row (Tablet Landscape/Laptop) */}
+            <div className="flex flex-col md:flex-row w-full max-w-5xl gap-2 md:gap-3 bg-white p-1.5 rounded-xl shadow-inner border border-gray-100 justify-center">
+                
+                {/* KOLOM KIRI: Selalu 2 grid menyamping agar rapi */}
+                <div className="grid grid-cols-2 gap-1.5 w-full">
+                    {LEFT_ROOMS.map(renderRoom)}
+                </div>
+
+                {/* LORONG TENGAH: Sembunyi di HP/Portrait (hidden), Muncul di Landscape (md:flex) */}
+                <div className="hidden md:flex flex-col justify-center items-center w-6 bg-gray-100 rounded-full border border-gray-200 shadow-inner relative flex-shrink-0">
+                    <div className="absolute top-10 text-gray-300 text-[9px] font-bold tracking-[0.3em]" style={{ writingMode: 'vertical-rl' }}>LORONG</div>
+                </div>
+
+                {/* KOLOM KANAN: Selalu 2 grid menyamping agar rapi */}
+                <div className="grid grid-cols-2 gap-1.5 w-full">
+                    {RIGHT_ROOMS.map(renderRoom)}
+                </div>
+
+            </div>
         </div>
-      </div>
+    );
+};
+
+const BukuCMTable = ({ records, updateRecord, onPrint }) => {
+    const formatRoom = (room) => room ? room.replace(/[AB]$/, '') : '';
+
+    // --- 1. URUTKAN KAMAR SECARA NUMERIK (K1, K2, K3...) ---
+    const sortedRooms = useMemo(() => {
+        return [...ROOM_LIST].sort((a, b) => 
+            a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+        );
+    }, []);
+
+    const formatCustomDate = (isoString) => {
+        if (!isoString) return '';
+        const d = new Date(isoString);
+        if (isNaN(d)) return isoString;
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yy = String(d.getFullYear()).slice(-2);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        return `${dd}/${mm}/${yy} ${hh}:${min}`;
+    };
+
+    const parseCustomDate = (text) => {
+        if (!text) return '';
+        const match = text.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})[\s,]+(\d{1,2})[\:\.](\d{1,2})/);
+        if (match) {
+            let [_, d, m, y, h, min] = match;
+            if (y.length === 2) y = '20' + y;
+            return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T${h.padStart(2, '0')}:${min.padStart(2, '0')}`;
+        }
+        return text;
+    };
+
+    // --- 2. SIHIR AUTO-FORMAT TANGGAL (Ketikan otomatis tambah / dan :) ---
+    const handleDateMasking = (e) => {
+        let v = e.target.value.replace(/[^\d]/g, ''); // Ambil angka saja
+        let final = '';
+        if (v.length > 0) final += v.substring(0, 2);
+        if (v.length > 2) final += '/' + v.substring(2, 4);
+        if (v.length > 4) final += '/' + v.substring(4, 6);
+        if (v.length > 6) final += ' ' + v.substring(6, 8);
+        if (v.length > 8) final += ':' + v.substring(8, 10);
+        e.target.value = final;
+    };
+
+    const hitungLamaRawat = (tanggalMasuk) => {
+        if (!tanggalMasuk) return '-';
+        const start = new Date(tanggalMasuk);
+        if (isNaN(start)) return '?';
+        const now = new Date();
+        const diffTime = now.getTime() - start.getTime();
+        return diffTime < 0 ? '0 hr' : Math.floor(diffTime / (1000 * 60 * 60 * 24)) + ' hr'; 
+    };
+
+    const handleInlineSave = (id, field, value) => {
+        updateRecord(id, { [field]: value });
+    };
+
+    return (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
+            <div className="p-3 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center no-print flex-shrink-0">
+                <div>
+                    <h2 className="font-bold text-emerald-800 flex items-center gap-2 text-sm">📖 Buku Register Ruangan (CM)</h2>
+                    <p className="text-[9px] text-emerald-600">Urutan kamar otomatis (K1-K15). Kosong tetap muncul untuk tulis tangan.</p>
+                </div>
+                <button onClick={onPrint} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow hover:bg-emerald-700 transition flex items-center gap-2">
+                    🖨️ Cetak Register
+                </button>
+            </div>
+
+            <div className="overflow-auto flex-1 custom-scrollbar">
+                <style>{`
+                    .print-text { display: none; }
+                    @media print {
+                        body * { visibility: hidden; }
+                        #buku-cm-print, #buku-cm-print * { visibility: visible; }
+                        #buku-cm-print { position: absolute; left: 0; top: 0; width: 100%; }
+                        .no-print { display: none !important; }
+                        .print-text { display: block !important; text-align: center; width: 100%; }
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid black !important; padding: 4px; color: black !important; font-size: 11px; text-align: center !important; }
+                        th { background-color: #eee !important; -webkit-print-color-adjust: exact; }
+                    }
+                `}</style>
+
+                <div id="buku-cm-print" className="p-4 pt-0">
+                    <table className="w-full text-center border-collapse table-fixed">
+                        <thead className="bg-gray-100 text-gray-700 text-[10px] uppercase font-bold border-y border-gray-300 sticky top-0 z-20 shadow-sm">
+                            <tr>
+                                <th className="p-2 border-x border-gray-300 w-8 bg-gray-100">No</th>
+                                <th className="p-2 border-x border-gray-300 min-w-[150px] bg-gray-100">Nama Pasien</th>
+                                <th className="p-2 border-x border-gray-300 w-12 bg-gray-100">KMR</th>
+                                <th className="p-2 border-x border-gray-300 w-24 bg-gray-100">No. RM</th>
+                                <th className="p-2 border-x border-gray-300 min-w-[130px] bg-gray-100">Dokter</th>
+                                <th className="p-2 border-x border-gray-300 w-14 bg-gray-100">Kelas</th>
+                                <th className="p-2 border-x border-gray-300 w-32 bg-gray-100">Tgl Masuk</th>
+                                <th className="p-2 border-x border-gray-300 w-12 bg-gray-100">HR</th>
+                            </tr>
+                        </thead>
+                        <tbody className="text-[11px] divide-y divide-gray-200">
+                            {sortedRooms.map((room, index) => {
+                                const rec = records.find(r => r.roomNumber === room);
+                                return (
+                                    <tr key={room} className={`transition-colors ${rec ? 'hover:bg-emerald-50/30' : 'bg-gray-50/10'}`}>
+                                        <td className="p-1 border-x border-gray-200 text-gray-400">{index + 1}</td>
+                                        <td className="p-1 px-2 border-x border-gray-200 font-bold text-gray-800 uppercase truncate text-left">
+                                            {rec ? rec.name : ''}
+                                        </td>
+                                        <td className="p-1 border-x border-gray-200 font-bold text-indigo-700">
+                                            {formatRoom(room)}
+                                        </td>
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/10">
+                                            {rec && (
+                                                <>
+                                                    <input type="text" defaultValue={rec.rmNumber || ''} onBlur={(e) => handleInlineSave(rec.id, 'rmNumber', e.target.value)} className="w-full bg-transparent outline-none text-center font-mono no-print" placeholder="..." />
+                                                    <span className="print-text">{rec.rmNumber || ''}</span>
+                                                </>
+                                            )}
+                                        </td>
+                                        <td className="p-1 px-2 border-x border-gray-200 leading-tight text-left">
+                                            {rec ? (
+                                                <>
+                                                    <div className="font-bold text-gray-700">{rec.dpjpName}</div>
+                                                    {(rec.raberName || rec.raber2Name) && (
+                                                        <div className="text-blue-600 font-bold italic text-[9px]">
+                                                            Rb: {[rec.raberName, rec.raber2Name].filter(Boolean).map(n => n).join(', ')}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            ) : ''}
+                                        </td>
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/10">
+                                            {rec && (
+                                                <>
+                                                    <input type="text" defaultValue={rec.bpjsClass || ''} onBlur={(e) => handleInlineSave(rec.id, 'bpjsClass', e.target.value)} className="w-full bg-transparent outline-none text-center no-print" placeholder="..." />
+                                                    <span className="print-text">{rec.bpjsClass || ''}</span>
+                                                </>
+                                            )}
+                                        </td>
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/10">
+                                            {rec && (
+                                                <>
+                                                    <input 
+                                                        type="text" 
+                                                        defaultValue={formatCustomDate(rec.admissionDate)} 
+                                                        onChange={handleDateMasking}
+                                                        onBlur={(e) => { const pd = parseCustomDate(e.target.value); if (pd !== rec.admissionDate) handleInlineSave(rec.id, 'admissionDate', pd); }} 
+                                                        className="w-full bg-transparent outline-none text-center font-mono no-print" 
+                                                        placeholder="dd/mm/yy hh:mm" 
+                                                    />
+                                                    <span className="print-text font-mono">{formatCustomDate(rec.admissionDate) || ''}</span>
+                                                </>
+                                            )}
+                                        </td>
+                                        <td className="p-1 border-x border-gray-200 font-bold text-rose-600">
+                                            {rec ? hitungLamaRawat(rec.admissionDate) : ''}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -1166,21 +1264,42 @@ const renderPlanningCell = (text) => {
             {/* 4. TERAPI: Fuchsia (Ungu Pink Cerah) */}
             {renderItem('Terapi', rxs, 'bg-fuchsia-200', 'border-fuchsia-400', 'text-fuchsia-500')}
             
-            {/* 5. Lain-lain (UPDATE: DETEKSI BLPL/RBLPL) */}
+            {/* ... (Bagian Lab, Rad, Tindakan, Terapi JANGAN DIUBAH) ... */}
+            
+            {/* 5. Lain-lain (UPDATE DISINI) */}
             {others.map((line, idx) => {
-                // Deteksi Kata Kunci Pulang
-                const isDischarge = line.match(/\b(blpl|rblpl|boleh pulang|rencana pulang|pulang|aps)\b/i);
-                
-                if (isDischarge) {
-                    // STYLE BARU: WARNA HITAM, TEKS PUTIH
+                const lower = line.toLowerCase();
+
+                // A. LOGIKA BLPL (HITAM - SEPERTI YANG SUDAH ADA)
+                if (lower.match(/\b(blpl|rblpl|pulang|boleh pulang)\b/)) {
                     return (
-                        <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-extrabold border shadow-sm bg-black border-black text-white">
+                        <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-black text-white">
                             🎉 {line.toUpperCase()}
                         </div>
                     );
                 }
-                
-                // Tampilan teks biasa
+
+                // B. LOGIKA KONSUL (BARU ✨) -> WARNA ORANYE (AMBER)
+                // Biar beda sama Rad (Biru) dan Lab (Merah)
+                if (lower.match(/\b(konsul|konsultasi|ts|rawat gabung|alih rawat)\b/)) {
+                    return (
+                        <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-amber-100 border-amber-400 text-amber-900">
+                            👨‍⚕️ {line}
+                        </div>
+                    );
+                }
+
+                // C. LOGIKA PINDAH/TRANSFER (BARU ✨) -> WARNA INDIGO (NILA)
+                // Biar kelihatan beda sebagai "Perubahan Ruangan"
+                if (lower.match(/\b(pindah|transfer|rujuk|pindah kamar)\b/)) {
+                    return (
+                        <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-indigo-100 border-indigo-400 text-indigo-900">
+                            🏥 {line}
+                        </div>
+                    );
+                }
+
+                // D. DEFAULT (TEKS BIASA)
                 return <div key={`other-${idx}`} className="text-xs text-gray-700 whitespace-pre-wrap">{line}</div>;
             })}
         </div>
@@ -1210,39 +1329,72 @@ const renderObjectiveCell = (text) => {
     );
 };
 
-// --- PATIENT TABLE FINAL (DENGAN MODE CHECKLIST PULANG MASAL) ---
-const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onQuickTtv, onBulkDischarge }) => {
+// --- HELPER FUNGSI TANGGAL & LAMA RAWAT UNTUK TTV ---
+const formatDateCM = (isoString) => {
+    if (!isoString) return '';
+    const d = new Date(isoString);
+    if (isNaN(d)) return isoString;
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${dd}/${mm}/${yy} ${hh}:${min}`;
+};
+
+const parseDateCM = (text) => {
+    if (!text) return '';
+    const match = text.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})[\s,]+(\d{1,2})[\:\.](\d{1,2})/);
+    if (match) {
+        let [_, d, m, y, h, min] = match;
+        if (y.length === 2) y = '20' + y;
+        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T${h.padStart(2, '0')}:${min.padStart(2, '0')}`;
+    }
+    return text;
+};
+
+const hitungHariCM = (tanggalMasuk) => {
+    if (!tanggalMasuk) return '-';
+    const start = new Date(tanggalMasuk);
+    if (isNaN(start)) return '?';
+    const now = new Date();
+    const diffTime = now.getTime() - start.getTime();
+    if (diffTime < 0) return '0 hr';
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays + ' hr';
+};
+
+// --- PATIENT TABLE FINAL (DENGAN BUKU CM INLINE DI MODE TTV) ---
+const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onQuickTtv, onBulkDischarge, updateRecord, onPrintBukuCM }) => {
     
     const [viewMode, setViewMode] = useState('soap');
-    
-    // --- LOGIKA SELEKSI (CHECKBOX) ---
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
+    const sortedRooms = useMemo(() => {
+        return [...ROOM_LIST].sort((a, b) => 
+            a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+        );
+    }, []);
 
-    // Reset seleksi saat mode checkbox dimatikan
     useEffect(() => { if (!isSelectionMode) setSelectedIds([]); }, [isSelectionMode]);
 
-    // Fungsi Pilih Semua
     const handleSelectAll = (e) => {
         if (e.target.checked) setSelectedIds(records.map(r => r.id));
         else setSelectedIds([]);
     };
 
-    // Fungsi Pilih Satu Baris
     const handleSelectRow = (id) => {
         setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
     };
 
-    // Fungsi Eksekusi Pulang Masal
     const executeBulkDischarge = () => {
         if (selectedIds.length === 0) return;
         if (window.confirm(`Yakin ingin memulangkan ${selectedIds.length} pasien terpilih? Status kamar akan menjadi KOSONG.`)) {
             onBulkDischarge(selectedIds);
-            setIsSelectionMode(false); // Keluar mode seleksi setelah sukses
+            setIsSelectionMode(false); 
         }
     };
 
-    // Logika Sortir (Tetap Sama)
     const sortedRecords = useMemo(() => {
         if (roomSortOrder && roomSortOrder.length > 0 && roomSortOrder.length < 24) {
             return [...records].sort((a, b) => {
@@ -1256,7 +1408,6 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
         );
     }, [records, roomSortOrder]);
 
-    // Helpers Tampilan (Tetap Sama)
     const getPreparationAlert = (planningText) => {
         if (!planningText) return null;
         const text = planningText.toLowerCase();
@@ -1299,160 +1450,219 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
     return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
             
-            {/* HEADER: TOMBOL CHECKLIST & SWITCHER */}
             <div className="flex border-b bg-gray-50 p-1 gap-2 items-center justify-between flex-shrink-0">
                 {isSelectionMode ? (
-                    /* TAMPILAN SAAT MODE CHECKLIST AKTIF */
                     <div className="flex gap-2 flex-1 items-center px-2 animate-in fade-in slide-in-from-left-5 duration-300 bg-red-50 rounded py-1">
-                        <button onClick={() => setIsSelectionMode(false)} className="text-gray-500 hover:text-gray-700 font-bold text-xs border px-3 py-1 bg-white rounded hover:bg-gray-100 transition">
-                            Batal
-                        </button>
-                        <div className="text-xs font-bold text-red-800 bg-red-100 px-2 py-1 rounded border border-red-200">
-                            {selectedIds.length} Dipilih
-                        </div>
-                        <button 
-                            onClick={executeBulkDischarge}
-                            disabled={selectedIds.length === 0}
-                            className={`px-4 py-1 text-xs font-bold text-white rounded shadow-sm transition flex items-center gap-1 ${selectedIds.length > 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-400 cursor-not-allowed'}`}
-                        >
+                        <button onClick={() => setIsSelectionMode(false)} className="text-gray-500 hover:text-gray-700 font-bold text-xs border px-3 py-1 bg-white rounded hover:bg-gray-100 transition">Batal</button>
+                        <div className="text-xs font-bold text-red-800 bg-red-100 px-2 py-1 rounded border border-red-200">{selectedIds.length} Dipilih</div>
+                        <button onClick={executeBulkDischarge} disabled={selectedIds.length === 0} className={`px-4 py-1 text-xs font-bold text-white rounded shadow-sm transition flex items-center gap-1 ${selectedIds.length > 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-400 cursor-not-allowed'}`}>
                             <span>🚪</span> PULANGKAN {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
                         </button>
                     </div>
-                ) : (
-                    /* TAMPILAN NORMAL */
+                ) : (                    
                     <div className="flex gap-1 flex-1">
-                        <button onClick={() => setIsSelectionMode(true)} className="px-3 py-1.5 bg-white border border-indigo-300 text-indigo-700 text-[10px] font-bold rounded hover:bg-indigo-50 transition shadow-sm whitespace-nowrap mr-2 flex items-center gap-1">
-                            <span>☑️</span> Pilih Banyak
-                        </button>
+                        <button onClick={() => setIsSelectionMode(true)} className="px-3 py-1.5 bg-white border border-indigo-300 text-indigo-700 text-[10px] font-bold rounded hover:bg-indigo-50 transition shadow-sm whitespace-nowrap mr-2 flex items-center gap-1"><span>☑️</span> Pilih Banyak</button>
                         <button onClick={() => setViewMode('soap')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'soap' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📝 Mode SOAP</button>
                         <button onClick={() => setViewMode('ttv')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'ttv' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📊 Mode TTV</button>
+                        <button onClick={() => setViewMode('buku-cm')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'buku-cm' ? 'bg-emerald-600 text-white shadow-sm border-emerald-600' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📖 Buku CM</button>
                     </div>
                 )}
                 
-                {/* Tombol Print TTV (Hanya muncul jika TIDAK sedang checklist) */}
                 {viewMode === 'ttv' && !isSelectionMode && (
                     <button onClick={onPrintTTV} className="px-3 py-1.5 bg-white border border-green-600 text-green-700 text-[10px] font-bold rounded hover:bg-green-50 transition shadow-sm whitespace-nowrap">🖨️ Cetak Lembar TTV</button>
                 )}
             </div>
 
-            <div id="ttv-table-area" className="overflow-auto flex-1 custom-scrollbar">
-                <table className={`w-full text-xs border-collapse table-fixed ${viewMode === 'ttv' ? 'min-w-[1000px]' : 'min-w-[1000px]'}`}>
-                    <thead className="bg-gray-100 text-gray-700 sticky top-0 z-20 shadow-sm h-9">
-                        <tr>
-                            {/* KOLOM IDENTITAS + CHECKBOX HEADER */}
-                            <th className="p-2 border border-gray-300 w-[160px] text-left sticky left-0 bg-gray-100 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                                {isSelectionMode ? (
-                                    <div className="flex items-center gap-2 pl-1 bg-white border border-indigo-200 rounded px-1 py-0.5">
-                                        <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === records.length && records.length > 0} className="w-3.5 h-3.5 cursor-pointer accent-indigo-600"/>
-                                        <span className="text-[10px] text-indigo-800 font-bold">Pilih Semua</span>
-                                    </div>
-                                ) : 'Identitas'}
-                            </th>
-                            
-                            {viewMode === 'soap' ? (
-                                <>
-                                    <th className="p-2 border border-gray-300 w-[200px] text-left">S (Subjektif)</th>
-                                    <th className="p-2 border border-gray-300 w-[200px] text-left">O (Objektif)</th>
-                                    <th className="p-2 border border-gray-300 w-[200px] text-left">A (Analisa)</th>
-                                    <th className="p-2 border border-gray-300 w-[250px] text-left">P (Planning)</th>
-                                </>
-                            ) : (
-                                <>
-                                    <th className="p-1 border border-gray-300 w-[60px] text-center bg-white">TD</th>
-                                    <th className="p-1 border border-gray-300 w-[50px] text-center bg-white">Nadi</th>
-                                    <th className="p-1 border border-gray-300 w-[50px] text-center bg-white">Suhu</th>
-                                    <th className="p-1 border border-gray-300 w-[50px] text-center bg-white">RR</th>
-                                    <th className="p-1 border border-gray-300 w-[50px] text-center bg-white">SpO2</th>
-                                    <th className="p-2 border border-gray-300 w-[250px] text-left bg-gray-50 text-gray-800 font-bold">⚠️ Rencana / Persiapan</th>
-                                </>
-                            )}
-                            <th className="p-2 border border-gray-300 w-[120px] text-center no-print">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sortedRecords.map((rec, index) => (
-                            <tr 
-                                key={rec.id} 
-                                // LOGIKA KLIK: Jika Mode Seleksi -> Centang Baris. Jika Normal -> Edit Pasien.
-                                onClick={() => isSelectionMode ? handleSelectRow(rec.id) : onEdit(rec)} 
-                                className={`cursor-pointer transition-colors border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${selectedIds.includes(rec.id) ? '!bg-indigo-100 border-indigo-200' : 'hover:bg-indigo-50/50'}`}
-                            >
-                                {/* IDENTITAS + CHECKBOX BARIS */}
-                                <td className="p-2 border-r border-gray-300 align-top sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-inherit">
-                                    <div className="flex items-start gap-2">
-                                        {isSelectionMode && (
-                                            <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-                                                <input type="checkbox" checked={selectedIds.includes(rec.id)} onChange={() => handleSelectRow(rec.id)} className="w-3.5 h-3.5 cursor-pointer accent-indigo-600" />
-                                            </div>
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-bold text-sm text-indigo-900 truncate">{rec.name}</div>
-                                                <div className="flex gap-1 mt-1">
-                                                    <span className="font-bold bg-yellow-100 px-1 rounded text-[10px] border border-yellow-200">{rec.roomNumber}</span>
-                                                    <span className="bg-gray-100 px-1 rounded text-[9px] text-gray-500 border">{rec.gender}</span>
-                                                </div>
-
-                                                {/* DPJP UTAMA */}
-                                                <div className="mt-1 text-gray-600 italic text-[10px] truncate font-medium">
-                                                    Dr: {rec.dpjpName.split(',')[0]}
-                                                </div>
-
-                                                {/* DOKTER RABER (DITAMPILKAN JIKA ADA) */}
-                                                {(rec.raberName || rec.raber2Name) && (
-                                                    <div className="mt-0.5 text-blue-600 font-bold text-[9px] leading-tight">
-                                                        <span className="text-gray-400 font-normal">Rb: </span>
-                                                        {[rec.raberName, rec.raber2Name].filter(Boolean).map(name => name.split(',')[0]).join(', ')}
-                                                    </div>
-                                                )}
+            {viewMode === 'buku-cm' ? (
+                <div className="flex-1 bg-gray-50 overflow-hidden"> {/* Ganti overflow-y-auto jadi overflow-hidden */}
+                    <BukuCMTable records={sortedRecords} updateRecord={updateRecord} onPrint={onPrintBukuCM} />
+                </div>
+            ) : (
+                <div id="ttv-table-area" className="overflow-auto flex-1 custom-scrollbar">
+                    <table className={`w-full text-xs border-collapse table-fixed ${viewMode === 'ttv' ? 'min-w-[1100px]' : 'min-w-[1000px]'}`}>
+                        <thead className="bg-gray-100 text-gray-700 sticky top-0 z-20 shadow-sm h-9">
+                            <tr>
+                                <th className="p-2 border border-gray-300 w-[140px] text-left sticky left-0 bg-gray-100 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-[10px]">
+                                    {isSelectionMode ? (
+                                        <div className="flex items-center gap-2 pl-1 bg-white border border-indigo-200 rounded px-1 py-0.5">
+                                            <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === sortedRecords.length && sortedRecords.length > 0} className="w-3.5 h-3.5 cursor-pointer accent-indigo-600"/>
+                                            <span className="text-[10px] text-indigo-800 font-bold">Pilih Semua</span>
                                         </div>
-                                    </div>
-                                </td>
-
-                                {/* KONTEN SOAP / TTV (SAMA SEPERTI SEBELUMNYA) */}
+                                    ) : 'Identitas'}
+                                </th>
+                                
                                 {viewMode === 'soap' ? (
                                     <>
+                                        <th className="p-2 border border-gray-300 w-[200px] text-left">S (Subjektif)</th>
+                                        <th className="p-2 border border-gray-300 w-[200px] text-left">O (Objektif)</th>
+                                        <th className="p-2 border border-gray-300 w-[200px] text-left">A (Analisa)</th>
+                                        <th className="p-2 border border-gray-300 w-[250px] text-left">P (Planning)</th>
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* HEADER TAMBAHAN BUKU CM DI TTV */}
+                                        <th className="p-1 border border-gray-300 w-[60px] text-center bg-emerald-50 text-[10px]">No.RM</th>
+                                        <th className="p-1 border border-gray-300 w-[35px] text-center bg-emerald-50 text-[10px]">Kls</th>
+                                        <th className="p-1 border border-gray-300 w-[75px] text-center bg-emerald-50 text-[10px]">Tgl Msk</th>
+                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-emerald-50 text-[10px]">Hari</th>
+                                        
+                                        {/* HEADER TTV ASLI */}
+                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">TD</th>
+                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">Nadi</th>
+                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">Suhu</th>
+                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">RR</th>
+                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">SpO2</th>
+                                        {/* Class w-[250px] dihapus agar kolom rencana otomatis mengisi sisa ruang kertas A4 */}
+                                        <th className="p-2 border border-gray-300 text-left bg-gray-50 text-gray-800 font-bold text-[10px]">⚠️ Rencana / Persiapan</th>
+                                    </>
+                                )}
+                                <th className="p-2 border border-gray-300 w-[120px] text-center no-print text-[10px]">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {viewMode === 'soap' ? (
+                                // --- MODE SOAP (Hanya Pasien Aktif) ---
+                                sortedRecords.map((rec, index) => (
+                                    <tr 
+                                        key={rec.id} 
+                                        onClick={() => isSelectionMode ? handleSelectRow(rec.id) : onEdit(rec)} 
+                                        className={`cursor-pointer transition-colors border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${selectedIds.includes(rec.id) ? '!bg-indigo-100 border-indigo-200' : 'hover:bg-indigo-50/50'}`}
+                                    >
+                                        <td className="p-1.5 border-r border-gray-300 align-top sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-inherit">
+                                            <div className="flex items-start gap-1">
+                                                {isSelectionMode && (
+                                                    <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                                                        <input type="checkbox" checked={selectedIds.includes(rec.id)} onChange={() => handleSelectRow(rec.id)} className="w-3.5 h-3.5 cursor-pointer accent-indigo-600" />
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-bold text-[11px] text-indigo-900 truncate leading-tight">{rec.name}</div>
+                                                    <div className="text-[9px] font-mono text-gray-400">RM: {rec.rmNumber || '-'}</div>
+                                                    <div className="flex gap-1 mt-0.5">
+                                                        <span className="font-bold bg-yellow-100 px-1 rounded text-[9px] border border-yellow-200">{rec.roomNumber}</span>
+                                                        <span className="bg-gray-100 px-1 rounded text-[8px] text-gray-500 border">{rec.gender}</span>
+                                                    </div>
+                                                    <div className="mt-0.5 text-gray-600 italic text-[9px] truncate font-medium">DPJP: {rec.dpjpName}</div>
+                                                    {(rec.raberName || rec.raber2Name) && (
+                                                        <div className="mt-0.5 text-blue-600 font-bold text-[9px] leading-tight">
+                                                            <span className="text-gray-400 font-normal">Rb: </span>
+                                                            {[rec.raberName, rec.raber2Name].filter(Boolean).map(name => name).join(', ')}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </td>
                                         <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.subjective || '-'}</td>
                                         <td className="p-2 border-r border-gray-300 align-top">{renderObjectiveCell(rec.objective)}</td>
                                         <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.analysis || '-'}</td>
                                         <td className="p-2 border-r border-gray-300 align-top">{renderPlanningCell(rec.planning)}</td>
-                                    </>
-                                ) : (
-                                    <>
-                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono font-bold">{getTtvValue(rec.objective, 'TD')}</td>
-                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono">{getTtvValue(rec.objective, 'N')}</td>
-                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono">{getTtvValue(rec.objective, 'S')}</td>
-                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono">{getTtvValue(rec.objective, 'RR')}</td>
-                                        <td className="p-2 border-r border-gray-300 align-middle text-center font-mono">{getTtvValue(rec.objective, 'SpO2')}</td>
-                                        <td className="p-2 border-r border-gray-300 align-top">
-                                            {getPreparationAlert(rec.planning)}
-                                            {renderTtvPlanning(rec.planning)}
+                                        <td className="p-1.5 border-r border-gray-300 align-middle no-print" onClick={(e) => e.stopPropagation()}>
+                                            <div className="grid grid-cols-2 gap-1">
+                                                <button onClick={() => onEdit(rec)} className="flex flex-col items-center justify-center p-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 border border-yellow-300" title="Edit"><span className="text-sm">✏️</span><span className="text-[8px] font-bold">Edit</span></button>
+                                                <button onClick={() => onPrint(rec)} className="flex flex-col items-center justify-center p-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 border border-gray-300" title="Cetak"><span className="text-sm">🖨️</span><span className="text-[8px] font-bold">Cetak</span></button>
+                                                <button onClick={() => onPrintLabel(rec)} className="flex flex-col items-center justify-center p-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 border border-purple-300" title="Label Spuit"><span className="text-sm">🏷️</span><span className="text-[7px] font-bold">Label</span></button>
+                                                <button onClick={() => onShowLaporModal(rec)} className="flex flex-col items-center justify-center p-1 bg-green-100 text-green-700 rounded hover:bg-green-200 border border-green-300" title="Lapor WA"><span className="text-sm">📱</span><span className="text-[8px] font-bold">Lapor</span></button>
+                                                <button onClick={() => onDischarge(rec.id, rec.name, rec.roomNumber)} className="flex flex-col items-center justify-center p-1 bg-red-100 text-red-700 rounded hover:bg-red-200 border border-red-300" title="Pulang"><span className="text-sm">🚪</span><span className="text-[8px] font-bold">Plg</span></button>
+                                            </div>
                                         </td>
-                                    </>
-                                )}
-                                
-                                {/* KOLOM AKSI (NON-PRINT) */}
-                                <td className="p-2 border-r border-gray-300 align-middle no-print" onClick={(e) => e.stopPropagation()}>
-                                    {viewMode === 'soap' ? (
-                                        <div className="grid grid-cols-2 gap-1">
-                                            <button onClick={() => onEdit(rec)} className="flex flex-col items-center justify-center p-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 border border-yellow-300" title="Edit"><span className="text-sm">✏️</span><span className="text-[8px] font-bold">Edit</span></button>
-                                            <button onClick={() => onPrint(rec)} className="flex flex-col items-center justify-center p-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 border border-gray-300" title="Cetak"><span className="text-sm">🖨️</span><span className="text-[8px] font-bold">Cetak</span></button>
-                                            <button onClick={() => onShowLaporModal(rec)} className="flex flex-col items-center justify-center p-1 bg-green-100 text-green-700 rounded hover:bg-green-200 border border-green-300" title="Lapor WA"><span className="text-sm">📱</span><span className="text-[8px] font-bold">Lapor</span></button>
-                                            <button onClick={() => onDischarge(rec.id, rec.name)} className="flex flex-col items-center justify-center p-1 bg-red-100 text-red-700 rounded hover:bg-red-200 border border-red-300" title="Pulang"><span className="text-sm">🚪</span><span className="text-[8px] font-bold">Plg</span></button>
-                                        </div>
-                                    ) : (
-                                        <button onClick={() => onQuickTtv(rec)} className="w-full h-full py-2 bg-green-100 text-green-700 rounded border border-green-300 hover:bg-green-200 text-[10px] font-bold shadow-sm flex items-center justify-center" title="Isi TTV Cepat">+ Input TTV</button>
-                                    )}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+                                    </tr>
+                                ))
+                            ) : (
+                                // --- MODE TTV (24 Kamar Kosong & Terisi) ---
+                                [...ROOM_LIST].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map((room, index) => {
+                                    const rec = records.find(r => r.roomNumber === room && !r.isDischarged);
+                                    return (
+                                        <tr key={room} className={`transition-colors border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${rec ? 'hover:bg-indigo-50/50 cursor-pointer' : ''}`} onClick={() => rec ? onEdit(rec) : null}>
+                                            <td className="p-1.5 border-r border-gray-300 align-top sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-inherit">
+                                                <div className="flex items-start gap-1">
+                                                    <div className="flex-1 min-w-0">
+                                                        {rec ? (
+                                                            <>
+                                                                <div className="font-bold text-[11px] text-indigo-900 truncate leading-tight">{rec.name}</div>
+                                                                {/* BARIS "RM: xxx" DIHAPUS DI SINI AGAR LEBIH HEMAT KERTAS SAAT PRINT */}
+                                                                <div className="flex gap-1 mt-0.5">
+                                                                    <span className="font-bold bg-yellow-100 px-1 rounded text-[9px] border border-yellow-200">{room}</span>
+                                                                    <span className="bg-gray-100 px-1 rounded text-[8px] text-gray-500 border">{rec.gender}</span>
+                                                                </div>
+                                                                <div className="mt-0.5 text-gray-600 italic text-[9px] truncate font-medium">DPJP: {rec.dpjpName}</div>
+                                                                {(rec.raberName || rec.raber2Name) && (
+                                                                    <div className="mt-0.5 text-blue-600 font-bold text-[9px] leading-tight">
+                                                                        <span className="text-gray-400 font-normal">Rb: </span>
+                                                                        {[rec.raberName, rec.raber2Name].filter(Boolean).map(name => name).join(', ')}
+                                                                    </div>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <div className="font-bold text-[11px] text-gray-300 truncate leading-tight">...</div>
+                                                                <div className="flex gap-1 mt-0.5">
+                                                                    <span className="font-bold bg-gray-100 px-1 rounded text-[9px] border border-gray-200 text-gray-400">{room}</span>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center bg-emerald-50/30 hover:bg-yellow-100/50" onClick={(e) => { if(rec) e.stopPropagation(); }}>
+                                                {rec ? (
+                                                    <>
+                                                        <input type="text" defaultValue={rec.rmNumber || ''} onBlur={(e) => updateRecord(rec.id, { rmNumber: e.target.value })} className="w-full bg-transparent outline-none text-center font-mono text-[9px] no-print focus:border-b border-indigo-500" />
+                                                        <span className="hidden print:inline text-[9px] font-mono">{rec.rmNumber || ''}</span>
+                                                    </>
+                                                ) : null}
+                                            </td>
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center bg-emerald-50/30 hover:bg-yellow-100/50" onClick={(e) => { if(rec) e.stopPropagation(); }}>
+                                                {rec ? (
+                                                    <>
+                                                        <input type="text" defaultValue={rec.bpjsClass || ''} onBlur={(e) => updateRecord(rec.id, { bpjsClass: e.target.value })} className="w-full bg-transparent outline-none text-center text-[9px] no-print focus:border-b border-indigo-500" />
+                                                        <span className="hidden print:inline text-[8px]">{rec.bpjsClass || ''}</span>
+                                                    </>
+                                                ) : null}
+                                            </td>
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center bg-emerald-50/30 hover:bg-yellow-100/50" onClick={(e) => { if(rec) e.stopPropagation(); }}>
+                                                {rec ? (
+                                                    <>
+                                                        <input type="text" defaultValue={formatDateCM(rec.admissionDate)} onBlur={(e) => { const pd = parseDateCM(e.target.value); if(pd !== rec.admissionDate) updateRecord(rec.id, { admissionDate: pd }); }} className="w-full bg-transparent outline-none text-center font-mono text-[9px] no-print focus:border-b border-indigo-500" placeholder="dd/mm/yy hh:mm" />
+                                                        <span className="hidden print:inline text-[8px] font-mono">{formatDateCM(rec.admissionDate) || ''}</span>
+                                                    </>
+                                                ) : null}
+                                            </td>
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center font-bold text-rose-600 text-[10px]">
+                                                {rec ? hitungHariCM(rec.admissionDate) : ''}
+                                            </td>
+
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center font-mono font-bold text-[10px]">{rec ? getTtvValue(rec.objective, 'TD') : ''}</td>
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center font-mono text-[10px]">{rec ? getTtvValue(rec.objective, 'N') : ''}</td>
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center font-mono text-[10px]">{rec ? getTtvValue(rec.objective, 'S') : ''}</td>
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center font-mono text-[10px]">{rec ? getTtvValue(rec.objective, 'RR') : ''}</td>
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center font-mono text-[10px]">{rec ? getTtvValue(rec.objective, 'SpO2') : ''}</td>
+                                            <td className="p-1.5 border-r border-gray-300 align-top">
+                                                {rec ? (
+                                                    <>
+                                                        {getPreparationAlert(rec.planning)}
+                                                        {renderTtvPlanning(rec.planning)}
+                                                    </>
+                                                ) : null}
+                                            </td>
+                                            
+                                            <td className="p-1.5 border-r border-gray-300 align-middle no-print" onClick={(e) => e.stopPropagation()}>
+                                                {rec ? (
+                                                    <button onClick={() => onQuickTtv(rec)} className="w-full h-full py-2 bg-green-100 text-green-700 rounded border border-green-300 hover:bg-green-200 text-[10px] font-bold shadow-sm flex items-center justify-center" title="Isi TTV Cepat">+ Input TTV</button>
+                                                ) : null}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            
         </div>
     );
 };
-
-// --- Filter Modals ---
 
 // --- HELPER: LOGIKA SALAM DOKTER (TOLERANSI) ---
 const getDoctorGreeting = (drName) => {
@@ -1645,47 +1855,51 @@ const DigitalClock = () => {
     );
 };
 
-// --- LOGIC UTAMA ---
-const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) => {
+// --- LOGIC UTAMA (MEDICAL RECORD APP - LEVEL 4 COMPLETED) ---
+const MedicalRecordApp = ({ 
+    db, userId, appId, isOnline, onLogout, userRole, 
+    currentUser, appMode, setAppMode, cashflowRole 
+}) => {
+  // --- STATE LEVEL 4: MANAJEMEN USER (BARU) ---
+  const [allUsers, setAllUsers] = useState([]); // Daftar user (Admin Only)
+  const [profileForm, setProfileForm] = useState({ name: '', pass: '' }); // Form Profil Sendiri
+  const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member' }); // Form Admin
+
+  // --- STATE LAMA (TETAP ADA) ---
   const [records, setRecords] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeRecords, setActiveRecords] = useState([]);
+  const [archivedRecords, setArchivedRecords] = useState([]);
   const [occupiedRooms, setOccupiedRooms] = useState([]);
   const [waitingList, setWaitingList] = useState([]);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showWaitingModal, setShowWaitingModal] = useState(false);
   const [quickTtvTarget, setQuickTtvTarget] = useState(null);
+  const [patientListMode, setPatientListMode] = useState('standard');
+  const [archiveSearch, setArchiveSearch] = useState('');
   
-  // --- MONITORING DAFTAR TUNGGU SECARA REAL-TIME ---
-  useEffect(() => {
-    if (!db || !appId) return;
-
-    // 1. Arahkan ke koleksi waitingList
-    const wlRef = collection(db, `artifacts/${appId}/public/data/waitingList`);
-    
-    // 2. Urutkan berdasarkan waktu daftar (asc = yang duluan daftar di atas)
-    const q = query(wlRef, orderBy('createdAt', 'asc')); 
-    
-    // 3. Fungsi onSnapshot untuk update otomatis saat ada data masuk/hapus
-    const unsub = onSnapshot(q, (snap) => {
-        const list = snap.docs.map(d => ({ 
-            id: d.id, 
-            ...d.data() 
-        }));
-        setWaitingList(list); // Ini yang bikin List Antrean (0) berubah jadi (1), (2), dst.
-        console.log("Waiting list updated:", list.length);
-    }, (err) => {
-        console.error("Gagal sinkronisasi Waiting List:", err);
-    });
-
-    return () => unsub(); // Putus koneksi saat pindah menu
-  }, [db, appId]);
-
   // State untuk Data Dinamis (Setelan)
   const [dpjpProfiles, setDpjpProfiles] = useState(initialDpjpProfiles.map(p => ({...p, name: p.name})));
-  
-  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);    
-  const [historyLogs, setHistoryLogs] = useState([]); // Ganti jadi Array
+    // Master data lists (lab, radiologi, tindakan, terapi) -- dapat diubah lewat Setelan
+    const [masterLabs, setMasterLabs] = useState([]);
+    const [masterRads, setMasterRads] = useState([]);
+    const [masterProcedures, setMasterProcedures] = useState([]);
+    const [masterMedications, setMasterMedications] = useState([]);
+    // Input fields for master data
+    const [newMasterLab, setNewMasterLab] = useState('');
+    const [newMasterRad, setNewMasterRad] = useState('');
+    const [newMasterProcedure, setNewMasterProcedure] = useState('');
+    const [newMasterMedication, setNewMasterMedication] = useState('');
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);      
+
+    // Combined planning options (prefer master lists when available)
+    const combinedPlanningOptions = useMemo(() => {
+            const labs = Array.from(new Set([...(LAB_CHECKS || []), ...masterLabs])).map(i => ({ label: i, type: 'Lab' }));
+            const rads = Array.from(new Set([...(RADIOLOGY_CHECKS || []), ...masterRads])).map(i => ({ label: i, type: 'Rad' }));
+            const prots = Array.from(new Set([...(PROCEDURES || []), ...masterProcedures])).map(i => ({ label: i, type: 'Med' }));
+            const meds = Array.from(new Set([...(MEDICATIONS || []), ...masterMedications])).map(i => ({ label: i, type: 'Rx' }));
+            return [...labs, ...rads, ...prots, ...meds].sort((a, b) => a.label.localeCompare(b.label));
+    }, [masterLabs, masterRads, masterProcedures, masterMedications]);
+  const [historyLogs, setHistoryLogs] = useState([]); 
 
   const [view, setView] = useState('dashboard'); 
   const [loading, setLoading] = useState(false);
@@ -1694,7 +1908,7 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
   
   // State Print
   const [selectedRecordForPrint, setSelectedRecordForPrint] = useState(null);
-  const [showBulkPrint, setShowBulkPrint] = useState(false); // New Bulk Print State
+  const [showBulkPrint, setShowBulkPrint] = useState(false); 
 
   const [showInputModal, setShowInputModal] = useState(false);
   const [recordForLapor, setRecordForLapor] = useState(null);
@@ -1706,222 +1920,282 @@ const MedicalRecordApp = ({ db, userId, appId, isOnline, onLogout, userRole }) =
   const [showRaber2, setShowRaber2] = useState(false);
   const [showTtvModal, setShowTtvModal] = useState(false);
   
+  
   const [confirmDetails, setConfirmDetails] = useState({ isOpen: false, message: '', title: '', action: () => {} });
   const openConfirm = (title, message, action) => { setConfirmDetails({ isOpen: true, title, message, action }); };
   const closeConfirm = () => { setConfirmDetails({ isOpen: false, message: '', title: '', action: () => {} }); };
   
   const [formData, setFormData] = useState({
-  roomNumber: '', name: '', gender: '', 
-  dpjpName: '', raberName: '', raber2Name: '',
-  subjective: '', objective: '', analysis: '', planning: '', isDischarged: false,
-});
+    roomNumber: '', name: '', rmNumber: '', gender: '', 
+    dpjpName: '', raberName: '', raber2Name: '',
+    subjective: '', objective: '', analysis: '', planning: '', isDischarged: false,
+  });
 
   const [newDpjpName, setNewDpjpName] = useState('');
   const [newDpjpWa, setNewDpjpWa] = useState('');
 
+  // --- [LEVEL 4] LOGIC: USER MONITORING & ACTIONS ---
   
-  // --- UPDATE PENCARIAN (Menambahkan Pencarian Nama Dokter) ---
+  // 1. Monitor Users (Khusus Admin)
+  useEffect(() => {
+      if (currentUser?.role !== 'admin' || !db) return;
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, orderBy('name', 'asc'));
+      const unsub = onSnapshot(q, (snap) => {
+          setAllUsers(snap.docs.map(d => d.data()));
+      });
+      return () => unsub();
+  }, [db, currentUser]);
+
+  // 2. Init Profile Form (Saat currentUser berubah)
+  useEffect(() => {
+      if (currentUser) {
+          setProfileForm({ name: currentUser.name, pass: currentUser.pass });
+      }
+  }, [currentUser]);
+
+  // 3. Action: Update Profil Sendiri
+  const handleUpdateSelf = async () => {
+      if (!profileForm.name || !profileForm.pass) return alert("Nama dan Password tidak boleh kosong!");
+      try {
+          const userRef = doc(db, 'users', currentUser.id);
+          await updateDoc(userRef, { name: profileForm.name, pass: profileForm.pass });
+          alert("Profil berhasil diupdate! Silakan login ulang nanti untuk melihat perubahan.");
+      } catch (e) { alert("Gagal update: " + e.message); }
+  };
+
+  // 4. Action: Admin Simpan User
+  const handleAdminSaveUser = async () => {
+      if (!adminUserForm.id || !adminUserForm.name || !adminUserForm.pass) return alert("Semua kolom wajib diisi!");
+      const targetId = adminUserForm.id.toLowerCase().trim().replace(/\s+/g, '_');
+      try {
+          // Cek ID manual di state allUsers untuk menentukan mode (Add/Edit)
+          const exists = allUsers.find(u => u.id === targetId);
+          if (!exists) {
+             await setDoc(doc(db, 'users', targetId), { ...adminUserForm, id: targetId, createdAt: Timestamp.now() });
+             alert(`User baru "${adminUserForm.name}" ditambahkan!`);
+          } else {
+             await updateDoc(doc(db, 'users', targetId), { 
+                 name: adminUserForm.name, pass: adminUserForm.pass, role: adminUserForm.role 
+             });
+             alert(`User "${adminUserForm.name}" diperbarui.`);
+          }
+          setAdminUserForm({ id: '', name: '', pass: '', role: 'member' });
+      } catch (e) { alert("Error: " + e.message); }
+  };
+
+  // 5. Action: Admin Hapus User
+  const handleAdminDeleteUser = async (targetId) => {
+      if (targetId === currentUser.id) return alert("Tidak bisa menghapus diri sendiri!");
+      if (!confirm("Hapus user ini permanen?")) return;
+      try {
+          await deleteDoc(doc(db, 'users', targetId));
+          alert("User dihapus.");
+      } catch (e) { alert("Gagal hapus: " + e.message); }
+  };
+
+  // --- MONITORING DAFTAR TUNGGU SECARA REAL-TIME ---
+  useEffect(() => {
+    if (!db || !appId) return;
+    const wlRef = collection(db, `artifacts/${appId}/public/data/waitingList`);
+    const q = query(wlRef, orderBy('createdAt', 'asc')); 
+    const unsub = onSnapshot(q, (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setWaitingList(list);
+    }, (err) => console.error("Gagal sinkronisasi Waiting List:", err));
+    return () => unsub();
+  }, [db, appId]);
+
+  // --- PENCARIAN & FILTER ---
   const filteredActiveRecords = useMemo(() => {
     return activeRecords.filter(rec => {
-        // 1. Filter Dropdown (DPJP & Ruangan)
         const matchesDpjp = !dpjpFilter || rec.dpjpName === dpjpFilter;
-        // Logic ruangan: Jika pilih "Semua", true. Jika tidak, cek apakah ruangan ada di list yg dipilih.
         const matchesRoom = selectedRoomFilter.length === ROOM_LIST.length || selectedRoomFilter.includes(rec.roomNumber);
-        
-        // 2. Filter Search Text (Nama Pasien, Diagnosa/Analisa, DAN NAMA DOKTER)
         const term = searchTerm.toLowerCase();
         const matchesSearch = !searchTerm || 
             rec.name.toLowerCase().includes(term) || 
             (rec.analysis && rec.analysis.toLowerCase().includes(term)) ||
-            (rec.dpjpName && rec.dpjpName.toLowerCase().includes(term)); // <--- INI TAMBAHANNYA
-
+            (rec.dpjpName && rec.dpjpName.toLowerCase().includes(term)); 
         return matchesDpjp && matchesRoom && matchesSearch;
     });
   }, [activeRecords, dpjpFilter, selectedRoomFilter, searchTerm]); 
 
-  // --- LOGIC DATABASE BARU (SHARED) ---
+  // --- LOGIC DATABASE UTAMA ---
   const getCollectionRef = useCallback(() => {
-    // MENGUBAH PATH KE PUBLIC DATA AGAR SHARING BISA TERJADI
     if (db) return collection(db, `artifacts/${appId}/public/data/medicalRecords`);
     return null;
   }, [db, appId]);
   
-  // --- LOGIC SETELAN DI DATABASE (PERSISTENT) ---
   const getConfigRef = useCallback(() => {
       if (db) return doc(db, `artifacts/${appId}/public/data/settings`, 'mainConfig');
       return null;
   }, [db, appId]);
 
-  // 1. Load Settings from Firestore (VERSI AMAN ANTI-HILANG)
+  // 1. Load Settings (DPJP)
   useEffect(() => {
       if (!userId) return; 
       const ref = getConfigRef();
       if (!ref) return;
-
-      // KUNCI DULU SAAT AWAL MEMUAT (Biar gak bisa edit)
       setIsSettingsLoaded(false);
-
       const unsubscribe = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
               const data = snap.data();
               if (data.dpjpProfiles && Array.isArray(data.dpjpProfiles)) {
                   setDpjpProfiles(data.dpjpProfiles);
-              }              
-              // ✅ SUKSES: Data Cloud sudah masuk, baru kita buka gemboknya!
+              }
+              // load master lists if present
+              if (data.masterLabs && Array.isArray(data.masterLabs)) setMasterLabs(data.masterLabs);
+              if (data.masterRads && Array.isArray(data.masterRads)) setMasterRads(data.masterRads);
+              if (data.masterProcedures && Array.isArray(data.masterProcedures)) setMasterProcedures(data.masterProcedures);
+              if (data.masterMedications && Array.isArray(data.masterMedications)) setMasterMedications(data.masterMedications);
               setIsSettingsLoaded(true);
-              console.log("Settings loaded from Cloud.");
           } else {
-              // Jika dokumen belum ada di Cloud (Aplikasi baru pertama kali dipakai)
-              // Kita buatkan dokumen baru pakai data default
-              setDoc(ref, { 
-                  dpjpProfiles: initialDpjpProfiles,                  
-              }).catch(err => console.error("Init settings error:", err));
-              
+              // initialize with existing DPJP and empty masters
+              setDoc(ref, { dpjpProfiles: initialDpjpProfiles, masterLabs: [], masterRads: [], masterProcedures: [], masterMedications: [] }).catch(err => console.error("Init settings error:", err));
               setIsSettingsLoaded(true);
           }
       }, (err) => {
           console.error("Settings Load Error:", err);
-          // ❌ GAGAL LOAD: Biarkan terkunci, jangan kasih user ngedit!
-          // Biar user sadar kalau data yang tampil itu cuma data default (palsu)
           setIsSettingsLoaded(false);
       });
-
       return () => unsubscribe();
   }, [getConfigRef, userId]);
 
-  // Baris ini sangat penting agar dropdown di form input mengikuti data dari Cloud
-const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles]);
+  const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles]);
 
-  // 2. Save Settings to Firestore
-  const saveConfig = async (newProfiles, newLink) => {
+  // Generic save helper for settings (merges keys)
+  const saveSettings = async (partial) => {
       const ref = getConfigRef();
       if (!ref) return;
-      
-      const payload = {};
-      if (newProfiles !== undefined) payload.dpjpProfiles = newProfiles;     
-            try {
-          await setDoc(ref, payload, { merge: true });
-          console.log("Settings saved to cloud.");
-      } catch(e) {
-          console.error("Save config error:", e);
-          alert("Gagal menyimpan setelan ke cloud. Cek koneksi.");
-      }
-  };
-
-  // --- FUNGSI TAMBAH DPJP (VERSI AMAN DENGAN SAFETY LOCK) ---
-  const handleAddDpjp = async () => {
-      // 🔒 1. CEK GEMBOK PENGAMAN DULU
-      // Jika data Cloud belum berhasil ditarik, tolak aksi ini!
-      if (!isSettingsLoaded) {
-          alert("⛔ PENGAMAN AKTIF: Data belum termuat sempurna dari Cloud!\n\nJangan menambah data dulu agar data lama tidak tertimpa.\nCek koneksi internet, lalu Refresh browser.");
-          return;
-      }
-
-      if (!newDpjpName.trim()) {
-          alert("Nama DPJP tidak boleh kosong!");
-          return;
-      }
-
-      // 2. Cek apakah nama sudah ada
-      const existing = dpjpProfiles.some(p => p.name.toLowerCase() === newDpjpName.trim().toLowerCase());
-      if (existing) {
-          alert("Nama DPJP ini sudah ada!");
-          return;
-      }
-
-      // 3. Format nomor WA
-      let rawNumber = newDpjpWa.trim().replace(/\D/g, ''); 
-      if (rawNumber.startsWith('0')) {
-          rawNumber = '62' + rawNumber.slice(1); 
-      }
-
-      // 4. Gabung & Urutkan
-      const newProfile = { 
-          name: newDpjpName.trim(), 
-          waNumber: rawNumber 
-      };
-      const updated = [...dpjpProfiles, newProfile].sort((a,b) => a.name.localeCompare(b.name));
-
-      // 5. Simpan ke Cloud
       try {
-          await saveConfig(updated);
-          setNewDpjpName(''); 
-          setNewDpjpWa('');
-          console.log("Berhasil tambah dokter ke Cloud");
-      } catch (err) {
-          alert("Gagal menyimpan ke Cloud. Cek koneksi.");
-      }
+          await setDoc(ref, partial, { merge: true });
+      } catch(e) { alert("Gagal menyimpan setelan. Cek koneksi."); }
   };
 
-  // --- FUNGSI HAPUS DPJP (VERSI AMAN DENGAN SAFETY LOCK) ---
+  const handleAddDpjp = async () => {
+      if (!isSettingsLoaded) return alert("Tunggu data termuat sempurna.");
+      if (!newDpjpName.trim()) return alert("Nama DPJP kosong!");
+      if (dpjpProfiles.some(p => p.name.toLowerCase() === newDpjpName.trim().toLowerCase())) return alert("Nama sudah ada!");
+
+      let rawNumber = newDpjpWa.trim().replace(/\D/g, ''); 
+      if (rawNumber.startsWith('0')) rawNumber = '62' + rawNumber.slice(1); 
+
+      const newProfile = { name: newDpjpName.trim(), waNumber: rawNumber };
+      const updated = [...dpjpProfiles, newProfile].sort((a,b) => a.name.localeCompare(b.name));
+      await saveSettings({ dpjpProfiles: updated });
+      setNewDpjpName(''); setNewDpjpWa('');
+  };
+
   const handleRemoveDpjp = async (name) => {
-      // 🔒 1. CEK GEMBOK PENGAMAN DULU
-      if (!isSettingsLoaded) {
-          alert("⛔ PENGAMAN AKTIF: Data belum termuat sempurna dari Cloud!\n\nTunggu sampai indikator merah hilang baru bisa menghapus.");
-          return;
-      }
-
-      if (window.confirm(`Hapus ${name} dari daftar?`)) {
-          const updated = dpjpProfiles.filter(p => p.name !== name).sort((a,b) => a.name.localeCompare(b.name));
-          await saveConfig(updated);
+      if (!isSettingsLoaded) return alert("Tunggu data termuat.");
+      if (window.confirm(`Hapus ${name}?`)) {
+          const updated = dpjpProfiles.filter(p => p.name !== name);
+          await saveSettings({ dpjpProfiles: updated });
       }
   };
-    // --- MONITORING DATA UTAMA SECARA REAL-TIME ---
+
+  // Handlers for master data (lab, rad, tindakan, terapi)
+  const handleAddMaster = async (type) => {
+      if (!isSettingsLoaded) return alert('Tunggu data termuat.');
+      let updated = [];
+      if (type === 'lab') {
+          if (!newMasterLab.trim()) return alert('Nama lab kosong');
+          if (masterLabs.includes(newMasterLab.trim())) return alert('Sudah ada');
+          updated = [...masterLabs, newMasterLab.trim()].sort();
+          setMasterLabs(updated); setNewMasterLab('');
+          await saveSettings({ masterLabs: updated });
+      } else if (type === 'rad') {
+          if (!newMasterRad.trim()) return alert('Nama radiologi kosong');
+          if (masterRads.includes(newMasterRad.trim())) return alert('Sudah ada');
+          updated = [...masterRads, newMasterRad.trim()].sort();
+          setMasterRads(updated); setNewMasterRad('');
+          await saveSettings({ masterRads: updated });
+      } else if (type === 'procedure') {
+          if (!newMasterProcedure.trim()) return alert('Nama tindakan kosong');
+          if (masterProcedures.includes(newMasterProcedure.trim())) return alert('Sudah ada');
+          updated = [...masterProcedures, newMasterProcedure.trim()].sort();
+          setMasterProcedures(updated); setNewMasterProcedure('');
+          await saveSettings({ masterProcedures: updated });
+      } else if (type === 'medication') {
+          if (!newMasterMedication.trim()) return alert('Nama terapi/obat kosong');
+          if (masterMedications.includes(newMasterMedication.trim())) return alert('Sudah ada');
+          updated = [...masterMedications, newMasterMedication.trim()].sort();
+          setMasterMedications(updated); setNewMasterMedication('');
+          await saveSettings({ masterMedications: updated });
+      }
+  };
+
+  const handleRemoveMaster = async (type, value) => {
+      if (!isSettingsLoaded) return alert('Tunggu data termuat.');
+      if (!window.confirm(`Hapus "${value}" dari master ${type}?`)) return;
+      if (type === 'lab') {
+          const updated = masterLabs.filter(i => i !== value);
+          setMasterLabs(updated); await saveSettings({ masterLabs: updated });
+      } else if (type === 'rad') {
+          const updated = masterRads.filter(i => i !== value);
+          setMasterRads(updated); await saveSettings({ masterRads: updated });
+      } else if (type === 'procedure') {
+          const updated = masterProcedures.filter(i => i !== value);
+          setMasterProcedures(updated); await saveSettings({ masterProcedures: updated });
+      } else if (type === 'medication') {
+          const updated = masterMedications.filter(i => i !== value);
+          setMasterMedications(updated); await saveSettings({ masterMedications: updated });
+      }
+  };
+
+  // --- MONITORING MEDICAL RECORDS ---
   useEffect(() => {
-    if (!userId) return; // FIX: Guard clause added
+    if (!userId) return;
     const ref = getCollectionRef();
     if (!ref) return;
-
     const q = query(ref, orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => {
           const docData = d.data();
+          
+          // --- TRANSLATOR NAMA KAMAR ---
+          // Mengubah data lama (K1B1 -> K1A, K1B2 -> K1B) agar muncul di denah baru
+          let updatedRoomNumber = docData.roomNumber || '';
+          if (updatedRoomNumber.endsWith('B1')) {
+              updatedRoomNumber = updatedRoomNumber.replace('B1', 'A');
+          } else if (updatedRoomNumber.endsWith('B2')) {
+              updatedRoomNumber = updatedRoomNumber.replace('B2', 'B');
+          }
+
           return { 
               id: d.id, ...docData, 
+              roomNumber: updatedRoomNumber, // Pakai nama kamar yang sudah diterjemahkan
               createdAt: docData.createdAt?.toDate() || new Date(),
               updatedAt: docData.updatedAt?.toDate() || null
           };
       });
       setRecords(data);
-      const active = data.filter(r => !r.isDischarged);
-      setActiveRecords(active);
-      setOccupiedRooms(active.map(r => r.roomNumber));
+              
+              // Pisahkan pasien yang masih dirawat dan yang sudah pulang (Arsip)
+              const active = data.filter(r => !r.isDischarged);
+              const archived = data.filter(r => r.isDischarged);
+              
+              setActiveRecords(active);
+              setArchivedRecords(archived); // <-- Simpan ke gudang arsip
+              setOccupiedRooms(active.map(r => r.roomNumber));
     }, (err) => console.error("Firestore Error:", err));
-    
     return () => unsubscribe();
-  }, [getCollectionRef, userId]); // FIX: userId dependency added
+  }, [getCollectionRef, userId]);
 
- 
-  // --- FUNGSI SALIN CERDAS (Langkah B) ---
-const pullDataForField = (field) => {
-    // 1. Cek apakah riwayat berhasil ditarik
-    if (!historyLogs || historyLogs.length === 0) {
-        alert("Belum ada riwayat catatan sebelumnya untuk pasien ini.");
-        return;
-    }
-
-    // 2. LOGIKA PENCARIAN MUNDUR (Smart Search)
-    // Cari data pertama di history yang kolom 'field'-nya TIDAK KOSONG.
-    // Jadi kalau log terbaru kosong, dia otomatis cari ke log sebelumnya.
+  // --- LOGIC FORM & OPERASIONAL ---
+  const pullDataForField = (field) => {
+    if (!historyLogs || historyLogs.length === 0) return alert("Belum ada riwayat.");
     const foundLog = historyLogs.find(log => log[field] && log[field].trim().length > 0);
-    
     if (foundLog) {
-        const val = foundLog[field];
-        
-        // 3. Masukkan data ke Form
-        setFormData(prev => ({ ...prev, [field]: val }));
-        
-        // 4. Efek Visual (Ubah teks tombol jadi "Sukses!" selama 1 detik)
+        setFormData(prev => ({ ...prev, [field]: foundLog[field] }));
         const btn = document.activeElement;
         if(btn && btn.tagName === 'BUTTON') { 
             const originalText = btn.innerText;
             btn.innerText = "✅ Sukses!";
             setTimeout(() => btn.innerText = originalText, 1000);
         }
-    } else {
-        alert(`Data ${field.toUpperCase()} tidak ditemukan di seluruh riwayat pasien ini.`);
-    }
-};
+    } else { alert(`Data ${field.toUpperCase()} tidak ditemukan di riwayat.`); }
+  };
 
   const handleInputChange = (e) => {
       const { name, value } = e.target;
@@ -1938,14 +2212,12 @@ const pullDataForField = (field) => {
     setCurrentRecordId(null);
   };
 
-  // Diperbarui: handleSelectRoom hanya untuk kamar KOSONG
   const handleSelectRoom = (roomNumber) => {
       resetForm();
       setFormData(p => ({ ...p, roomNumber }));
       setShowInputModal(true); 
   };
   
-  // Fungsi baru untuk dipanggil dari RoomMap ketika kamar TERISI diklik
   const handleEditRoom = (patientRecord) => {
       handleEdit(patientRecord);
   };
@@ -1954,29 +2226,20 @@ const pullDataForField = (field) => {
       setFormData(p => ({ ...p, [field]: p[field] ? p[field] + '\n' + text : text }));
   };
 
-
   const handleSubmit = async (e) => {
       e.preventDefault();
-      
-      // Validasi Input Wajib
       if (!formData.name || !formData.roomNumber || !formData.dpjpName) {
-          alert('Mohon lengkapi data wajib (Nama, Kamar, DPJP) sebelum menyimpan.');
+          alert('Mohon lengkapi data wajib (Nama, Kamar, DPJP).');
           return;
       }
       
-      // Validasi Kamar Terisi (Agar tidak menimpa pasien lain)
       const isRoomOccupied = occupiedRooms.includes(formData.roomNumber) && 
-                              (!isEditing || (isEditing && formData.roomNumber !== activeRecords.find(r => r.id === currentRecordId)?.roomNumber));
+                             (!isEditing || (isEditing && formData.roomNumber !== activeRecords.find(r => r.id === currentRecordId)?.roomNumber));
       
-      if (!isEditing && isRoomOccupied) {
-          alert(`Kamar ${formData.roomNumber} sudah terisi. Pilih kamar lain.`);
-          return;
-      } else if (isEditing && isRoomOccupied) {
+      if (!isEditing && isRoomOccupied) return alert(`Kamar ${formData.roomNumber} sudah terisi.`);
+      else if (isEditing && isRoomOccupied) {
            const existingOccupant = activeRecords.find(r => r.roomNumber === formData.roomNumber && r.id !== currentRecordId);
-           if (existingOccupant) {
-               alert(`Kamar ${formData.roomNumber} sudah terisi oleh ${existingOccupant.name}.`);
-               return;
-           }
+           if (existingOccupant) return alert(`Kamar ${formData.roomNumber} sudah terisi oleh ${existingOccupant.name}.`);
       }
 
       setLoading(true);
@@ -1987,8 +2250,6 @@ const pullDataForField = (field) => {
           if (!isEditing) data.createdAt = now;
 
           let recordId = currentRecordId;
-
-          // 1. SIMPAN/UPDATE DATA UTAMA (Agar Dashboard Berubah)
           if (isEditing && currentRecordId) {
               await updateDoc(doc(ref, currentRecordId), data);
           } else {
@@ -1996,317 +2257,172 @@ const pullDataForField = (field) => {
               recordId = newDoc.id;
           }
           
-          // 2. REKAM JEJAK RIWAYAT (PENTING BUAT 7 HARI)
-          // Kita buat salinan ke sub-folder 'notes' biar riwayatnya abadi
           if (db && appId && recordId) {
               const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${recordId}/notes`);
-              await addDoc(notesRef, {
-                  ...formData,
-                  createdAt: now,
-                  noteType: 'daily_update'
-              });
+              await addDoc(notesRef, { ...formData, createdAt: now, noteType: 'daily_update' });
           }
 
           resetForm();
           setShowInputModal(false);
-          console.log("Data berhasil disimpan & riwayat tercatat.");
-      } catch (err) { 
-          console.error("Kesalahan saat menyimpan:", err); 
-          alert("Gagal menyimpan. Cek koneksi internet.");
-      } 
-      finally { 
-          setTimeout(() => setLoading(false), 100); 
-      }
+      } catch (err) { alert("Gagal menyimpan."); } 
+      finally { setTimeout(() => setLoading(false), 100); }
   };
 
-// --- FUNGSI SUNTIK TTV (JALUR VIP) ---
-const handleSaveQuickTtv = async (ttvString) => {
+  const handleSaveQuickTtv = async (ttvString) => {
     if (!quickTtvTarget || !db) return;
-
     setLoading(true);
     try {
         const ref = doc(db, `artifacts/${appId}/public/data/medicalRecords`, quickTtvTarget.id);
-
-        // 1. Ambil data O yang lama biar ga hilang
         const oldObjective = quickTtvTarget.objective || '';
-
-        // 2. Gabungkan: TTV Baru ditaruh paling ATAS biar terbaca di tabel
-        // Tambahkan Jam input biar jelas
         const timeStr = new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
-        const newEntry = `[${timeStr}] ${ttvString}`;
-        const finalObjective = newEntry + '\n' + oldObjective;
+        const finalObjective = `[${timeStr}] ${ttvString}\n` + oldObjective;
 
-        // 3. Update HANYA kolom Objective & UpdatedAt (S, A, P AMAN!)
-        await updateDoc(ref, {
-            objective: finalObjective,
-            updatedAt: Timestamp.now()
-        });
+        await updateDoc(ref, { objective: finalObjective, updatedAt: Timestamp.now() });
 
-        // 4. (Opsional) Catat di riwayat sub-collection juga
         const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${quickTtvTarget.id}/notes`);
-        await addDoc(notesRef, {
-            ...quickTtvTarget, // Copy data lain
-            objective: finalObjective, // Update O nya
-            noteType: 'ttv_update',
-            createdAt: Timestamp.now()
+        await addDoc(notesRef, { 
+            ...quickTtvTarget, objective: finalObjective, noteType: 'ttv_update', createdAt: Timestamp.now() 
         });
-
-        console.log("TTV berhasil disuntikkan!");
-        setQuickTtvTarget(null); // Tutup modal
-        setShowTtvModal(false);  // Pastikan modal tutup
-
-    } catch (e) {
-        console.error("Gagal update TTV:", e);
-        alert("Gagal menyimpan TTV.");
-    } finally {
-        setLoading(false);
-    }
-};
-
-  // --- FUNGSI LOGIKA WAITING LIST (DITARUH DI ATAS handleEdit) ---
-  // 1. Tambah Antrean
-  const handleAddWaiting = async (data) => {
-    try {
-        // Path koleksi harus sesuai dengan struktur Firebase kamu
-        const wlRef = collection(db, `artifacts/${appId}/public/data/waitingList`);
-        await addDoc(wlRef, {
-            ...data, 
-            createdAt: Timestamp.now() 
-        });
-        console.log("Antrean berhasil dicatat ke Firebase");
-    } catch (e) { 
-        console.error("Gagal catat antrean:", e);
-        alert("Gagal catat antrean: " + e.message); 
-    }
-};
-
-  // 2. Hapus Antrean
-  const handleDeleteWaiting = async (id) => {
-      if(!window.confirm("Hapus antrean ini?")) return;
-      try {
-          await deleteDoc(doc(db, `artifacts/${appId}/public/data/waitingList`, id));
-      } catch (e) { alert("Gagal hapus: " + e.message); }
+        setQuickTtvTarget(null); setShowTtvModal(false); 
+    } catch (e) { alert("Gagal menyimpan TTV."); } finally { setLoading(false); }
   };
 
-  // 3. Pindah ke Kamar (Check-In)
-  const handleMoveToRoom = async (waitRec) => {
-      // Cek apakah kamar tujuan KOSONG?
-      const isOccupied = activeRecords.some(r => r.roomNumber === waitRec.plannedRoom);
-      if (isOccupied) {
-          alert(`GAGAL: Kamar ${waitRec.plannedRoom} masih TERISI! Kosongkan dulu sebelum memasukkan pasien.`);
-          return;
-      }
+  // --- WAITING LIST LOGIC ---
+  const handleAddWaiting = async (data) => {
+    try {
+        const wlRef = collection(db, `artifacts/${appId}/public/data/waitingList`);
+        await addDoc(wlRef, { ...data, createdAt: Timestamp.now() });
+    } catch (e) { alert("Gagal: " + e.message); }
+  };
 
-      if(!window.confirm(`Masukkan ${waitRec.name} ke kamar ${waitRec.plannedRoom} sekarang?`)) return;
+  const handleDeleteWaiting = async (id) => {
+      if(!window.confirm("Hapus antrean?")) return;
+      try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/waitingList`, id)); } catch (e) {}
+  };
+
+  // --- FUNGSI AUTO-SAVE BUKU CM (INLINE EDIT) ---
+    const updateRecord = async (id, updatedFields) => {
+        try {
+            const colRef = getCollectionRef();
+            if (!colRef) return;
+            
+            // Membuat referensi ke dokumen pasien spesifik
+            const docRef = doc(colRef.firestore, colRef.path, id);
+            
+            // Menembak update ke database Firestore
+            await updateDoc(docRef, updatedFields);
+            console.log("Auto-save Buku CM berhasil!");
+        } catch (error) {
+            console.error("Gagal auto-save Buku CM:", error);
+            alert("Gagal menyimpan otomatis. Cek koneksi internet.");
+        }
+    };
+
+  const handleMoveToRoom = async (waitRec) => {
+      const isOccupied = activeRecords.some(r => r.roomNumber === waitRec.plannedRoom);
+      if (isOccupied) return alert(`Kamar ${waitRec.plannedRoom} masih TERISI!`);
+      if(!window.confirm(`Masukkan ${waitRec.name} ke kamar ${waitRec.plannedRoom}?`)) return;
       
       try {
           setLoading(true);
-          // Buat record baru di Dashboard
           await addDoc(getCollectionRef(), {
-              name: waitRec.name,
-              roomNumber: waitRec.plannedRoom,
-              dpjpName: 'dr. Belum Dipilih', // Default sementara
-              gender: '', 
-              createdAt: Timestamp.now(),
-              updatedAt: Timestamp.now(),
-              isDischarged: false,
+              name: waitRec.name, roomNumber: waitRec.plannedRoom, dpjpName: 'dr. Belum Dipilih', gender: '', 
+              createdAt: Timestamp.now(), updatedAt: Timestamp.now(), isDischarged: false,
               planning: waitRec.diagnosis ? `Diagnosa Awal: ${waitRec.diagnosis}` : ''
           });
-
-          // Hapus dari Waiting List (karena sudah masuk kamar)
           await deleteDoc(doc(db, `artifacts/${appId}/public/data/waitingList`, waitRec.id));
-          
-          alert("Berhasil check-in! Silakan lengkapi data di dashboard.");
           setView('dashboard'); 
-      } catch (e) {
-          console.error(e);
-          alert("Error saat check-in.");
-      } finally {
-          setLoading(false);
-      }
+      } catch (e) { alert("Error saat check-in."); } finally { setLoading(false); }
   };
-  // 4. FUNGSI UPDATE KAMAR WAITING LIST (FITUR EDIT PENSIL) ---
+
   const updateWaitingListRoom = async (itemId, newRoom) => {
-      // 1. Update Tampilan Layar (Biar cepat)
-      const updatedList = waitingList.map(item => 
-          item.id === itemId ? { ...item, plannedRoom: newRoom } : item
-      );
+      const updatedList = waitingList.map(item => item.id === itemId ? { ...item, plannedRoom: newRoom } : item);
       setWaitingList(updatedList);
-      
-      // 2. Simpan Permanen ke Firebase
       try {
           const itemRef = doc(db, `artifacts/${appId}/public/data/waitingList`, itemId);
           await updateDoc(itemRef, { plannedRoom: newRoom });
-          console.log("Sukses ganti kamar antrean");
-      } catch(e) { 
-          console.error("Gagal update WL:", e); 
-      }
+      } catch(e) { console.error(e); }
   };
 
-// --- FUNGSI KLIK PASIEN: ISI FORM & TARIK SEMUA RIWAYAT ---
-const handleEdit = async (rec) => {
-    // 1. Siapkan Form dengan DATA LAMA (agar tidak hilang)
+  const handleEdit = async (rec) => {
     setFormData({
-        roomNumber: rec.roomNumber, 
-        name: rec.name, 
-        gender: rec.gender || '', 
-        dpjpName: rec.dpjpName,
-        raberName: rec.raberName || '', 
-        raber2Name: rec.raber2Name || '',
-        
-        // PERBAIKAN: Ambil data dari 'rec', jangan dikosongkan!
-        subjective: rec.subjective || '', 
-        objective: rec.objective || '', 
-        analysis: rec.analysis || '', 
-        planning: rec.planning || '',   
-        
-        isDischarged: false
+        roomNumber: rec.roomNumber, name: rec.name, rmNumber: rec.rmNumber || '', gender: rec.gender || '', 
+        dpjpName: rec.dpjpName, raberName: rec.raberName || '', raber2Name: rec.raber2Name || '',
+        subjective: rec.subjective || '', objective: rec.objective || '', 
+        analysis: rec.analysis || '', planning: rec.planning || '', isDischarged: false
     });
-
     setCurrentRecordId(rec.id);
     setIsEditing(true);
     setShowRaber1(!!rec.raberName);
     setShowRaber2(!!rec.raber2Name);
     
-    // 2. TARIK SEMUA RIWAYAT DARI DATABASE (Auto Fetch)
     setHistoryLogs([]); 
     if (db && userId) {
        try {
            const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${rec.id}/notes`);
-           const q = query(notesRef, orderBy('createdAt', 'desc')); // Urutkan dari terbaru
-           
-           // PERBAIKAN: Pakai await biar data selesai diambil dulu baru lanjut
+           const q = query(notesRef, orderBy('createdAt', 'desc'));
            const snapshot = await getDocs(q);
-           
            const logs = snapshot.docs.map(doc => ({
                ...doc.data(),
-               // PERBAIKAN: Konversi Timestamp Firebase ke Date Object standar JS
                updatedAt: doc.data().createdAt?.seconds ? new Date(doc.data().createdAt.seconds * 1000) : new Date()
            }));
-
-           // LOGIKA PINTAR ANTI-DUPLIKAT:
-           if (logs.length > 0) {
-               // Jika sudah ada arsip notes, pakai itu
-               setHistoryLogs(logs);
-           } else {
-               // Jika kosong, pinjam data Dashboard (rec) biar riwayat gak kosong
-               setHistoryLogs([rec]);
-           }
-       } catch (e) {
-           console.error("Gagal tarik history:", e);
-       }
+           if (logs.length > 0) setHistoryLogs(logs);
+           else setHistoryLogs([rec]);
+       } catch (e) { console.error("Gagal tarik history:", e); }
     }
-
     setShowInputModal(true); 
-};
+  };
 
-  const handleDischarge = (id, name) => {
-      const dischargeAction = async () => {
-          setLoading(true);
-          try {
-              const ref = getCollectionRef();
-              await updateDoc(doc(ref, id), { isDischarged: true, updatedAt: Timestamp.now() });
-              console.log(`Pasien ${name} discharged successfully.`);
-          } catch (e) { 
-              console.error("Discharge Error:", e); 
-          } finally {
-              setLoading(false);
-              closeConfirm();
-          }
-      };
-      
-      openConfirm(
-          "Konfirmasi Pasien Pulang", 
-          `Anda yakin ingin mengeluarkan pasien ${name}? Kamar ${activeRecords.find(r => r.id === id)?.roomNumber} akan dikosongkan.`, 
-          dischargeAction
-      );
-  };  
+  const handleDischarge = (id, name, room) => {
+    openConfirm("Konfirmasi Pulang", `Keluarkan pasien ${name}? Data akan dipindah ke Arsip.`, async () => {
+        setLoading(true);
+        try {
+            const ref = getCollectionRef();
+            await updateDoc(doc(ref, id), { 
+                isDischarged: true, 
+                lastRoom: room || '', // Simpan kamar terakhir di sini
+                roomNumber: '', 
+                dischargeDate: new Date().toISOString(), 
+                updatedAt: Timestamp.now() 
+            });
+        } catch (e) { console.error(e); } finally { setLoading(false); closeConfirm(); }
+    });
+};  
   
-  
-    // Helper: Normalisasi nomor WA untuk digunakan di wa.me
   const normalizePhone = (num) => {
       if (!num) return '';
       const digits = String(num).replace(/\D/g, '');
-      if (!digits) return '';
       if (digits.startsWith('0')) return '62' + digits.substring(1);
       if (digits.startsWith('8')) return '62' + digits;
-      if (digits.startsWith('62')) return digits;
       return digits;
   };
-// --- FUNGSI BARU: LAPOR JUMLAH PASIEN KE DPJP ---
+
+
   const handleReportDpjpCount = (drName, count) => {
-      // 1. Cari Nomor HP Dokter dari Profil
-      // Pastikan nama dokter sama persis dengan yang di-input di Setelan
       const profile = dpjpProfiles.find(p => p.name === drName);
-      
-      // Gunakan normalizePhone yang sudah ada di kodemu
       const phone = normalizePhone(profile?.waNumber);
-      
-      if (!phone) {
-          alert(`Gagal: Nomor WA untuk ${drName} belum disetting. Silakan isi di menu Setelan.`);
-          return;
-      }
-
-      // 2. Tentukan Salam (Muslim/Non-Muslim)
+      if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
       const salam = getDoctorGreeting(drName);
-
-      // 3. Susun Pesan
       const text = `${salam} dokter, izin melaporkan jumlah pasien dokter di Melati ada ${count} pasien ya. terimakasih`;
-
-      // 4. Kirim ke WA
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  // --- FUNGSI BARU: LAPOR PASIEN RABER ---
   const handleReportRaber = (drName, patientNames) => {
-      // 1. Cari Nomor HP
       const profile = dpjpProfiles.find(p => p.name === drName);
       const phone = normalizePhone(profile?.waNumber);
-      
-      if (!phone) {
-          alert(`Gagal: Nomor WA untuk ${drName} belum disetting.`);
-          return;
-      }
-
-      // 2. Tentukan Salam
+      if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
       const salam = getDoctorGreeting(drName);
-
-      // 3. Susun Pesan
       const text = `${salam} dokter, izin mengingatkan ada pasien Raber ya di Melati a.n ${patientNames.join(', ')}. terimakasih`;
-
-      // 4. Kirim ke WA
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  const findDpjpProfileByName = (name) => {
-      if (!name) return null;
-      const lower = name.toLowerCase();
-      return dpjpProfiles.find(p => {
-          if (!p || !p.name) return false;
-          const pn = p.name.toLowerCase();
-          return pn === lower || pn.includes(lower) || lower.includes(pn);
-      }) || null;
-  };
-
-// --- FUNGSI LAPOR WA (UPDATE: SUPPORT FORWARD MODE) ---
   const handleLapor = (rec, type) => {
-      // 1. Siapkan Nomor (Hanya jika lapor Personal DPJP)
       let targetNumber = '';
-      
       if (type === 'DPJP') {
-          const profile = findDpjpProfileByName(rec.dpjpName || '');
-          const raw = profile?.waNumber || '';
-          targetNumber = normalizePhone(raw); // Fungsi normalizePhone pastikan tetap ada di kode mu
-          
-          if (!targetNumber) {
-              alert(`Nomor WA untuk ${rec.dpjpName} belum disetting. Silakan setting di menu 'Setelan' atau gunakan tombol 'Pilih Kontak Sendiri'.`);
-              return;
-          }
+          const profile = dpjpProfiles.find(p => p.name === rec.dpjpName);
+          targetNumber = normalizePhone(profile?.waNumber);
+          if (!targetNumber) return alert(`Nomor WA ${rec.dpjpName} belum disetting.`);
       } 
-      // Jika type === 'Forward' (Jaga/Raber), kita biarkan targetNumber KOSONG.
-      // Ini akan memicu WA membuka daftar kontak (Forward style).
-
-      // 2. Susun Pesan
       const { labs, rads, tms, others } = parsePlanning(rec.planning);
       const planningText = [
           ...others.filter(Boolean),
@@ -2315,1132 +2431,669 @@ const handleEdit = async (rec) => {
           tms.length > 0 ? `Tndkn: ${tms.join(', ')}` : null,
       ].filter(Boolean).join('\n');
 
-      const dpjpInfo = type === 'Forward' ? `\nDPJP: ${rec.dpjpName || '-'}` : ''; // Info DPJP muncul kalau Forward
+      const dpjpInfo = type === 'Forward' ? `\nDPJP: ${rec.dpjpName || '-'}` : '';
       const header = `Dokter Izin Lapor Pasien \na.n ${rec.name} ${dpjpInfo}`;
       const text = `${header}\n\n*S:*\n${rec.subjective || '-'}\n\n*O:*\n${rec.objective || '-'}\n\n*A:*\n${rec.analysis || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis,\nTerimakasih`;
 
-      // 3. Buka WA
-      // Jika ada nomor -> Chat ke nomor itu
-      // Jika TIDAK ada nomor -> Buka menu "Share/Forward" WA
-      const baseUrl = targetNumber ? `https://wa.me/${targetNumber}` : `https://wa.me/`;
-      const url = `${baseUrl}?text=${encodeURIComponent(text)}`;
-      
-      const waWindow = window.open(url, '_blank');
-      if (!waWindow) alert("Izinkan pop-up untuk membuka WhatsApp.");
-
-      setRecordForLapor(null); // Tutup modal
+      const url = targetNumber ? `https://wa.me/${targetNumber}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+      setRecordForLapor(null); 
   };
 
-  // --- FUNGSI PULANG MASAL (MULTIPLE DISCHARGE) ---
-const handleBulkDischarge = async (ids) => {
+  const handleBulkDischarge = async (ids) => {
     setLoading(true);
     try {
         const ref = getCollectionRef();
-        // Gunakan Promise.all untuk mengeksekusi banyak update sekaligus (Paralel)
-        const updatePromises = ids.map(id => 
-            updateDoc(doc(ref, id), { 
+        const updatePromises = ids.map(id => {
+            const p = patients.find(item => item.id === id); // Cari data pasien dulu
+            return updateDoc(doc(ref, id), { 
                 isDischarged: true, 
+                lastRoom: p?.roomNumber || '', // Simpan kamarnya
+                roomNumber: '', 
+                dischargeDate: new Date().toISOString(), 
                 updatedAt: Timestamp.now() 
-            })
-        );
-        
-        await Promise.all(updatePromises);
-        alert(`Sukses! ${ids.length} pasien telah dipulangkan.`);
-    } catch (e) {
-        console.error("Bulk Discharge Error:", e);
-        alert("Gagal memproses pulang masal. Cek koneksi.");
-    } finally {
-        setLoading(false);
-    }
-};
-
-    // --- UPDATE: HANDLE PRINT TTV (FIX: A4 PORTRAIT, FIT 1 PAGE) ---
-    const handlePrintTTV = () => {
-        const element = document.getElementById('ttv-table-area');
-        if (!element) {
-            alert("Tabel tidak ditemukan.");
-            return;
-        }
-
-        const content = element.innerHTML;
-        const printWindow = window.open('', '_blank', 'width=1100,height=800');
-        
-        printWindow.document.write(`
-            <html>
-            <head>
-                <title>Lembar Observasi TTV</title>
-                <style>
-                    @page { 
-                        size: A4 portrait; 
-                        margin: 5mm; /* Margin tipis 5mm */
-                    }
-                    
-                    body { 
-                        font-family: Arial, sans-serif; 
-                        -webkit-print-color-adjust: exact; 
-                        print-color-adjust: exact;
-                        padding: 0;
-                        margin: 0;
-                        /* INI RAHASIANYA AGAR MUAT 1 HALAMAN */
-                        zoom: 0.85; 
-                    }
-
-                    table { 
-                        width: 100% !important; 
-                        min-width: 0 !important;
-                        border-collapse: collapse; 
-                        font-size: 9pt; 
-                    }
-
-                    th, td { 
-                        border: 1px solid black; 
-                        padding: 2px 3px; /* Padding diperketat */
-                        vertical-align: middle; 
-                        line-height: 1.2; /* Spasi antar baris teks dirapatkan */
-                    }
-
-                    th { 
-                        background-color: #f0f0f0 !important; 
-                        text-align: center; 
-                        font-weight: bold;
-                        height: 25px;
-                        font-size: 8pt;
-                    }
-                    
-                    /* Rata Tengah untuk Kolom TTV (Kolom ke 2 s/d 6) */
-                    td:nth-child(2), td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6) {
-                        text-align: center; 
-                        font-family: 'Courier New', monospace;
-                        font-weight: bold;
-                        width: 45px; 
-                    }
-
-                    /* Kolom Identitas (Lebar Pas) */
-                    td:nth-child(1) { width: 140px; }
-                    
-                    /* Kolom Persiapan (Biar teks panjang ngebungkus rapi) */
-                    td:nth-child(7) { font-size: 8pt; }
-
-                    /* HILANGKAN KOLOM AKSI */
-                    .no-print { display: none !important; }
-                    
-                    /* Judul */
-                    h3 { margin: 5px 0 2px 0; font-size: 14pt; }
-                    .date-print { margin-bottom: 5px; font-size: 8pt; color: #555; }
-                </style>
-            </head>
-            <body>
-                <div style="text-align: center;">
-                    <h3 style="text-transform: uppercase; font-weight: bold;">Lembar Observasi Tanda Vital & Rencana Harian</h3>
-                    <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
-                </div>
-                
-                ${content}
-                
-                <script>
-                    setTimeout(() => { window.print(); window.close(); }, 500);
-                </script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-    };  
-    // --- FUNGSI CETAK CPO (FINAL: HEADER LENGKAP + PAGINATION) ---
-const handlePrintCPO = (record) => {
-    if (!record) return;
-
-    // 1. Logic Pemotongan Kamar (Misal: K1B1 -> K1)
-    const rawRoom = record.roomNumber || '';
-    // Ambil karakter sebelum huruf 'B' (misal K1B1 jadi K1)
-    // Kalau tidak ada huruf B, tampilkan apa adanya.
-    const cleanRoom = rawRoom.includes('B') ? rawRoom.split('B')[0] : rawRoom;
-
-    // 2. Ekstrak Obat (VERSI FINAL: FILTER LAB/RAD AGAR TIDAK MASUK CPO)
-    const extractMeds = (text) => {
-        if (!text) return [];
-        const lines = text.split('\n');
-        const meds = [];
-
-        lines.forEach(line => {
-            let cleanLine = line.trim();
-            // 1. Bersihkan bullet point/strip
-            cleanLine = cleanLine.replace(/^[-•*]\s*/, '');
-
-            const lower = cleanLine.toLowerCase();
-
-            // --- FILTER PENTING: JANGAN MASUKKAN LAB/RAD KE CPO ---
-            if (
-                !cleanLine ||
-                cleanLine.length < 3 ||
-                cleanLine.includes('-- TERAPI OBAT --') || // Header pemisah
-                lower.includes('rencana:') ||              // Header Rencana
-                lower.startsWith('lab') ||                 // Filter "Lab. R/ ..."
-                lower.startsWith('rad') ||                 // Filter "Rad. R/ ..."
-                lower.startsWith('cek') ||                 // Filter "Cek GDS..."
-                lower.startsWith('kontrol') ||             // Filter "Kontrol..."
-                lower.startsWith('tindakan') ||            // Filter "Tindakan..." (Opsional)
-                lower.startsWith('tm.')                    // Filter "TM." (Tindakan Medis)
-            ) return; // Langsung skip, jangan diproses!
-
-            // --- STRATEGI 1: CEK POLA SMART PASTE (KURUNG) ---
-            const bracketMatch = cleanLine.match(/^(.*?)\s*\(([^)]+)\)$/);
-            if (bracketMatch) {
-                meds.push({ 
-                    nama: bracketMatch[1].trim(), 
-                    dosis: bracketMatch[2].trim() 
-                });
-                return; 
-            }
-
-            // --- STRATEGI 2: CEK POLA DOSIS MANUAL (REGEX SAKTI) ---
-            const dosageRegex = new RegExp(
-                "(" + 
-                "\\d+\\s*[xX]\\s*[\\d\\.,]+.*|" +           // 3x1
-                "\\d+\\s*(?:mg|gr|mcg|iu|tpm|cc|ml|L|tetes|ampul|vial|kolf|flash|sachet|tab|cap).*|" + // 500mg
-                "\\b(?:asnet|k\\/p|prn|stop|aff|drip|bolus)\\b.*|" +  // Kata kunci
-                "(?:\\/|per)\\s*\\d+\\s*(?:jam|j|menit|m|hari).*" +   // per 12 jam
-                ")", "i"
-            );
-            
-            const manualMatch = cleanLine.match(dosageRegex);
-
-            if (manualMatch) {
-                const splitIndex = manualMatch.index;
-                
-                // Pastikan nama obatnya valid (panjang > 2 huruf)
-                if (splitIndex > 2) {
-                    const namaObat = cleanLine.substring(0, splitIndex).trim(); 
-                    const dosisObat = cleanLine.substring(splitIndex).trim();   
-
-                    meds.push({ nama: namaObat, dosis: dosisObat });
-                    return;
-                }
-            }
-
-            // --- STRATEGI 3: FALLBACK ---
-            // Hanya masukkan jika ada kata kunci obat (inj, infus, dll)
-            const drugKeywords = ['inj', 'tab', 'cap', 'infus', 'drip', 'bolus', 'supp', 'nebu', 'obat', 'syr', 'puyer'];
-            if (drugKeywords.some(k => lower.includes(k))) {
-                meds.push({ nama: cleanLine, dosis: '' });
-            }
+            });
         });
-        
-        return meds;
-    };
-
-    const fullMedList = extractMeds(record.planning);
-
-    // --- LOGIKA PAGINATION ---
-    const MAX_ROWS = 7; 
-    const pages = [];
-    for (let i = 0; i < fullMedList.length; i += MAX_ROWS) {
-        pages.push(fullMedList.slice(i, i + MAX_ROWS));
-    }
-
-    const printWindow = window.open('', '_blank', 'width=1200,height=800');
-    
-    // 3. HTML SYSTEM
-    const htmlContent = `
-        <html>
-        <head>
-            <title>Print CPO - ${record.name}</title>
-            <style>
-                @page { size: 330mm 215mm; margin: 0; }
-                
-                body { 
-                    margin: 0; padding: 0; 
-                    font-family: 'Courier New', Courier, monospace; 
-                    font-size: 10pt; 
-                    font-weight: bold; 
-                    -webkit-print-color-adjust: exact;
-                }
-
-                .page-container {
-                    position: relative;
-                    width: 330mm;
-                    height: 215mm;
-                    overflow: hidden;
-                    page-break-after: always;
-                }
-                .page-container:last-child { page-break-after: auto; }
-
-                /* Background Image */
-                .scan-background {
-                    position: absolute;
-                    top: 0; left: 0;
-                    width: 100%; height: 100%;
-                    z-index: -1;
-                    opacity: 0.4;
-                }
-                @media print { .scan-background { display: none !important; } }
-
-                /* --- HEADER KIRI (RUANGAN & DPJP) --- */
-                .header-ruangan {
-                    position: absolute;
-                    top: 47mm;      
-                    left: 13mm;      
-                    width: 35mm;    
-                    text-align: center;
-                    font-size: 9pt;
-                    line-height: 1.4;
-                }
-
-                .header-dpjp {
-                    position: absolute;
-                    top: 50mm;      
-                    left: 50mm;     
-                    width: 100mm;
-                    text-align: left;
-                    font-size: 10pt;
-                }
-
-                /* --- NAMA PASIEN --- */
-                .patient-box {
-                    position: absolute;
-                    top: 14mm; right: 15mm; width: 90mm;   
-                    font-size: 10pt; text-align: left; line-height: 1.5; 
-                }
-
-                /* --- UPDATE: OBAT (WRAP TEXT) --- */
-                .med-row {
-                    position: absolute;
-                    left: 51mm;  /* Tetap 51mm */
-                    width: 150mm; /* Tetap 150mm */
-                    
-                    /* PERUBAHAN: Agar teks bisa turun ke bawah */
-                    min-height: 8mm; /* Bukan height mati, tapi minimal 8mm */
-                    display: flex;
-                    align-items: flex-start; /* Rata atas (supaya rapi kalau 2 baris) */
-                    padding-top: 1mm; /* Jarak dikit dari garis atas */
-                }
-                
-                .col-nama { 
-                    width: 38mm; /* Tetap 38mm */
-                    
-                    /* PERUBAHAN: Izinkan turun baris */
-                    white-space: normal;       
-                    word-wrap: break-word;     
-                    line-height: 1.1;          
-                    font-size: 9pt;            
-                }
-                
-                .col-dosis { 
-                    position: absolute;
-                    left: 40mm; /* Tetap 40mm */
-                    width: 35mm; /* Tetap 35mm */
-                    
-                    text-align: left;
-                    padding-left: 2mm;
-                    padding-top: 0.5mm; /* Penyesuaian karena col-nama pakai flex-start */
-                }
-
-            </style>
-        </head>
-        <body>
-            ${pages.map((pageMeds, pageIndex) => `
-                <div class="page-container">
-                    
-                    <img src="/cpo-overlay.png" class="scan-background" alt="Mal CPO">
-
-                    <div class="header-ruangan">
-                        <div>MELATI</div>
-                        <div style="font-size: 12pt; margin-top: 2mm;">${cleanRoom}</div>
-                    </div>
-
-                    <div class="header-dpjp">
-                        ${record.dpjpName || '-'}
-                    </div>
-
-                    <div class="patient-box">
-                        <div style="padding-left: 70mm; margin-top: 2mm;">
-                            ${record.name.substring(0,25)}
-                        </div> 
-                    </div>
-
-                    ${pageMeds.map((obat, idx) => {                        
-                        const startY = 78; 
-                        const rowHeight = 18; 
-                        const currentTop = startY + (idx * rowHeight);
-                        
-                        // --- LOGIKA ENTER DOSIS OTOMATIS ---
-                        let displayDosis = obat.dosis;
-                        
-                        // Cari spasi sebelum kata kunci (iv, tab, cap, po, im, sc, supp)
-                        // Lalu ganti spasi itu dengan <br> agar turun baris
-                        // Contoh: "1x10mg tab PO" -> "1x10mg<br>tab PO"
-                        if (displayDosis) {
-                            displayDosis = displayDosis.replace(
-                                /\s+(iv|im|sc|po|oral|tab|cap|supp|drip|bolus|k\/p)\b/gi, 
-                                '<br>$1'
-                            );
-                        }
-
-                        return `
-                        <div class="med-row" style="top: ${currentTop}mm;">
-                            <div class="col-nama">${obat.nama}</div>
-                            
-                            <div class="col-dosis">${displayDosis}</div>
-                        </div>
-                        `;
-                    }).join('')}
-
-                    ${pages.length > 1 ? `
-                        <div style="position:absolute; bottom:5mm; right:5mm; font-size:8pt;">
-                            Hal ${pageIndex + 1}/${pages.length}
-                        </div>
-                    ` : ''}
-
-                </div>
-            `).join('')}
-
-            <script>
-                setTimeout(() => { window.print(); }, 1500);
-            </script>
-        </body>
-        </html>
-    `;
-
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+        await Promise.all(updatePromises);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
 };
-  const handleExportExcel = () => {
-      if (!records || records.length === 0) {
-          alert("Tidak ada data untuk diexport.");
-          return;
+
+  // --- FUNGSI RESTORE (BATAL PULANG) ---
+  const handleRestorePatient = async (id, name) => {
+      if (window.confirm(`Kembalikan data ${name} ke Daftar Rawat Inap?\n(Status akan dikembalikan ke "Dirawat", pastikan kamu mengatur ulang kamarnya).`)) {
+          try {
+              const ref = getCollectionRef();
+              await updateDoc(doc(ref, id), { 
+                  isDischarged: false, // Balikkan status jadi dirawat
+                  updatedAt: Timestamp.now() 
+              });
+              alert(`Sukses! Data ${name} dikembalikan.`);
+              setView('patient-list'); // Arahkan kembali ke daftar pasien
+          } catch (e) {
+              alert("Gagal mengembalikan pasien.");
+              console.error(e);
+          }
       }
-      
-      const exportedRecords = records.filter(r => !r.isDischarged); // HANYA export pasien aktif
-
-      // 1. Buat Header CSV (Menambah kolom baru: Lab, Rad, Tindakan)
-      const headers = [
-          "No", "Tanggal Masuk", "Jam Masuk", "Nama Pasien", "Kamar", 
-          "DPJP", "Raber 1", "Raber 2", "Status Pulang",
-          "Subjektif (S)", "Objektif (O)", "Analisa (A)", "Planning Lain",
-          "LAB", "RADIOLOGI", "TINDAKAN" // <-- KOLOM BARU
-      ];
-
-      // Helper untuk escape tanda kutip (") agar CSV tidak rusak
-      const escape = (str) => `"${(str || '').replace(/"/g, '""')}"`;
-      
-      // 2. Buat Rows Data
-      const rows = exportedRecords.map((r, index) => {
-          const date = r.createdAt.toLocaleDateString('id-ID');
-          const time = r.createdAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-          
-          // MENGGUNAKAN FUNGSI BARU UNTUK MEMILAH PLANNING
-          const parsedP = parsePlanning(r.planning);
-          
-          // Menggabungkan item di dalam Planning menjadi satu string (dipisahkan koma)
-          const labItems = parsedP.labs.join(', ');
-          const radItems = parsedP.rads.join(', ');
-          const tmItems = parsedP.tms.join(', ');
-
-          // Planning Lain-lain (yang tidak berawalan Lab/Rad/TM)
-          const otherItems = parsedP.others.join('; ');
-          
-          return [
-              index + 1,
-              date,
-              time,
-              escape(r.name),
-              escape(r.roomNumber),
-              escape(r.dpjpName),
-              escape(r.raberName),
-              escape(r.raber2Name),
-              r.isDischarged ? "Pulang" : "Dirawat",
-              escape(r.subjective), // S
-              escape(r.objective), // O
-              escape(r.analysis), // A
-              escape(otherItems), // Planning Lain-lain
-              escape(labItems), // LAB (Kolom Baru)
-              escape(radItems), // RADIOLOGI (Kolom Baru)
-              escape(tmItems)   // TINDAKAN (Kolom Baru)
-          ].join(",");
-      });
-
-      // 3. Gabungkan Header dan Rows
-      const csvContent = [headers.join(","), ...rows].join("\n");
-
-      // 4. Trigger Download
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `Data_Pasien_Aktif_${new Date().toLocaleDateString('id-ID')}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
   };
 
-  const stats = useMemo(() => {
-      const s = {
-          total: records.length,
-          active: activeRecords.length,
-          discharged: records.filter(r => r.isDischarged).length,
-          monthly: {}, // Format: { 'Des 2025': { active, discharged, lab, rad, tm } }
-          dpjpCounts: {}, 
-          raberData: {}, // Format: { "Nama Dokter": ["Pasien A", "Pasien B"] }
-          emptyCount: 0, emptyMale: 0, emptyFemale: 0
-      };
+  const handlePrintTTV = () => {
+    const element = document.getElementById('ttv-table-area');
+    if (!element) return alert("Tabel tidak ditemukan.");
+    const content = element.innerHTML;
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    printWindow.document.write(`
+        <html><head><title>Print TTV</title>
+        <style>
+            @page { size: A4 portrait; margin: 5mm; }
+            body { font-family: Arial; zoom: 0.85; margin: 0; padding: 0; }
+            table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+            th, td { border: 1px solid black; padding: 2px 3px; }
+            th { background-color: #f0f0f0; text-align: center; height: 25px; font-size: 8pt; }
+            
+            /* --- ATURAN LEBAR KOLOM BARU (DIURUTKAN DARI KIRI KE KANAN) --- */
+            td:nth-child(1) { width: 130px; } /* Identitas */
+            td:nth-child(2) { width: 55px; text-align: center; font-family: monospace; } /* No.RM */
+            td:nth-child(3) { width: 30px; text-align: center; } /* Kls */
+            td:nth-child(4) { width: 65px; text-align: center; font-family: monospace; } /* Tgl Msk */
+            td:nth-child(5) { width: 35px; text-align: center; font-weight: bold; } /* Hari */
+            
+            /* Kolom TTV (TD s/d SpO2) */
+            td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10) { 
+                width: 35px; text-align: center; font-family: monospace; 
+            } 
+            
+            /* Kolom Rencana (Dibiarkan otomatis mengambil sisa kertas) */
+            td:nth-child(11) { text-align: left; } 
 
-      // 1. Logika Statistik Bed (Warna Legend)
-      const occupiedRooms = activeRecords.map(r => r.roomNumber);
+            /* --- SIHIR MENGHILANGKAN KOTAK INPUT & MEMUNCULKAN TEKS ASLI --- */
+            .no-print { display: none !important; }
+            input { display: none !important; } /* Basmi semua kotak ketikan */
+            span.hidden { display: inline !important; } /* Munculkan teks biasa yang tadi tersembunyi */
+
+            h3 { text-align: center; margin: 5px 0 2px 0; font-size: 14pt; }
+            .date-print { text-align: center; font-size: 8pt; margin-bottom: 5px; color: #555; }
+        </style></head><body>
+        <h3>Lembar Observasi Tanda Vital & Rencana Harian</h3>
+        <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
+        ${content}
+        <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body></html>
+    `);
+    printWindow.document.close();
+  };  
+
+  const handlePrintCPO = (record) => {
+    if (!record) return;
+    const rawRoom = record.roomNumber || '';
+    const cleanRoom = rawRoom ? rawRoom.replace(/[AB]$/, '') : '';
+    const extractMeds = (text) => {
+        if (!text) return [];
+        const meds = [];
+        text.split('\n').forEach(line => {
+            let cleanLine = line.trim().replace(/^[-•*]\s*/, '');
+            const lower = cleanLine.toLowerCase();
+            if (!cleanLine || cleanLine.length < 3 || cleanLine.includes('--') || lower.includes('rencana:') || lower.startsWith('lab') || lower.startsWith('rad') || lower.startsWith('cek') || lower.startsWith('kontrol') || lower.startsWith('tindakan') || lower.startsWith('tm.')) return;
+            const bracketMatch = cleanLine.match(/^(.*?)\s*\(([^)]+)\)$/);
+            if (bracketMatch) { meds.push({ nama: bracketMatch[1].trim(), dosis: bracketMatch[2].trim() }); return; }
+            const dosageRegex = new RegExp("(\\d+\\s*[xX]\\s*[\\d\\.,]+.*|\\d+\\s*(?:mg|gr|mcg|iu|tpm|cc|ml|L|tetes|ampul|vial|kolf|flash|sachet|tab|cap).*|\\b(?:asnet|k\\/p|prn|stop|aff|drip|bolus)\\b.*|(?:\\/|per)\\s*\\d+\\s*(?:jam|j|menit|m|hari).*)", "i");
+            const manualMatch = cleanLine.match(dosageRegex);
+            if (manualMatch && manualMatch.index > 2) { meds.push({ nama: cleanLine.substring(0, manualMatch.index).trim(), dosis: cleanLine.substring(manualMatch.index).trim() }); return; }
+            if (['inj', 'tab', 'cap', 'infus', 'drip', 'bolus', 'supp', 'nebu', 'obat', 'syr', 'puyer'].some(k => lower.includes(k))) { meds.push({ nama: cleanLine, dosis: '' }); }
+        });
+        return meds;
+    };
+    const fullMedList = extractMeds(record.planning);
+    const MAX_ROWS = 7; 
+    const pages = [];
+    for (let i = 0; i < fullMedList.length; i += MAX_ROWS) { pages.push(fullMedList.slice(i, i + MAX_ROWS)); }
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    const htmlContent = `
+        <html><head><title>Print CPO</title><style>
+            @page { size: 330mm 215mm; margin: 0; }
+            body { margin: 0; padding: 0; font-family: 'Courier New', monospace; font-size: 10pt; font-weight: bold; }
+            .page-container { position: relative; width: 330mm; height: 215mm; overflow: hidden; page-break-after: always; }
+            .page-container:last-child { page-break-after: auto; }
+            .scan-background { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; opacity: 0.4; }
+            @media print { .scan-background { display: none; } }
+            .header-ruangan { position: absolute; top: 47mm; left: 13mm; width: 35mm; text-align: center; font-size: 9pt; }
+            .header-dpjp { position: absolute; top: 50mm; left: 50mm; width: 100mm; }
+            .patient-box { position: absolute; top: 14mm; right: 15mm; width: 90mm; font-size: 10pt; padding-left: 70mm; margin-top: 2mm; }
+            .med-row { position: absolute; left: 51mm; width: 150mm; min-height: 8mm; display: flex; align-items: flex-start; padding-top: 1mm; }
+            .col-nama { width: 38mm; white-space: normal; word-wrap: break-word; line-height: 1.1; font-size: 9pt; }
+            .col-dosis { position: absolute; left: 40mm; width: 35mm; padding-left: 2mm; padding-top: 0.5mm; }
+        </style></head><body>
+            ${pages.map((pageMeds, pageIndex) => `
+                <div class="page-container">
+                    <img src="/cpo-overlay.png" class="scan-background" alt="Mal CPO">
+                    <div class="header-ruangan"><div>MELATI</div><div style="font-size: 12pt; margin-top: 2mm;">${cleanRoom}</div></div>
+                    <div class="header-dpjp">${record.dpjpName || '-'}</div>
+                    <div class="patient-box">${record.name.substring(0,25)}</div>
+                    ${pageMeds.map((obat, idx) => {                        
+                        const startY = 78; const rowHeight = 18; const currentTop = startY + (idx * rowHeight);
+                        let displayDosis = obat.dosis ? obat.dosis.replace(/\s+(iv|im|sc|po|oral|tab|cap|supp|drip|bolus|k\/p)\b/gi, '<br>$1') : '';
+                        return `<div class="med-row" style="top: ${currentTop}mm;"><div class="col-nama">${obat.nama}</div><div class="col-dosis">${displayDosis}</div></div>`;
+                    }).join('')}
+                    ${pages.length > 1 ? `<div style="position:absolute; bottom:5mm; right:5mm; font-size:8pt;">Hal ${pageIndex + 1}/${pages.length}</div>` : ''}
+                </div>`).join('')}
+            <script>setTimeout(() => { window.print(); }, 1500);</script>
+        </body></html>`;
+    printWindow.document.write(htmlContent); printWindow.document.close();
+  };
+
+  // Taruh ini di dalam MedicalRecordApp (di atas return)
+  const handlePrintBukuCM = () => {
+    const content = document.getElementById('buku-cm-print');
+    if (!content) return alert("Konten tidak ditemukan.");
+    
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    printWindow.document.write(`
+        <html><head><title>Cetak Buku Register (CM)</title>
+        <style>
+            @page { size: A4 portrait; margin: 5mm; }
+            body { font-family: Arial, sans-serif; margin: 0; padding: 10px; zoom: 0.9; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th, td { border: 1px solid black; padding: 4px; font-size: 9pt; text-align: center; }
+            th { background-color: #f3f4f6; font-weight: bold; text-transform: uppercase; font-size: 8pt; }
+            .text-left { text-align: left !important; }
+            th:nth-child(1), td:nth-child(1) { width: 30px; }
+            th:nth-child(2), td:nth-child(2) { width: 180px; }
+            th:nth-child(3), td:nth-child(3) { width: 40px; }
+            th:nth-child(4), td:nth-child(4) { width: 80px; }
+            th:nth-child(5), td:nth-child(5) { width: 150px; }
+            th:nth-child(6), td:nth-child(6) { width: 40px; }
+            th:nth-child(7), td:nth-child(7) { width: 110px; }
+            th:nth-child(8), td:nth-child(8) { width: 40px; }
+            input { display: none !important; }
+            span.print-text { display: inline !important; }
+            .no-print { display: none !important; }
+            h3 { text-align: center; margin-bottom: 10px; font-size: 14pt; color: #065f46; }
+        </style></head><body>
+        <h3>BUKU REGISTER RUANGAN (CM) - SIMPAN</h3>
+        ${content.innerHTML}  <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body></html>
+    `);
+    printWindow.document.close();
+  };
+
+// Taruh ini di dalam MedicalRecordApp (di bawah handlePrintCPO)
+  const handlePrintLabel = (record) => {
+    if (!record) return;
+    const printWindow = window.open('', '_blank', 'width=600,height=600');
+    printWindow.document.write(`
+        <html><head><title>Label Pasien - ${record.name}</title>
+        <style>
+            @page { size: A4 portrait; margin: 10mm; }
+            body { font-family: Arial, sans-serif; display: flex; flex-wrap: wrap; gap: 4mm; padding: 5mm; }
+            .label-box { 
+                width: 64mm; 
+                height: 32mm; 
+                border: 1px dashed #ccc; 
+                padding: 5mm; 
+                box-sizing: border-box; 
+                display: flex; 
+                flex-direction: column; 
+                justify-content: center;
+                position: relative;
+            }
+            .name { font-size: 10pt; font-weight: bold; text-transform: uppercase; margin-bottom: 2mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+            .rm { font-size: 18pt; font-family: 'Courier New', monospace; font-weight: bold; border-top: 2px solid black; padding-top: 2mm; }
+            .room { position: absolute; bottom: 2mm; right: 3mm; font-size: 9pt; font-weight: bold; color: #666; }
+            @media print { .label-box { border: 1px solid #eee; } .no-print { display: none; } }
+        </style></head><body>
+            ${Array(12).fill(0).map(() => `
+                <div class="label-box">
+                    <div class="name">${record.name}</div>
+                    <div class="rm">RM: ${record.rmNumber || '-'}</div>
+                    <div class="room">${record.roomNumber || ''}</div>
+                </div>
+            `).join('')}
+            <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body></html>
+    `);
+    printWindow.document.close();
+  };  
+
+  const handleExportExcel = () => {
+      if (!records || records.length === 0) return alert("Tidak ada data.");
+      const exported = records.filter(r => !r.isDischarged);
+      const headers = ["No", "Tanggal", "Jam", "Nama", "Kamar", "DPJP", "Raber 1", "Raber 2", "Status", "S", "O", "A", "Planning Lain", "LAB", "RADIOLOGI", "TINDAKAN"];
+      const escape = (str) => `"${(str || '').replace(/"/g, '""')}"`;
+      const rows = exported.map((r, index) => {
+          const parsedP = parsePlanning(r.planning);
+          return [
+              index + 1, r.createdAt.toLocaleDateString('id-ID'), r.createdAt.toLocaleTimeString('id-ID'),
+              escape(r.name), escape(r.roomNumber), escape(r.dpjpName), escape(r.raberName), escape(r.raber2Name),
+              r.isDischarged ? "Pulang" : "Dirawat", escape(r.subjective), escape(r.objective), escape(r.analysis),
+              escape(parsedP.others.join('; ')), escape(parsedP.labs.join(', ')), escape(parsedP.rads.join(', ')), escape(parsedP.tms.join(', '))
+          ].join(",");
+      });
+      const csv = [headers.join(","), ...rows].join("\n");
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+      link.download = `Pasien_Melati_${new Date().toLocaleDateString('id-ID')}.csv`;
+      link.click();
+  };
+
+  // --- STATS CALCULATION ---
+  const stats = useMemo(() => {
+      const s = { total: records.length, active: activeRecords.length, discharged: records.filter(r => r.isDischarged).length, monthly: {}, dpjpCounts: {}, raberData: {}, emptyCount: 0, emptyMale: 0, emptyFemale: 0 };
+      const occupied = activeRecords.map(r => r.roomNumber);
+      
       ROOM_LIST.forEach(room => {
-          if (!occupiedRooms.includes(room)) {
-              const roomCode = room.split('B')[0];
-              const bedCode = room.split('B')[1];
-              if (!bedCode) s.emptyCount++;
-              else {
-                  const neighborBed = bedCode === '1' ? '2' : '1';
-                  const neighborRec = activeRecords.find(r => r.roomNumber === `${roomCode}B${neighborBed}`);
-                  if (!neighborRec) s.emptyCount++;
-                  else if (neighborRec.gender === 'L') s.emptyMale++;
-                  else if (neighborRec.gender === 'P') s.emptyFemale++;
-                  else s.emptyMale++; 
+          if (!occupied.includes(room)) {
+              // UPDATE LOGIC UNTUK FORMAT K1A / K1B
+              const match = room.match(/^(K\d+)([AB])$/);
+              if (!match) {
+                  s.emptyCount++; // Kalau format aneh, anggap kosong biasa
+              } else {
+                  const roomCode = match[1]; // K1
+                  const bedCode = match[2];  // A atau B
+                  const neighborBed = bedCode === 'A' ? 'B' : 'A';
+                  const neighborRoom = `${roomCode}${neighborBed}`;
+                  const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
+
+                  if (!neighborRec) {
+                      s.emptyCount++;
+                  } else if (neighborRec.gender === 'L') {
+                      s.emptyMale++;
+                  } else {
+                      s.emptyFemale++;
+                  }
               }
           }
       });
 
-      // 2. Logika Bulanan & Hitung Lab/Rad/TM dari Planning
+      // ... (SISA KODE STATS DI BAWAHNYA TETAP SAMA SEPERTI SEBELUMNYA) ...
       records.forEach(r => {
           const m = r.createdAt.toLocaleString('id-ID', { month: 'short', year: 'numeric' });
           if (!s.monthly[m]) s.monthly[m] = { active: 0, discharged: 0, lab: 0, rad: 0, tm: 0 };
-          
-          if (r.isDischarged) s.monthly[m].discharged++;
-          else s.monthly[m].active++;
-
+          r.isDischarged ? s.monthly[m].discharged++ : s.monthly[m].active++;
           if (r.planning) {
              const lines = r.planning.split('\n');
-             lines.forEach(line => {
-                 const t = line.trim().toLowerCase();
-                 if (t.startsWith('lab.')) s.monthly[m].lab++;
-                 else if (t.startsWith('rad.')) s.monthly[m].rad++;
-                 else if (t.startsWith('tm.')) s.monthly[m].tm++;
+             lines.forEach(l => {
+                 const t = l.trim().toLowerCase();
+                 if (t.startsWith('lab.')) s.monthly[m].lab++; else if (t.startsWith('rad.')) s.monthly[m].rad++; else if (t.startsWith('tm.')) s.monthly[m].tm++;
              });
           }
       });
-
-      // 3. Logika Raber & DPJP (Hanya Pasien Aktif)
       activeRecords.forEach(rec => {
           s.dpjpCounts[rec.dpjpName] = (s.dpjpCounts[rec.dpjpName] || 0) + 1;
-          
-          const addRaber = (drName, patientName) => {
-              if(!drName) return;
-              if(!s.raberData[drName]) s.raberData[drName] = [];
-              s.raberData[drName].push(patientName);
-          };
-          addRaber(rec.raberName, rec.name);
-          addRaber(rec.raber2Name, rec.name);
+          [rec.raberName, rec.raber2Name].forEach(dr => { if(dr) { if(!s.raberData[dr]) s.raberData[dr]=[]; s.raberData[dr].push(rec.name); } });
       });
-
       return s;
   }, [records, activeRecords]);
 
-  // --- TAMPILAN DASHBOARD (V3.3 FINAL - LAYOUT BERSIH TANPA FILTER) ---
-const renderDashboard = () => {
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full overflow-hidden">
-            
-            {/* KOLOM KIRI: HANYA PETA KAMAR (Lebar 5/12) */}
-            <div className="lg:col-span-6 flex flex-col h-[calc(100vh-140px)]">
-                
-                {/* WADAH PETA KAMAR */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
-                    
-                    {/* Header Peta Kamar (Pengganti Filter) */}
-                    <div className="flex justify-between items-center px-3 py-2 border-b bg-gray-50 flex-shrink-0">
-                        <div className="flex items-center gap-2">
-                            <span className="text-lg">🗺️</span>
-                            <div>
-                                <h3 className="text-xs font-bold text-indigo-900 uppercase">Denah Kamar</h3>
-                                <p className="text-[9px] text-gray-500">
-                                    {/* Indikator Filter Aktif */}
-                                    {dpjpFilter || selectedRoomFilter.length !== ROOM_LIST.length 
-                                        ? `Filter Aktif: ${dpjpFilter || 'Kamar Tertentu'}` 
-                                        : 'Menampilkan Semua Kamar'}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Area Peta (Scrollable) */}
-                    <div className="flex-1 overflow-y-auto p-2 bg-gray-50/50">
-                        <RoomMap 
-                            roomList={ROOM_LIST} 
-                            activeRecords={filteredActiveRecords} 
-                            onSelectRoom={handleSelectRoom} 
-                            onEditRoom={handleEditRoom}
-                            roomFilter={selectedRoomFilter} // JANGAN DIHAPUS: Tetap konek ke filter global
-                            waitingList={waitingList}
-                        />
-                    </div>
+  // --- RENDER DASHBOARD ---
+  const renderDashboard = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full overflow-hidden">
+        <div className="lg:col-span-6 flex flex-col h-[calc(100vh-120px)]">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
+                <div className="flex justify-between items-center px-3 py-2 border-b bg-gray-50 flex-shrink-0">
+                    <div className="flex items-center gap-2"><span className="text-lg">🗺️</span><div><h3 className="text-xs font-bold text-indigo-900 uppercase">Denah Kamar</h3><p className="text-[9px] text-gray-500">{dpjpFilter || selectedRoomFilter.length !== ROOM_LIST.length ? 'Filter Aktif' : 'Semua Kamar'}</p></div></div>
                 </div>
-            </div>
-
-            {/* KOLOM KANAN: Statistik & Waiting List (Lebar 7/12) - TETAP UTUH */}
-            <div className="lg:col-span-6 h-[calc(100vh-140px)] overflow-y-auto space-y-4 pr-1 custom-scrollbar">
-                
-                {/* 1. WAITING LIST */}
-                <div className="bg-white rounded-lg shadow-sm border border-indigo-200 overflow-hidden">
-                    <div className="bg-indigo-600 px-3 py-2 text-white flex justify-between items-center">
-                        <div className="flex items-center space-x-2">
-                            <span className="text-xs font-bold uppercase tracking-tight">📋 Waiting List</span>
-                            <span className="bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] font-mono">{waitingList.length}</span>
-                        </div>
-                        <button 
-                            onClick={() => setShowWaitingModal(true)} 
-                            className="bg-white text-indigo-700 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50 transition shadow-sm flex items-center"
-                        >
-                            <span className="mr-1 text-sm">+</span> Tambah
-                        </button>
-                    </div>
-
-                    <div className="max-h-56 overflow-y-auto">
-                        {waitingList.length === 0 ? (
-                            <div className="p-6 text-center text-gray-400 italic text-xs">Belum ada antrean. Klik <b>+ Tambah</b></div>
-                        ) : (
-                            <table className="w-full text-[10px] text-left">
-                                <thead className="bg-gray-50 sticky top-0 border-b z-10">
-                                    <tr>
-                                        <th className="p-2 text-center w-8">No</th>
-                                        <th className="p-2">Target</th>
-                                        <th className="p-2">Pasien</th>
-                                        <th className="p-2">Asal / Kelas</th>
-                                        <th className="p-2 text-center">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {waitingList.map((w, idx) => (
-                                        <tr key={w.id} className="border-b last:border-0 hover:bg-indigo-50 transition group">
-                                            <td className="p-2 text-center font-bold text-gray-400">{idx + 1}</td>
-                                            <td className="p-2 font-bold text-indigo-700">{w.plannedRoom}</td>
-                                            <td className="p-2">
-                                                <div className="font-bold text-gray-800">{w.name}</div>
-                                                <div className="text-[9px] text-gray-400 truncate max-w-[120px]">{w.diagnosis}</div>
-                                            </td>
-                                            <td className="p-2">
-                                                <div className="font-bold text-gray-700">{w.originRoom || '-'}</div>
-                                                {w.insuranceClass && <div className="text-[9px] text-blue-600 bg-blue-50 px-1 rounded border border-blue-100 w-fit">{w.insuranceClass}</div>}
-                                            </td>
-                                            <td className="p-2 text-center">
-                                                <button onClick={() => handleMoveToRoom(w)} className="bg-green-600 text-white px-2 py-1 rounded font-bold text-[9px] hover:bg-green-700">Masuk</button>
-                                                <button onClick={() => handleDeleteWaiting(w.id)} className="ml-2 text-red-400 opacity-0 group-hover:opacity-100 transition">🗑️</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                <div className="flex-1 overflow-y-auto p-2 bg-gray-50/50">
+                    <RoomMap roomList={ROOM_LIST} activeRecords={filteredActiveRecords} onSelectRoom={handleSelectRoom} onEditRoom={handleEditRoom} roomFilter={selectedRoomFilter} waitingList={waitingList} />
                 </div>
-
-                {/* 2. LEGEND STATUS BED */}
-                <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col items-center justify-center bg-green-100 border border-green-300 text-green-900 rounded p-2 shadow-sm">
-                        <span className="text-[9px] font-bold uppercase">KOSONG</span>
-                        <span className="text-xl font-extrabold">{stats.emptyCount}</span>
-                    </div>
-                    <div className="flex flex-col items-center justify-center bg-sky-100 border border-sky-300 text-sky-900 rounded p-2 shadow-sm">
-                        <span className="text-[9px] font-bold uppercase">SISA LK</span>
-                        <span className="text-xl font-extrabold">{stats.emptyMale}</span>
-                    </div>
-                    <div className="flex flex-col items-center justify-center bg-purple-100 border border-purple-300 text-purple-900 rounded p-2 shadow-sm">
-                        <span className="text-[9px] font-bold uppercase">SISA PR</span>
-                        <span className="text-xl font-extrabold">{stats.emptyFemale}</span>
-                    </div>
-                </div>
-
-                {/* 3. PASIEN AKTIF PER DPJP */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-                    <h3 className="font-bold text-gray-700 border-b pb-2 mb-3 text-xs uppercase">Pasien Aktif per DPJP</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {Object.entries(stats.dpjpCounts).sort((a,b) => b[1] - a[1]).map(([name, count]) => (
-                            <div key={name} className="flex justify-between items-center text-[10px] p-2 bg-gray-50 rounded border border-gray-100 hover:bg-indigo-50 transition group">
-                                <span className="truncate pr-1 font-medium text-gray-700">{name}</span>
-                                <div className="flex items-center space-x-1">
-                                    <span className="font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full min-w-[20px] text-center">{count}</span>
-                                    <button 
-                                        onClick={() => handleReportDpjpCount(name, count)}
-                                        className="text-[9px] bg-green-100 text-green-700 border border-green-200 p-1 rounded-full hover:bg-green-600 hover:text-white transition opacity-80 group-hover:opacity-100"
-                                        title={`Lapor jumlah ke ${name}`}
-                                    >
-                                        📱
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* 4. RAWAT BERSAMA */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-                    <h3 className="font-bold text-gray-700 border-b pb-2 mb-2 text-xs uppercase flex justify-between items-center">
-                        <span>🤝 Rawat Bersama (Konsul)</span>
-                        <span className="bg-yellow-100 text-yellow-800 px-2 rounded-full text-[9px] font-bold">{Object.keys(stats.raberData).length} Dokter</span>
-                    </h3>
-                    <div className="space-y-2">
-                        {Object.entries(stats.raberData).length === 0 ? (
-                             <div className="text-[10px] text-gray-400 italic text-center py-2">Tidak ada konsulan aktif.</div>
-                        ) : (
-                            Object.entries(stats.raberData).map(([drName, patients]) => (
-                                <div key={drName} className="text-[10px] bg-yellow-50 p-2 rounded border border-yellow-100 flex justify-between items-start group">
-                                    <div className="flex-1">
-                                        <div className="font-bold text-indigo-800 mb-0.5">{drName}</div>
-                                        <div className="text-gray-600 leading-tight">({patients.join(', ')})</div>
-                                    </div>
-                                    <button 
-                                        onClick={() => handleReportRaber(drName, patients)}
-                                        className="ml-2 text-[9px] bg-green-100 text-green-700 border border-green-200 px-2 py-1 rounded hover:bg-green-600 hover:text-white transition flex items-center opacity-80 group-hover:opacity-100"
-                                        title={`Ingatkan ${drName} via WA`}
-                                    >
-                                        <span>📱</span>
-                                    </button>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-
-                {/* 5. REKAPITULASI BULANAN */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase flex justify-between items-center">
-                        <span>📊 Rekapitulasi Bulanan</span>
-                    </div>
-                    <table className="w-full text-[10px] text-left">
-                        <thead className="bg-gray-100 text-gray-500 font-bold border-b">
-                            <tr>
-                                <th className="p-2">Bulan</th>
-                                <th className="p-2 text-center">Aktif</th>
-                                <th className="p-2 text-center">Pulang</th>
-                                <th className="p-2 text-center text-red-600">Lab</th>
-                                <th className="p-2 text-center text-blue-600">Rad</th>
-                                <th className="p-2 text-center text-green-600">TM</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {Object.entries(stats.monthly).map(([month, data]) => (
-                                <tr key={month} className="border-b last:border-0 hover:bg-gray-50">
-                                    <td className="p-2 font-bold text-indigo-900">{month}</td>
-                                    <td className="p-2 text-center">{data.active}</td>
-                                    <td className="p-2 text-center">{data.discharged}</td>
-                                    <td className="p-2 text-center font-bold">{data.lab}</td>
-                                    <td className="p-2 text-center font-bold">{data.rad}</td>
-                                    <td className="p-2 text-center font-bold">{data.tm}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div className="h-10"></div>
             </div>
         </div>
-    );
-};
-
+        <div className="lg:col-span-6 h-[calc(100vh-140px)] overflow-y-auto space-y-4 pr-1 custom-scrollbar">
+            <div className="bg-white rounded-lg shadow-sm border border-indigo-200 overflow-hidden">
+                <div className="bg-indigo-600 px-3 py-2 text-white flex justify-between items-center">
+                    <div className="flex items-center space-x-2"><span className="text-xs font-bold uppercase tracking-tight">📋 Waiting List</span><span className="bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] font-mono">{waitingList.length}</span></div>
+                    <button onClick={() => setShowWaitingModal(true)} className="bg-white text-indigo-700 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50 flex items-center"><span className="mr-1 text-sm">+</span> Tambah</button>
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                    {waitingList.length === 0 ? <div className="p-6 text-center text-gray-400 italic text-xs">Belum ada antrean.</div> : (
+                        <table className="w-full text-[10px] text-left">
+                            <thead className="bg-gray-50 sticky top-0 border-b z-10"><tr><th className="p-2 text-center w-8">No</th><th className="p-2">Target</th><th className="p-2">Pasien</th><th className="p-2">Asal</th><th className="p-2 text-center">Aksi</th></tr></thead>
+                            <tbody>{waitingList.map((w, idx) => (
+                                <tr key={w.id} className="border-b hover:bg-indigo-50 group"><td className="p-2 text-center font-bold text-gray-400">{idx+1}</td><td className="p-2 font-bold text-indigo-700">{w.plannedRoom}</td><td className="p-2"><div className="font-bold">{w.name}</div><div className="text-[9px] text-gray-400 truncate">{w.diagnosis}</div></td><td className="p-2"><div className="font-bold">{w.originRoom}</div>{w.insuranceClass && <div className="text-[9px] bg-blue-50 text-blue-600 px-1 rounded w-fit">{w.insuranceClass}</div>}</td><td className="p-2 text-center"><button onClick={() => handleMoveToRoom(w)} className="bg-green-600 text-white px-2 py-1 rounded font-bold text-[9px]">Masuk</button><button onClick={() => handleDeleteWaiting(w.id)} className="ml-2 text-red-400 opacity-0 group-hover:opacity-100">🗑️</button></td></tr>
+                            ))}</tbody>
+                        </table>
+                    )}
+                </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+                <div className="bg-green-100 border border-green-300 text-green-900 rounded p-2 text-center"><span className="text-[9px] font-bold">KOSONG</span><div className="text-xl font-extrabold">{stats.emptyCount}</div></div>
+                <div className="bg-sky-100 border border-sky-300 text-sky-900 rounded p-2 text-center"><span className="text-[9px] font-bold">SISA LK</span><div className="text-xl font-extrabold">{stats.emptyMale}</div></div>
+                <div className="bg-purple-100 border border-purple-300 text-purple-900 rounded p-2 text-center"><span className="text-[9px] font-bold">SISA PR</span><div className="text-xl font-extrabold">{stats.emptyFemale}</div></div>
+            </div>
+            <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-3 text-xs uppercase">Pasien per DPJP</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{Object.entries(stats.dpjpCounts).sort((a,b)=>b[1]-a[1]).map(([n,c])=>(<div key={n} className="flex justify-between items-center text-[10px] p-2 bg-gray-50 rounded border hover:bg-indigo-50 group"><span className="truncate font-medium">{n}</span><div className="flex items-center gap-1"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{c}</span><button onClick={()=>handleReportDpjpCount(n,c)} className="text-[9px] bg-green-100 text-green-700 p-1 rounded-full opacity-80 group-hover:opacity-100">📱</button></div></div>))}</div>
+            </div>
+            <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-2 text-xs uppercase flex justify-between"><span>🤝 Konsul</span><span className="bg-yellow-100 px-2 rounded-full">{Object.keys(stats.raberData).length} Dr</span></h3>
+                <div className="space-y-2">{Object.entries(stats.raberData).length===0?<div className="text-[10px] text-gray-400 text-center">Nihil.</div>:Object.entries(stats.raberData).map(([d,p])=>(<div key={d} className="text-[10px] bg-yellow-50 p-2 rounded border flex justify-between group"><div className="flex-1"><div className="font-bold text-indigo-800">{d}</div><div className="text-gray-600">({p.join(', ')})</div></div><button onClick={()=>handleReportRaber(d,p)} className="ml-2 bg-green-100 text-green-700 px-2 py-1 rounded opacity-80 group-hover:opacity-100">📱</button></div>))}</div>
+            </div>
+            <div className="bg-white rounded overflow-hidden border"><div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase">📊 Rekap</div><table className="w-full text-[10px] text-left"><thead className="bg-gray-100 text-gray-500 font-bold border-b"><tr><th className="p-2">Bulan</th><th className="p-2 text-center">Aktif</th><th className="p-2 text-center">Plg</th><th className="p-2 text-center text-red-600">Lab</th><th className="p-2 text-center text-blue-600">Rad</th><th className="p-2 text-center text-green-600">TM</th></tr></thead><tbody>{Object.entries(stats.monthly).map(([m,d])=>(<tr key={m} className="border-b hover:bg-gray-50"><td className="p-2 font-bold text-indigo-900">{m}</td><td className="p-2 text-center">{d.active}</td><td className="p-2 text-center">{d.discharged}</td><td className="p-2 text-center font-bold">{d.lab}</td><td className="p-2 text-center font-bold">{d.rad}</td><td className="p-2 text-center font-bold">{d.tm}</td></tr>))}</tbody></table></div>
+            <div className="h-10"></div>
+        </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-800 pb-20">
-        {/* --- HEADER (REVISI: HAMBURGER MENU + FITUR BARU) --- */}
-        <div className="bg-white shadow-sm px-4 h-16 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
-            
-            {/* LOGO KIRI (Bisa Diklik Kembali ke Dashboard) */}
-            <div 
-                onClick={() => setView('dashboard')} 
-                className="flex flex-col items-center justify-center leading-none text-indigo-800 select-none cursor-pointer hover:opacity-80 transition"
-            >
-                <span className="text-[12px] font-bold tracking-widest">E-</span>
-                <span className="text-sm font-bold tracking-tighter uppercase leading-none">ONTANG</span>
-                <span className="text-sm font-bold tracking-tighter uppercase leading-none">ANTING</span>
+        {/* HEADER V5 (FIX: Menu Navigasi Stabil) */}
+        <div className="bg-white shadow-sm px-4 h-14 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
+            <div onClick={() => setView('dashboard')} className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none py-1">
+                <img src="/logo3.png" alt="SIMPAN Header" className="h-36 object-contain" />
             </div>
-            
-            {/* MENU KANAN */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-2">
+                <div className="hidden lg:block border-r pr-3 mr-1"><DigitalClock /></div>
+                <button onClick={() => { const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles); window.open(`https://wa.me/?text=${waLink}`, '_blank'); }} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-1.5 rounded-lg text-[10px] font-bold border border-indigo-200 transition shadow-sm"><span className="mr-1">📢</span> Lap.</button>
+                <div className={`hidden sm:block w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-green-400' : 'bg-red-500'} ring-2 ring-white`} title={isOnline?"Online":"Offline"}></div>
                 
-                {/* 1. JAM DIGITAL (Fitur Baru - Hidden di HP Kecil) */}
-                <div className="hidden md:block border-r pr-3 mr-1">
-                    <DigitalClock />
-                </div>
-
-                {/* 2. TOMBOL LAPORAN SHIFT (Fitur Baru) */}
-                <button 
-                    onClick={() => {
-                        // Pastikan fungsi generateShiftReport sudah dicopy di luar komponen ini
-                        const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles);
-                        window.open(`https://wa.me/?text=${waLink}`, '_blank');
-                    }}
-                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center border border-indigo-200 transition shadow-sm"
-                    title="Buat Laporan Dinas ke WA"
-                >
-                    <span className="mr-1 text-sm">📢</span> Lap. Shift
-                </button>
-
-                {/* 3. STATUS ONLINE (Style Lama) */}
-                <div className={`hidden sm:block text-[10px] font-bold px-2 py-1 rounded border ${isOnline ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                    {isOnline ? 'ONLINE' : 'OFFLINE'}
-                </div>
-
-                {/* 4. HAMBURGER MENU (Style Lama) */}
-                <div className="relative">
-                    <button 
-                        onClick={() => setIsMenuOpen(!isMenuOpen)}
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-md focus:outline-none border border-gray-200 transition"
-                    >
-                        {/* Icon Hamburger */}
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
-                    </button>
-
-                    {/* Dropdown Menu */}
-                    {isMenuOpen && (
-                        <div className="absolute right-0 mt-2 w-52 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-60 animate-in fade-in slide-in-from-top-2">
-                            <div className="px-4 py-2 border-b border-gray-100 bg-indigo-50/50">
-                                <p className="text-[9px] text-gray-500 uppercase font-bold tracking-tighter">Login Sebagai:</p>
-                                <p className="text-sm font-bold text-indigo-800">{userRole ? userRole.toUpperCase() : 'GUEST'}</p>
+                {cashflowRole ? (
+                    <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 relative ml-2">
+                        <div className="relative group">
+                            <button className="px-3 py-1.5 text-[10px] font-bold rounded flex items-center gap-2 bg-white text-teal-700 shadow-sm border border-slate-100 cursor-pointer"><FileText size={12}/> MEDIS ▾</button>
+                            
+                            {/* FIX DROPDOWN 1: Pakai pt-2 (padding) dan bg-white dipindah ke dalam */}
+                            <div className="absolute top-full right-0 pt-2 w-48 z-[90] hidden group-hover:block animate-in fade-in zoom-in-95 origin-top-right">
+                                <div className="bg-white rounded-lg shadow-xl border border-gray-100 py-1">
+                                    <div className="px-4 py-2 border-b border-gray-100 bg-teal-50/50"><p className="text-[9px] text-gray-500 uppercase font-bold">Menu Navigasi</p></div>
+                                    <div className="px-2 py-1"><span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded w-fit block">👤 {currentUser ? currentUser.name : 'Guest'}</span></div>
+                                    <button onClick={() => setView('dashboard')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🏠 Dashboard</button>
+                                    <button onClick={() => setView('patient-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">📋 Daftar Pasien</button>
+                                    <button onClick={() => setView('archived-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🗃️ Gudang Arsip Pasien</button>
+                                    <button onClick={() => setView('settings')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">⚙️ Setelan</button>
+                                    <div className="border-t border-gray-100 my-1"></div>
+                                    <button onClick={onLogout} className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-bold flex items-center">🚪 Keluar</button>
+                                </div>
                             </div>
-                            
-                            {/* Navigasi */}
-                            <button onClick={() => { setView('dashboard'); setIsMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center hover:bg-indigo-50 ${view === 'dashboard' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-gray-700'}`}>
-                                <span className="mr-3">🏠</span> Dashboard
-                            </button>
-                            <button onClick={() => { setView('patient-list'); setIsMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center hover:bg-indigo-50 ${view === 'patient-list' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-gray-700'}`}>
-                                <span className="mr-3">📋</span> Daftar Pasien
-                            </button>                            
-                            <button onClick={() => { setView('settings'); setIsMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center hover:bg-indigo-50 ${view === 'settings' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-gray-700'}`}>
-                                <span className="mr-3">⚙️</span> Setelan
-                            </button>
-                            
-                            {/* Logout */}
-                            <button 
-                                onClick={onLogout} 
-                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center font-bold border-t mt-1"
-                            >
-                                <span className="mr-3">🚪</span> Keluar (Logout)
-                            </button>
                         </div>
-                    )}
-                </div>
-
-                {/* 5. TOMBOL PASIEN BARU (Tetap ada biar cepat) */}
-                <button onClick={() => setShowInputModal(true)} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded shadow-md text-xs font-bold flex items-center transition">
-                    <span className="mr-1 text-sm">+</span> Baru
-                </button>
-
+                        <button onClick={() => setAppMode('KEUANGAN')} className="px-3 py-1.5 text-[10px] font-bold rounded flex items-center gap-2 text-slate-500 hover:text-indigo-700 hover:bg-white/60 transition ml-1"><Wallet size={12}/> KEUANGAN</button>
+                    </div>
+                ) : (
+                    <div className="relative group ml-2">
+                        <button className="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm hover:bg-gray-50"><span>☰</span> MENU ▾</button>
+                        
+                        {/* FIX DROPDOWN 2: Pakai pt-2 (padding) dan bg-white dipindah ke dalam */}
+                        <div className="absolute top-full right-0 pt-2 w-48 z-[90] hidden group-hover:block animate-in fade-in zoom-in-95 origin-top-right">
+                            <div className="bg-white rounded-lg shadow-xl border border-gray-100 py-1">
+                                <div className="px-2 py-1"><span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded w-fit block">👤 {currentUser ? currentUser.name : 'Guest'}</span></div>
+                                <button onClick={() => setView('dashboard')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🏠 Dashboard</button>
+                                <button onClick={() => setView('patient-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">📋 Daftar Pasien</button>
+                                <button onClick={() => setView('settings')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">⚙️ Setelan</button>
+                                <div className="border-t border-gray-100 my-1"></div>
+                                <button onClick={onLogout} className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-bold flex items-center">🚪 Keluar</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                <button onClick={() => setShowInputModal(true)} className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-bold transition flex items-center gap-1 ml-1"><span>+</span> Baru</button>
             </div>
         </div>
 
-        {/* --- MAIN LAYOUT (ABSOLUTE OVERLAY MODE) --- */}
         <div className="relative flex flex-row max-w-7xl mx-auto lg:h-[calc(100vh-64px)] overflow-hidden">
-            
-            {/* 1. PANEL INPUT WAITING LIST (OVERLAY KIRI) */}
-            <div className={`fixed top-16 left-0 bottom-0 w-full md:w-[400px] z-[60] bg-white transition-transform duration-300 ease-in-out shadow-2xl border-r ${
-                showWaitingModal ? 'translate-x-0' : '-translate-x-full'
-            }`}>
-                <WaitingListInputPanel 
-                    show={showWaitingModal}
-                    onClose={() => setShowWaitingModal(false)}
-                    onAdd={handleAddWaiting}
-                    availableRooms={ROOM_LIST}
-                    occupiedRooms={occupiedRooms}
-                    waitingList={waitingList}
-                    onUpdateRoom={updateWaitingListRoom}
-                />
+            <div className={`fixed top-16 left-0 bottom-0 w-full md:w-[400px] z-[60] bg-white transition-transform duration-300 ease-in-out shadow-2xl border-r ${showWaitingModal ? 'translate-x-0' : '-translate-x-full'}`}>
+                <WaitingListInputPanel show={showWaitingModal} onClose={() => setShowWaitingModal(false)} onAdd={handleAddWaiting} availableRooms={ROOM_LIST} occupiedRooms={occupiedRooms} waitingList={waitingList} onUpdateRoom={updateWaitingListRoom} activeRecords={activeRecords}/>
             </div>
-
-            {/* 2. KOLOM KIRI (DASHBOARD / LIST) - SELALU FULL (NO RESIZE) */}
             <div className="w-full h-full flex flex-col overflow-hidden">
                 <div className="p-4 h-full overflow-y-auto custom-scrollbar">
-                    
-                    {/* VIEW 1: DASHBOARD */}
                     {view === 'dashboard' && renderDashboard()}
-                    
-                    {/* VIEW 2: DAFTAR PASIEN (FIX: DROPDOWN TIDAK TERTUTUP) */}
                     {view === 'patient-list' && (
                         <div className="h-full flex flex-col bg-gray-50">
-                            
-                            {/* --- HEADER UTAMA (BUMPPED Z-INDEX KE z-40) --- */}
                             <div className="p-3 bg-white border-b shadow-sm sticky top-0 z-40 flex-shrink-0 space-y-2">
-                                
-                                {/* Baris Atas: Judul & Tombol Aksi */}
                                 <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-2">
-                                        <h2 className="font-bold text-lg text-indigo-800">📂 Daftar Pasien</h2>
-                                        <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-bold">
-                                            {filteredActiveRecords.length} Pasien
-                                        </span>
-                                    </div>
-
+                                    <div className="flex items-center gap-2"><h2 className="font-bold text-lg text-indigo-800">📂 Daftar Pasien</h2><span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-bold">{filteredActiveRecords.length} Pasien</span></div>
                                     <div className="flex space-x-1">
-                                        <button 
-                                            onClick={handleExportExcel}
-                                            className="text-[10px] px-3 py-1.5 bg-white border border-green-200 text-green-700 rounded-lg font-bold hover:bg-green-600 hover:text-white transition flex items-center shadow-sm"
-                                        >
-                                            Excel
-                                        </button>
-                                        <button 
-                                            onClick={() => setShowBulkPrint(true)}
-                                            className="text-[10px] px-3 py-1.5 bg-white border border-indigo-200 text-indigo-700 rounded-lg font-bold hover:bg-indigo-600 hover:text-white transition flex items-center shadow-sm"
-                                        >
-                                            🖨️ Cetak Banyak
-                                        </button>
+                                        <button onClick={handleExportExcel} className="text-[10px] px-3 py-1.5 bg-white border border-green-200 text-green-700 rounded-lg font-bold hover:bg-green-600 hover:text-white transition shadow-sm">Excel</button>
+                                        <button onClick={() => setShowBulkPrint(true)} className="text-[10px] px-3 py-1.5 bg-white border border-indigo-200 text-indigo-700 rounded-lg font-bold hover:bg-indigo-600 hover:text-white transition shadow-sm">🖨️ Cetak Banyak</button>
                                     </div>
                                 </div>
-
-                                {/* Baris Bawah: Input & Filter */}
                                 <div className="flex flex-col md:flex-row gap-2">
-                                    
-                                    {/* FILTER KAMAR (Wrapper z-50 untuk memastikan menu melayang) */}
-                                    <div className="w-full md:w-48 relative z-50">
-                                        <RoomFilterDropdown 
-                                            allRooms={ROOM_LIST}
-                                            selectedRooms={selectedRoomFilter}
-                                            onChange={setSelectedRoomFilter} 
-                                        />
-                                    </div>
-
-                                    {/* FILTER DOKTER */}
+                                    <div className="w-full md:w-48 relative z-50"><RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} /></div>
                                     <div className="w-full md:w-48">
-                                        <select 
-                                            value={dpjpFilter} 
-                                            onChange={(e) => setDpjpFilter(e.target.value)} 
-                                            className="w-full p-1.5 border border-indigo-200 rounded-lg text-xs bg-white focus:ring-1 focus:ring-indigo-500 font-medium h-[32px]"
-                                        >
-                                            <option value="">Semua Dokter (DPJP)</option>
-                                            {dpjpOptions.map((opt, idx) => (
-                                                <option key={idx} value={opt}>{opt}</option>
-                                            ))}
+                                        <select value={dpjpFilter} onChange={(e) => setDpjpFilter(e.target.value)} className="w-full p-1.5 border border-indigo-200 rounded-lg text-xs bg-white h-[32px]">
+                                            <option value="">Semua Dokter (DPJP)</option>{dpjpOptions.map((opt, idx) => <option key={idx} value={opt}>{opt}</option>)}
                                         </select>
                                     </div>
-
-                                    {/* SEARCH BAR TUNGGAL */}
                                     <div className="relative flex-1">
                                         <span className="absolute left-2.5 top-2 text-gray-400 text-xs">🔍</span>
-                                        <input 
-                                            type="text" 
-                                            placeholder="Cari Nama / Diagnosa / Dokter..." 
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                            className="w-full pl-8 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 transition h-[32px]"
-                                        />
-                                        {searchTerm && (
-                                            <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs">✕</button>
-                                        )}
+                                        <input type="text" placeholder="Cari Nama / Diagnosa / Dokter..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-8 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 h-[32px]" />
+                                        {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs">✕</button>}
                                     </div>
                                 </div>
                             </div>
-
-                            {/* TABEL PASIEN (z-index biarkan 10 agar tetap di bawah dropdown) */}
                             <div className="flex-1 overflow-hidden relative z-0">
-                                <PatientTable 
-                                    records={filteredActiveRecords} 
-                                    onEdit={handleEdit} 
-                                    onPrint={(r) => { setSelectedRecordForPrint(r); }} 
-                                    onShowLaporModal={setRecordForLapor} 
-                                    onDischarge={handleDischarge}
-                                    onBulkPrint={() => setShowBulkPrint(true)} 
-                                    roomSortOrder={selectedRoomFilter}
-                                    onPrintTTV={handlePrintTTV}
-                                    onQuickTtv={(rec) => {
-                                        setQuickTtvTarget(rec);
-                                        setShowTtvModal(true);
-                                    }}
-                                    onBulkDischarge={handleBulkDischarge}
+                                <PatientTable records={filteredActiveRecords} onEdit={handleEdit} onPrint={(r) => setSelectedRecordForPrint(r)} onShowLaporModal={setRecordForLapor} onDischarge={handleDischarge} onBulkPrint={() => setShowBulkPrint(true)} roomSortOrder={selectedRoomFilter} onPrintTTV={handlePrintTTV} onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }} onBulkDischarge={handleBulkDischarge} updateRecord={updateRecord} onPrintBukuCM={handlePrintBukuCM} onPrintLabel={handlePrintLabel} />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- VIEW 4: ARSIP PASIEN (LEVEL 4 - UPDATE) --- */}
+                    {view === 'archived-list' && (
+                    <div className="h-full flex flex-col bg-slate-50">
+                        <div className="p-4 bg-white border-b shadow-sm sticky top-0 z-40 space-y-3">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <h2 className="font-bold text-lg text-slate-800">🗃️ Gudang Arsip Pasien Pulang</h2>
+                                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                                        {archivedRecords.length} Total Data
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* --- SEARCHBAR ARSIP --- */}
+                            <div className="relative max-w-md">
+                                <input 
+                                    type="text" 
+                                    placeholder="Cari Nama atau No. RM di arsip..." 
+                                    className="w-full pl-4 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                    value={archiveSearch}
+                                    onChange={(e) => setArchiveSearch(e.target.value)}
                                 />
                             </div>
                         </div>
-                    )}
-                                        
-                    {/* VIEW 3: SETELAN (REVISI: TABEL DITAMPILKAN KEMBALI) */}
+
+                        <div className="flex-1 overflow-auto p-4">
+                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden text-xs">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="p-3 w-24 text-center">No. RM</th>
+                                            <th className="p-3">Nama Pasien</th>
+                                            <th className="p-3 w-20 text-center">Km. Terakhir</th>
+                                            <th className="p-3">DPJP Terakhir</th>
+                                            <th className="p-3 text-center">Tgl Masuk</th>
+                                            <th className="p-3 text-center">Tgl Pulang</th>
+                                            <th className="p-3 text-center w-28">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {archivedRecords
+                                            .filter(rec => 
+                                                rec.name.toLowerCase().includes(archiveSearch.toLowerCase()) || 
+                                                (rec.rmNumber && rec.rmNumber.includes(archiveSearch))
+                                            )
+                                            .map(rec => (
+                                            <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors">
+                                                <td className="p-3 text-center font-mono text-slate-400">{rec.rmNumber || '-'}</td>
+                                                <td className="p-3 font-bold text-slate-800 uppercase">{rec.name}</td>
+                                                <td className="p-3 text-center font-bold text-indigo-600 bg-indigo-50/30">{rec.lastRoom || '-'}</td>
+                                                <td className="p-3 text-slate-600">{rec.dpjpName}</td>
+                                                <td className="p-3 text-center text-slate-400">{formatDateCM(rec.admissionDate) || '-'}</td>
+                                                <td className="p-3 text-center font-bold text-rose-500">
+                                                    {rec.dischargeDate ? new Date(rec.dischargeDate).toLocaleDateString('id-ID', {day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit'}).replace(/\./g, ':') : '-'}
+                                                </td>
+                                                <td className="p-3 text-center">
+                                                    <button 
+                                                        onClick={() => handleRestorePatient(rec.id, rec.name)}
+                                                        className="bg-white text-indigo-600 px-3 py-1.5 rounded border border-indigo-200 hover:bg-indigo-600 hover:text-white transition shadow-sm font-bold text-[10px]"
+                                                    >
+                                                        ↩️ Balikkan
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                    
+                    {/* --- VIEW 3: SETELAN (LEVEL 4 - UPDATE) --- */}
                     {view === 'settings' && (
                         <div className="bg-white p-6 rounded shadow h-full overflow-y-auto">
-                            <h2 className="font-bold text-lg mb-4 text-indigo-800 border-b pb-2">Pengaturan Aplikasi</h2>
-                            
-                            {/* INDIKATOR MERAH PENGAMAN */}
-                            {!isSettingsLoaded && (
-                                <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded shadow-sm animate-pulse">
-                                    <p className="font-bold text-sm">⚠️ KONEKSI TIDAK STABIL / LOADING DATA</p>
-                                    <p className="text-xs">
-                                        Sistem sedang mengambil data dokter dari Cloud. Tombol Tambah/Hapus 
-                                        <strong> DIKUNCI SEMENTARA</strong> untuk mencegah data hilang/tertimpa.
-                                        <br/>Silakan tunggu atau Refresh jika macet.
-                                    </p>
+                            <h2 className="font-bold text-xl mb-6 text-indigo-900 border-b pb-2 flex items-center gap-2">⚙️ Pusat Pengaturan</h2>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                {/* 1. PROFIL SAYA */}
+                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                                    <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">👤 Profil Saya <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded uppercase">{currentUser.role}</span></h3>
+                                    <div className="space-y-3">
+                                        <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Username (ID)</label><input type="text" value={currentUser.id} disabled className="w-full p-2 bg-slate-200 text-slate-500 border rounded text-sm font-mono cursor-not-allowed" /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nama Tampilan</label><input type="text" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-indigo-500" /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label><input type="text" value={profileForm.pass} onChange={e => setProfileForm({...profileForm, pass: e.target.value})} className="w-full p-2 border border-slate-300 rounded text-sm font-mono focus:ring-2 focus:ring-indigo-500" /></div>
+                                        <button onClick={handleUpdateSelf} className="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition shadow-sm mt-2">Simpan Perubahan Profil</button>
+                                    </div>
                                 </div>
-                            )}
+                                {/* 2. ADMIN PANEL */}
+                                {currentUser.role === 'admin' && (
+                                    <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-200">
+                                        <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">🛡️ Admin: Manajemen User</h3>
+                                        <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm mb-4">
+                                            <h4 className="text-xs font-bold text-indigo-800 mb-2 uppercase">Tambah / Reset User</h4>
+                                            <div className="grid grid-cols-2 gap-2 mb-2">
+                                                <input type="text" placeholder="ID (Username)" value={adminUserForm.id} onChange={e => setAdminUserForm({...adminUserForm, id: e.target.value})} className="p-2 border rounded text-xs" />
+                                                <input type="text" placeholder="Nama Lengkap" value={adminUserForm.name} onChange={e => setAdminUserForm({...adminUserForm, name: e.target.value})} className="p-2 border rounded text-xs" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 mb-2">
+                                                <input type="text" placeholder="Password" value={adminUserForm.pass} onChange={e => setAdminUserForm({...adminUserForm, pass: e.target.value})} className="p-2 border rounded text-xs font-mono" />
+                                                <select value={adminUserForm.role} onChange={e => setAdminUserForm({...adminUserForm, role: e.target.value})} className="p-2 border rounded text-xs bg-white">
+                                                    <option value="member">Member</option><option value="admin">Admin</option><option value="finance_jm">Keuangan (JM)</option><option value="finance_kas">Keuangan (KAS)</option><option value="finance_doc">Keuangan (Dokter)</option>
+                                                </select>
+                                            </div>
+                                            <button onClick={handleAdminSaveUser} className="w-full bg-indigo-600 text-white py-1.5 rounded text-xs font-bold hover:bg-indigo-700">Simpan / Update User</button>
+                                        </div>
+                                        <div className="overflow-hidden rounded border border-indigo-200">
+                                            <table className="w-full text-left text-xs bg-white"><thead className="bg-indigo-100 text-indigo-800"><tr><th className="p-2">ID</th><th className="p-2">Nama</th><th className="p-2">Role</th><th className="p-2">Pass</th><th className="p-2 text-center">Aksi</th></tr></thead>
+                                            <tbody className="divide-y divide-indigo-50">{allUsers.map(u => (
+                                                <tr key={u.id} className="hover:bg-indigo-50"><td className="p-2 font-mono text-slate-500">{u.id}</td><td className="p-2 font-bold">{u.name}</td><td className="p-2"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role==='admin'?'bg-purple-100 text-purple-700':u.role==='member'?'bg-slate-100 text-slate-600':'bg-green-100 text-green-700'}`}>{u.role}</span></td><td className="p-2 font-mono text-slate-500">{u.pass}</td><td className="p-2 text-center flex justify-center gap-1"><button onClick={()=>setAdminUserForm(u)} className="bg-yellow-100 text-yellow-700 p-1 rounded">✏️</button>{u.id!==currentUser.id&&(<button onClick={()=>handleAdminDeleteUser(u.id)} className="bg-red-100 text-red-700 p-1 rounded">🗑️</button>)}</td></tr>
+                                            ))}</tbody></table>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="mt-8 pt-6 border-t border-slate-200">
+                                <h3 className="font-bold text-gray-700 mb-2">Daftar DPJP & Nomor WA (Master Data)</h3>
+                                <div className="flex space-x-2 mb-3"><input type="text" placeholder="Nama Dokter" value={newDpjpName} onChange={(e) => setNewDpjpName(e.target.value)} className="border p-2 rounded text-xs w-1/2 focus:ring-2 focus:ring-indigo-500 outline-none" /><input type="text" placeholder="Nomor WA (08xxx)" value={newDpjpWa} onChange={(e) => setNewDpjpWa(e.target.value)} className="border p-2 rounded text-xs w-1/3 focus:ring-2 focus:ring-indigo-500 outline-none" /><button onClick={handleAddDpjp} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-green-700 transition disabled:bg-gray-400">+ Tambah</button></div>
+                                <div className="border rounded overflow-hidden bg-white shadow-sm max-h-64 overflow-y-auto"><table className="w-full text-left border-collapse"><thead><tr className="bg-gray-100 text-xs text-gray-600 border-b"><th className="p-2 border-r font-bold uppercase">Nama Dokter</th><th className="p-2 border-r font-bold uppercase">No. WA</th><th className="p-2 text-center font-bold uppercase">Aksi</th></tr></thead><tbody>{dpjpProfiles && dpjpProfiles.map((p, idx) => (<tr key={idx} className="border-b text-xs hover:bg-indigo-50 transition"><td className="p-2 border-r font-medium text-gray-800">{p.name}</td><td className="p-2 border-r text-gray-500 font-mono">{p.waNumber}</td><td className="p-2 text-center"><button onClick={() => handleRemoveDpjp(p.name)} disabled={!isSettingsLoaded} className="text-red-500 hover:text-red-700 font-bold px-2 py-1 border border-red-200 rounded hover:bg-red-50 transition text-[10px]">🗑️ Hapus</button></td></tr>))}</tbody></table></div>
 
-                            <div className={`mb-6 ${!isSettingsLoaded ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
-                                <h3 className="font-bold text-gray-700 mb-2">Daftar DPJP & Nomor WA</h3>
-                                
-                                {/* Input Tambah Dokter */}
-                                <div className="flex space-x-2 mb-3">
-                                    <input 
-                                        type="text" 
-                                        placeholder="Nama Dokter" 
-                                        value={newDpjpName} 
-                                        onChange={(e) => setNewDpjpName(e.target.value)} 
-                                        className="border p-2 rounded text-xs w-1/2 focus:ring-2 focus:ring-indigo-500 outline-none" 
-                                    />
-                                    <input 
-                                        type="text" 
-                                        placeholder="Nomor WA (08xxx)" 
-                                        value={newDpjpWa} 
-                                        onChange={(e) => setNewDpjpWa(e.target.value)} 
-                                        className="border p-2 rounded text-xs w-1/3 focus:ring-2 focus:ring-indigo-500 outline-none" 
-                                    />
-                                    <button 
-                                        onClick={handleAddDpjp} 
-                                        disabled={!isSettingsLoaded}
-                                        className="bg-green-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-green-700 transition disabled:bg-gray-400"
-                                    >
-                                        + Tambah
-                                    </button>
-                                </div>
+                                {/* MASTER DATA: Lab / Radiologi / Tindakan / Terapi */}
+                                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="bg-white p-3 rounded border">
+                                        <h4 className="text-sm font-bold mb-2">Master Lab</h4>
+                                        <div className="flex gap-2 mb-2">
+                                            <input type="text" placeholder="Tambah Lab" value={newMasterLab} onChange={e => setNewMasterLab(e.target.value)} className="flex-1 p-2 border rounded text-xs" />
+                                            <button onClick={() => handleAddMaster('lab')} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-3 rounded text-xs font-bold">Tambah</button>
+                                        </div>
+                                        <div className="max-h-40 overflow-y-auto text-xs">
+                                            {masterLabs.length === 0 ? <div className="text-gray-400 italic">(Kosong)</div> : masterLabs.map((i, idx) => (
+                                                <div key={idx} className="flex items-center justify-between py-1 border-b">
+                                                    <div className="truncate">{i}</div>
+                                                    <button onClick={() => handleRemoveMaster('lab', i)} className="text-red-500 text-[11px] px-2 rounded">Hapus</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                                {/* TABEL DAFTAR DOKTER (Ini yang tadi hilang) */}
-                                <div className="border rounded overflow-hidden bg-white shadow-sm">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-gray-100 text-xs text-gray-600 border-b">
-                                                <th className="p-2 border-r font-bold uppercase">Nama Dokter</th>
-                                                <th className="p-2 border-r font-bold uppercase">No. WA (System)</th>
-                                                <th className="p-2 text-center font-bold uppercase">Aksi</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {dpjpProfiles && dpjpProfiles.length > 0 ? (
-                                                dpjpProfiles.map((p, idx) => (
-                                                    <tr key={idx} className="border-b text-xs hover:bg-indigo-50 transition">
-                                                        <td className="p-2 border-r font-medium text-gray-800">{p.name}</td>
-                                                        <td className="p-2 border-r text-gray-500 font-mono">{p.waNumber}</td>
-                                                        <td className="p-2 text-center">
-                                                            <button 
-                                                                onClick={() => handleRemoveDpjp(p.name)}
-                                                                disabled={!isSettingsLoaded}
-                                                                className="text-red-500 hover:text-red-700 font-bold px-2 py-1 border border-red-200 rounded hover:bg-red-50 transition text-[10px] disabled:text-gray-400 disabled:border-gray-200"
-                                                                title="Hapus Dokter"
-                                                            >
-                                                                🗑️ Hapus
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))
-                                            ) : (
-                                                <tr>
-                                                    <td colSpan="3" className="p-6 text-center text-gray-400 italic bg-gray-50">
-                                                        Belum ada data dokter. Silakan tambah data baru.
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
+                                    <div className="bg-white p-3 rounded border">
+                                        <h4 className="text-sm font-bold mb-2">Master Radiologi</h4>
+                                        <div className="flex gap-2 mb-2">
+                                            <input type="text" placeholder="Tambah Radiologi" value={newMasterRad} onChange={e => setNewMasterRad(e.target.value)} className="flex-1 p-2 border rounded text-xs" />
+                                            <button onClick={() => handleAddMaster('rad')} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-3 rounded text-xs font-bold">Tambah</button>
+                                        </div>
+                                        <div className="max-h-40 overflow-y-auto text-xs">
+                                            {masterRads.length === 0 ? <div className="text-gray-400 italic">(Kosong)</div> : masterRads.map((i, idx) => (
+                                                <div key={idx} className="flex items-center justify-between py-1 border-b">
+                                                    <div className="truncate">{i}</div>
+                                                    <button onClick={() => handleRemoveMaster('rad', i)} className="text-red-500 text-[11px] px-2 rounded">Hapus</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-3 rounded border">
+                                        <h4 className="text-sm font-bold mb-2">Master Tindakan / Prosedur</h4>
+                                        <div className="flex gap-2 mb-2">
+                                            <input type="text" placeholder="Tambah Tindakan" value={newMasterProcedure} onChange={e => setNewMasterProcedure(e.target.value)} className="flex-1 p-2 border rounded text-xs" />
+                                            <button onClick={() => handleAddMaster('procedure')} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-3 rounded text-xs font-bold">Tambah</button>
+                                        </div>
+                                        <div className="max-h-40 overflow-y-auto text-xs">
+                                            {masterProcedures.length === 0 ? <div className="text-gray-400 italic">(Kosong)</div> : masterProcedures.map((i, idx) => (
+                                                <div key={idx} className="flex items-center justify-between py-1 border-b">
+                                                    <div className="truncate">{i}</div>
+                                                    <button onClick={() => handleRemoveMaster('procedure', i)} className="text-red-500 text-[11px] px-2 rounded">Hapus</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-3 rounded border">
+                                        <h4 className="text-sm font-bold mb-2">Master Terapi / Obat</h4>
+                                        <div className="flex gap-2 mb-2">
+                                            <input type="text" placeholder="Tambah Terapi / Obat" value={newMasterMedication} onChange={e => setNewMasterMedication(e.target.value)} className="flex-1 p-2 border rounded text-xs" />
+                                            <button onClick={() => handleAddMaster('medication')} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-3 rounded text-xs font-bold">Tambah</button>
+                                        </div>
+                                        <div className="max-h-40 overflow-y-auto text-xs">
+                                            {masterMedications.length === 0 ? <div className="text-gray-400 italic">(Kosong)</div> : masterMedications.map((i, idx) => (
+                                                <div key={idx} className="flex items-center justify-between py-1 border-b">
+                                                    <div className="truncate">{i}</div>
+                                                    <button onClick={() => handleRemoveMaster('medication', i)} className="text-red-500 text-[11px] px-2 rounded">Hapus</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
-                                
-                                <p className="text-[10px] text-gray-400 mt-2 italic">
-                                    * Nomor WA otomatis diubah ke format 628xx untuk keperluan link WhatsApp.
-                                </p>
-                            </div>                                                       
+                            </div>
                         </div>
                     )}
                 </div>
             </div>
-
-            {/* 3. PANEL INPUT SOAP (OVERLAY KANAN) */}
-            {showInputModal && (
-                <div className="fixed top-16 right-0 bottom-0 w-full md:w-[500px] z-[60] bg-white shadow-2xl border-l transition-all duration-300 flex flex-col">
-                    <InputSidePanel 
-                        showInputModal={showInputModal} 
-                        setShowInputModal={setShowInputModal}
-                        handleSubmit={handleSubmit}
-                        formData={formData}
-                        handleInputChange={handleInputChange}
-                        resetForm={resetForm}
-                        isEditing={isEditing}
-                        currentRecordId={currentRecordId}
-                        occupiedRooms={occupiedRooms}
-                        availableRooms={ROOM_LIST.filter(r => !occupiedRooms.includes(r) || (isEditing && r === formData.roomNumber)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))}
-                        dpjpOptions={dpjpProfiles.map(p => p.name).sort()}
-                        dpjpProfiles={dpjpProfiles}
-                        showRaber1={showRaber1} setShowRaber1={setShowRaber1}
-                        showRaber2={showRaber2} setShowRaber2={setShowRaber2}
-                        historyLogs={historyLogs}
-                        pullDataForField={pullDataForField}
-                        setShowTtvModal={setShowTtvModal}
-                        appendText={appendText}
-                        handleDischarge={handleDischarge}
-                        setSelectedRecordForPrint={setSelectedRecordForPrint}
-                        setRecordForLapor={setRecordForLapor}
-                        isFormReady={formData.name && formData.roomNumber && formData.dpjpName}
-                        loading={loading}
-                        ALL_PLANNING_OPTIONS={ALL_PLANNING_OPTIONS}
-                        onPrintCPO={() => handlePrintCPO({ ...formData, id: currentRecordId })}
-                    />
-                </div>
-            )}
+            {showInputModal && <div className="fixed top-16 right-0 bottom-0 w-full md:w-[500px] z-[60] bg-white shadow-2xl border-l transition-all duration-300 flex flex-col">
+                <InputSidePanel 
+                    showInputModal={showInputModal} 
+                    setShowInputModal={setShowInputModal} 
+                    handleSubmit={handleSubmit} 
+                    formData={formData} 
+                    handleInputChange={handleInputChange} 
+                    resetForm={resetForm} 
+                    isEditing={isEditing} 
+                    currentRecordId={currentRecordId} 
+                    occupiedRooms={occupiedRooms} 
+                    availableRooms={ROOM_LIST.filter(r => !occupiedRooms.includes(r) || (isEditing && r === formData.roomNumber)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))} 
+                    dpjpOptions={dpjpProfiles.map(p => p.name).sort()} 
+                    dpjpProfiles={dpjpProfiles} 
+                    showRaber1={showRaber1} setShowRaber1={setShowRaber1} 
+                    showRaber2={showRaber2} setShowRaber2={setShowRaber2} 
+                    historyLogs={historyLogs} 
+                    pullDataForField={pullDataForField} 
+                    setShowTtvModal={setShowTtvModal} 
+                    appendText={appendText} 
+                    handleDischarge={handleDischarge} 
+                    setSelectedRecordForPrint={setSelectedRecordForPrint} 
+                    setRecordForLapor={setRecordForLapor} 
+                    isFormReady={formData.name && formData.roomNumber && formData.dpjpName} loading={loading} 
+                    ALL_PLANNING_OPTIONS={combinedPlanningOptions} 
+                    onPrintCPO={() => handlePrintCPO({ ...formData, id: currentRecordId })}
+                    onPrintLabel={handlePrintLabel} 
+                    masterLabs={masterLabs} masterRads={masterRads} 
+                    masterProcedures={masterProcedures} 
+                    masterMedications={masterMedications} 
+                    archivedRecords={archivedRecords} /></div>}
         </div>
-        
-        {/* --- AREA MODAL-MODAL PENDUKUNG (WAJIB ADA DISINI AGAR TOMBOL BERFUNGSI) --- */}
-        
-        {/* 1. Modal Lapor WA */}
-        {recordForLapor && (
-            <LaporConfirmationModal
-                patientName={recordForLapor.name}
-                // Logika pencarian nomor HP yang aman
-                dpjpNumber={dpjpProfiles.find(p => p.name === recordForLapor.dpjpName)?.waNumber}                
-                onLaporDpjp={() => handleLapor(recordForLapor, 'DPJP')}
-                onLaporJaga={() => handleLapor(recordForLapor, 'Forward')}
-                onCancel={() => setRecordForLapor(null)}
-            />
-        )}
-
-        {/* 2. Modal Print Satuan */}
-        {selectedRecordForPrint && (
-            <PrintView 
-                record={selectedRecordForPrint} 
-                closePrint={() => setSelectedRecordForPrint(null)} 
-            />
-        )}
-
-        {/* 3. Modal Print Banyak */}
-        {showBulkPrint && (
-            <BulkPrintView 
-                records={filteredActiveRecords} 
-                onClose={() => setShowBulkPrint(false)} 
-            />
-        )}
-
-        {/* 4. Modal TTV (Dual Fungsi: Input Form & Direct Save) */}
-    {showTtvModal && (
-        <TtvModal 
-            onClose={() => {
-                setShowTtvModal(false);
-                setQuickTtvTarget(null); // Reset target
-            }} 
-            onSave={(text) => {
-                if (quickTtvTarget) {
-                    // KASUS 1: Input dari TTV Mode (Jalur Cepat) -> Langsung Simpan DB
-                    handleSaveQuickTtv(text);
-                } else {
-                    // KASUS 2: Input dari Form SOAP (Jalur Biasa) -> Tempel ke Form
-                    appendText('objective', text);
-                    setShowTtvModal(false);
-                }
-            }} 
-        />
-    )}
-
-        {confirmDetails.isOpen && (
-            <ConfirmationModal 
-                title={confirmDetails.title}
-                message={confirmDetails.message}
-                onConfirm={confirmDetails.action}
-                onCancel={closeConfirm}
-            />
-        )}
+        {recordForLapor && <LaporConfirmationModal patientName={recordForLapor.name} dpjpNumber={dpjpProfiles.find(p => p.name === recordForLapor.dpjpName)?.waNumber} onLaporDpjp={() => handleLapor(recordForLapor, 'DPJP')} onLaporJaga={() => handleLapor(recordForLapor, 'Forward')} onCancel={() => setRecordForLapor(null)} />}
+        {selectedRecordForPrint && <PrintView record={selectedRecordForPrint} closePrint={() => setSelectedRecordForPrint(null)} />}
+        {showBulkPrint && <BulkPrintView records={filteredActiveRecords} onClose={() => setShowBulkPrint(false)} />}
+        {showTtvModal && <TtvModal onClose={() => { setShowTtvModal(false); setQuickTtvTarget(null); }} onSave={(text) => { if (quickTtvTarget) { handleSaveQuickTtv(text); } else { appendText('objective', text); setShowTtvModal(false); } }} />}
+        {confirmDetails.isOpen && <ConfirmationModal title={confirmDetails.title} message={confirmDetails.message} onConfirm={confirmDetails.action} onCancel={closeConfirm} />}
     </div>
   );
 };
-// --- PANEL INPUT WAITING LIST (FINAL: HEADER BUTTON + EDIT KAMAR) ---
-const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedRooms = [], waitingList = [], onUpdateRoom }) => {
+
+// --- PANEL INPUT WAITING LIST (FINAL: EDIT KAMAR + WARNA GENDER PINTAR) ---
+const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedRooms = [], waitingList = [], onUpdateRoom, activeRecords = [] }) => {
     
     // State Form Input
     const [form, setForm] = useState({ 
@@ -3459,7 +3112,7 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
         if (!form.name || !form.plannedRoom) return alert("Nama dan Rencana Kamar wajib diisi!");
         onAdd(form);
         setForm({ name: '', plannedRoom: '', originRoom: '', insuranceClass: '', waNumber: '', diagnosis: '' });
-        onClose(); // Opsional: Mau langsung tutup atau tetap buka? (Default tutup)
+        onClose(); 
     };
 
     // Fungsi Mulai Edit
@@ -3476,17 +3129,50 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
         setEditingId(null);
     };
 
+    // LOGIKA PINTAR UNTUK DOT WARNA DROPDOWN (GABUNGAN BARU)
+    const getRoomOptionStatus = (roomName) => {
+        const SINGLE_BED_ROOMS = ['K7A', 'K8A', 'K9A', 'K11A', 'K12A', 'K14A'];
+        
+        // 1. Terisi?
+        const patient = activeRecords.find(r => r.roomNumber === roomName);
+        if (patient) return { dot: '🔴', label: 'Terisi', colorClass: 'text-red-600 font-bold' };
+
+        // 2. Antre?
+        const booking = waitingList?.find(w => w.plannedRoom === roomName);
+        if (booking) return { dot: '🟡', label: 'Antre', colorClass: 'text-yellow-700 font-bold' };
+
+        // 3. Single Bed Kosong?
+        if (SINGLE_BED_ROOMS.includes(roomName)) return { dot: '🟢', label: 'Kosong', colorClass: 'text-green-700 font-bold' };
+
+        // 4. Double Bed (Cek Tetangga Lk/Pr)
+        const match = roomName.match(/^(K\d+)([AB])$/);
+        if (match) {
+            const roomCode = match[1];
+            const neighborBed = match[2] === 'A' ? 'B' : 'A';
+            const neighborRoomName = `${roomCode}${neighborBed}`;
+            
+            const neighbor = activeRecords.find(r => r.roomNumber === neighborRoomName);
+            if (neighbor) {
+                if (neighbor.gender === 'L') return { dot: '🔵', label: 'Sisa Lk', colorClass: 'text-sky-600 font-bold' };
+                if (neighbor.gender === 'P') return { dot: '🟣', label: 'Sisa Pr', colorClass: 'text-purple-600 font-bold' };
+            }
+        }
+        
+        // 5. Kosong Total
+        return { dot: '🟢', label: 'Kosong', colorClass: 'text-green-700 font-bold' };
+    };
+
     return (
         <div className="flex flex-col h-full bg-white shadow-2xl border-r border-indigo-200 relative">
             
-            {/* 1. HEADER (TOMBOL SIMPAN DI ATAS) */}
+            {/* 1. HEADER (TOMBOL SIMPAN DI ATAS - KODINGAN ASLIMU) */}
             <div className="p-3 bg-indigo-700 text-white flex justify-between items-center shadow-md z-10">
-                <div>
-                    <h3 className="font-bold text-sm">📝 Input Antrean</h3>
+                <div className="flex flex-col">
+                    <h3 className="font-bold text-sm flex items-center gap-1">📝 Input Antrean</h3>
                     <p className="text-[10px] opacity-80">Isi data pasien inden</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={handleSubmit} className="px-3 py-1.5 text-[10px] bg-white text-indigo-700 font-bold rounded shadow hover:bg-indigo-50 transition flex items-center">
+                    <button onClick={handleSubmit} className="px-3 py-1.5 text-[10px] bg-white text-indigo-700 font-bold rounded shadow hover:bg-indigo-50 transition flex items-center gap-1">
                         💾 Simpan
                     </button>
                     <button onClick={onClose} className="text-white hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg">✕</button>
@@ -3500,41 +3186,45 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
                 <div className="p-4 space-y-3 bg-white border-b border-gray-200 mb-2 shadow-sm">
                     <div>
                         <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Kamar</label>
-                        <select className="w-full p-2 text-xs border border-gray-300 rounded bg-white outline-none font-bold focus:ring-2 focus:ring-indigo-500" value={form.plannedRoom} onChange={e => setForm({...form, plannedRoom: e.target.value})}>
+                        <select 
+                            className="w-full p-2 text-xs border border-gray-300 rounded bg-white outline-none font-bold focus:ring-2 focus:ring-indigo-500" 
+                            value={form.plannedRoom} 
+                            onChange={e => setForm({...form, plannedRoom: e.target.value})}
+                        >
                             <option value="">- Pilih Kamar -</option>
                             {availableRooms.map(r => {
-                                const isOccupied = occupiedRooms.includes(r);
-                                const isBooked = waitingList.some(w => w.plannedRoom === r);
-                                let emoji = '🟢'; let className = 'text-green-700 font-bold';
-                                if (isOccupied) { emoji = '🔴'; className = 'text-red-600 font-bold'; } 
-                                else if (isBooked) { emoji = '🟡'; className = 'text-yellow-700 font-bold'; }
-                                return <option key={r} value={r} className={className}>{emoji} {r} {isOccupied ? '(Terisi)' : isBooked ? '(Antre)' : '(Kosong)'}</option>;
+                                const status = getRoomOptionStatus(r);
+                                return (
+                                    <option key={r} value={r} className={status.colorClass}>
+                                        {status.dot} {r} ({status.label})
+                                    </option>
+                                );
                             })}
                         </select>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">
-                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Pasien</label><input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="Nama..." value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Asal</label><input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="IGD/Poli..." value={form.originRoom} onChange={e => setForm({...form, originRoom: e.target.value})} /></div>
+                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Pasien</label><input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Nama..." value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Asal</label><input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500" placeholder="IGD/Poli..." value={form.originRoom} onChange={e => setForm({...form, originRoom: e.target.value})} /></div>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">
                         <div>
                             <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Kelas</label>
-                            <select className="w-full p-2 text-xs border rounded outline-none bg-white" value={form.insuranceClass} onChange={e => setForm({...form, insuranceClass: e.target.value})}>
+                            <select className="w-full p-2 text-xs border rounded outline-none bg-white focus:ring-1 focus:ring-indigo-500" value={form.insuranceClass} onChange={e => setForm({...form, insuranceClass: e.target.value})}>
                                 <option value="">- Pilih -</option><option value="BPJS Kls 1">BPJS Kls 1</option><option value="BPJS Kls 2">BPJS Kls 2</option><option value="BPJS Kls 3">BPJS Kls 3</option><option value="Umum/Asuransi">Umum/Asuransi</option>
                             </select>
                         </div>
-                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">No. HP</label><input type="text" className="w-full p-2 text-xs border rounded outline-none" placeholder="08xxx..." value={form.waNumber} onChange={e => setForm({...form, waNumber: e.target.value})} /></div>
+                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">No. HP</label><input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500" placeholder="08xxx..." value={form.waNumber} onChange={e => setForm({...form, waNumber: e.target.value})} /></div>
                     </div>
-                    <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Diagnosa</label><textarea rows="2" className="w-full p-2 text-xs border rounded outline-none resize-none" placeholder="Diagnosa..." value={form.diagnosis} onChange={e => setForm({...form, diagnosis: e.target.value})}></textarea></div>
+                    <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Diagnosa</label><textarea rows="2" className="w-full p-2 text-xs border rounded outline-none resize-none focus:ring-1 focus:ring-indigo-500" placeholder="Diagnosa..." value={form.diagnosis} onChange={e => setForm({...form, diagnosis: e.target.value})}></textarea></div>
                 </div>
 
-                {/* B. TABEL ANTREAN (DENGAN FITUR EDIT KAMAR) */}
-                <div className="p-2">
+                {/* B. TABEL ANTREAN (DENGAN FITUR EDIT KAMAR ASLIMU) */}
+                <div className="p-2 flex-1">
                     <h3 className="px-2 mb-1 text-[10px] font-bold text-indigo-800 uppercase tracking-wider">Daftar Antrean ({waitingList.length})</h3>
                     {waitingList.length === 0 ? (
-                        <div className="text-center py-8 text-gray-400 italic text-xs border-2 border-dashed border-gray-200 rounded">Belum ada pasien antre.</div>
+                        <div className="text-center py-8 text-gray-400 italic text-xs border-2 border-dashed border-gray-200 rounded mt-2 bg-white">Belum ada pasien antre.</div>
                     ) : (
                         <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
                             <table className="w-full text-left">
@@ -3545,12 +3235,12 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
                                         <th className="p-2 text-center">Asal</th>
                                     </tr>
                                 </thead>
-                                <tbody className="text-xs">
+                                <tbody className="text-xs divide-y divide-gray-100">
                                     {waitingList.map((item) => (
-                                        <tr key={item.id} className="border-b last:border-0 hover:bg-gray-50 group">
+                                        <tr key={item.id} className="hover:bg-indigo-50/50 group transition-colors">
                                             
                                             {/* KOLOM TARGET (BISA DIEDIT) */}
-                                            <td className="p-2 font-bold text-indigo-700 w-[130px]">
+                                            <td className="p-2 font-bold text-indigo-700 w-[130px] align-top">
                                                 {editingId === item.id ? (
                                                     <div className="flex items-center gap-1 animate-in zoom-in-95 duration-100">
                                                         <select 
@@ -3559,9 +3249,11 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
                                                             onChange={e => setTempRoom(e.target.value)}
                                                             autoFocus
                                                         >
-                                                            {availableRooms.map(r => (
-                                                                <option key={r} value={r}>{r}</option>
-                                                            ))}
+                                                            {/* Saya pakaikan logic warna pintar juga di dropdown edit ini! */}
+                                                            {availableRooms.map(r => {
+                                                                const status = getRoomOptionStatus(r);
+                                                                return <option key={r} value={r}>{status.dot} {r}</option>
+                                                            })}
                                                         </select>
                                                         <button onClick={saveEditing} className="bg-green-100 text-green-700 hover:bg-green-200 p-1 rounded border border-green-300" title="Simpan">✅</button>
                                                     </div>
@@ -3579,11 +3271,11 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedR
                                                 )}
                                             </td>
 
-                                            <td className="p-2">
+                                            <td className="p-2 align-top">
                                                 <div className="font-bold text-gray-800">{item.name}</div>
-                                                <div className="text-[9px] text-gray-400 truncate max-w-[100px]">{item.diagnosis || '-'}</div>
+                                                <div className="text-[9px] text-gray-500 truncate max-w-[120px] leading-tight">{item.diagnosis || '-'}</div>
                                             </td>
-                                            <td className="p-2 text-center text-gray-500 text-[10px]">
+                                            <td className="p-2 text-center text-gray-500 text-[10px] align-top pt-3">
                                                 {item.originRoom || 'IGD'}
                                             </td>
                                         </tr>
@@ -3603,7 +3295,8 @@ const InputSidePanel = ({
     resetForm, isEditing, currentRecordId, availableRooms, dpjpOptions,
     showRaber1, setShowRaber1, showRaber2, setShowRaber2, historyLogs,
     pullDataForField, setShowTtvModal, appendText, handleDischarge, setSelectedRecordForPrint,
-    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS, handleDeleteRecord, onPrintCPO
+    setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS, handleDeleteRecord, onPrintCPO,
+    onPrintLabel, masterLabs = [], masterRads = [], masterProcedures = [], masterMedications = [], archivedRecords = []
 }) => {
     
     // 1. STATE & REF
@@ -3616,6 +3309,13 @@ const InputSidePanel = ({
     const [labTrends, setLabTrends] = useState({});
     const [showRadModal, setShowRadModal] = useState(false);
     const [rawRadData, setRawRadData] = useState('');
+    const [showArchiveSuggestions, setShowArchiveSuggestions] = useState(false);
+const archivedMatches = useMemo(() => {
+    if (!formData.name || formData.name.length < 3 || isEditing) return [];
+    return archivedRecords.filter(r => 
+        r.name.toLowerCase().includes(formData.name.toLowerCase())
+    ).slice(0, 5); // Tampilkan max 5 saran
+}, [formData.name, archivedRecords, isEditing]);
 
     useEffect(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
@@ -3662,12 +3362,12 @@ const InputSidePanel = ({
 
     if (!showInputModal) return null;
     
-    // DATA LACAK LENGKAP
+    // DATA LACAK LENGKAP (gabung konstanta + master lists)
     const lacakOptions = [
-        ...LAB_CHECKS,
-        ...RADIOLOGY_CHECKS,
-        ...MEDICATIONS,
-        ...PROCEDURES,
+        ...Array.from(new Set([...(LAB_CHECKS || []), ...masterLabs])),
+        ...Array.from(new Set([...(RADIOLOGY_CHECKS || []), ...masterRads])),
+        ...Array.from(new Set([...(MEDICATIONS || []), ...masterMedications])),
+        ...Array.from(new Set([...(PROCEDURES || []), ...masterProcedures])),
     ];
 
     // --- HELPER STRINGS ---
@@ -3816,18 +3516,25 @@ const InputSidePanel = ({
     const processLabData = () => {
         if (!rawLabData) return;
         
-        // 1. KAMUS MANUAL (Lengkap)
+        // 1. KAMUS MANUAL (Lengkap & Urutan Diperbaiki)
         const manualDictionary = [
-            { key: 'Hb', reg: /(?:Hemoglobin|Hb)/i },
+            // --- PRIORITAS TINGGI (YANG NAMANYA PANJANG/MIRIP HB) ---
+            // Taruh HBsAg, HbA1c, HBeAg di paling atas biar gak dimakan sama 'Hb'
+            { key: 'HBsAg', reg: /HBsAg(?: Rapid)?/i },
+            { key: 'Anti-HCV', reg: /(?:Anti-HCV|HCV)/i },
+            { key: 'HbA1c', reg: /(?:HbA1c|Haemoglobin A1c)/i },
+            { key: 'HIV', reg: /(?:HIV|Anti-HIV)/i },            
+            { key: 'Hb', reg: /(?:Hemoglobin|\bHb\b)/i }, // Pakai \bHb\b biar lebih ketat (harus kata utuh)
+            { key: 'Eritrosit', reg: /(?:Eritrosit|Eritrosit|RBC)/i },          
             { key: 'Leu', reg: /(?:Leukosit|Leu|WBC)/i },
             { key: 'Trmbsit', reg: /(?:Trombosit|Plt|Platelet|Trmbsit)/i },
             { key: 'Ht', reg: /(?:Hematokrit|Ht|HCT)/i },
             { key: 'Na', reg: /(?:Natrium|\bNa\b|Sodium)/i },
             { key: 'K', reg: /(?:Kalium|\bK\b|Potassium)/i },
             { key: 'Cl', reg: /(?:Clorida|Chloride|\bCl\b|Klorida)/i },
+            { key: 'Kalsium', reg: /(?:Kalsium|Calsium|\bCa\b)/i },
             { key: 'GDS', reg: /(?:Gula Darah Sewaktu|GDS|Glukosa Sewaktu|Kadar Gula)/i },
             { key: 'GDP', reg: /(?:Gula Darah Puasa|GDP|Glukosa Puasa)/i },
-            { key: 'HbA1c', reg: /(?:HbA1c|Haemoglobin A1c)/i },
             { key: 'Ur', reg: /(?:Ureum|Ur|Urea)/i },
             { key: 'Cr', reg: /(?:Kreatinin|Creatinin|\bCr\b)/i },
             { key: 'Alb', reg: /(?:Albumin|Alb)/i },
@@ -3855,13 +3562,9 @@ const InputSidePanel = ({
             { key: 'PCR', reg: /PCR/i },
             { key: 'BT', reg: /(?:Bleeding Time|Masa Perdarahan|\bBT\b)/i },
             { key: 'CT', reg: /(?:Clotting Time|Masa Pembekuan|\bCT\b)/i },
-            // V10: Gram, Kultur, HIV
             { key: 'Gram', reg: /Gram|Pewarnaan/i }, 
             { key: 'CD4', reg: /CD4/i },
             { key: 'Kultur', reg: /Kultur|Culture/i },
-            { key: 'HIV', reg: /HIV|Anti-HIV/i },
-            { key: 'HBsAg', reg: /HBsAg/i },
-            { key: 'Anti-HCV', reg: /Anti-HCV|HCV/i },
         ];
 
         // 2. TES YANG HASILNYA KALIMAT PANJANG (DESCRIPTIVE)
@@ -4040,7 +3743,7 @@ const InputSidePanel = ({
         };
         if (action === 'print') setSelectedRecordForPrint(tempRec);
         if (action === 'lapor') setRecordForLapor(tempRec);
-        if (action === 'discharge') handleDischarge(currentRecordId, formData.name);
+        if (action === 'discharge') handleDischarge(currentRecordId, formData.name, formData.roomNumber);
     };
 
     const handleClearSoap = () => {
@@ -4078,7 +3781,7 @@ const InputSidePanel = ({
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                     {isEditing && (
                         <>
-                            {/* TOMBOL OBAT (CPO) */}
+                            <button type="button" onClick={() => onPrintLabel(formData)} className="p-1.5 bg-purple-100 text-purple-700 border border-purple-200 rounded text-[10px] shadow-sm hover:bg-purple-200" title="Cetak Label Spuit (12 Pcs)">🏷️</button>
                             <button type="button" onClick={onPrintCPO} className="p-1.5 bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] shadow-sm hover:bg-blue-200 ml-1" title="Cetak CPO (Obat)">💊</button>
                             <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">📱</button>
                             <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print (Ctrl+P)">🖨️</button>                            
@@ -4112,28 +3815,114 @@ const InputSidePanel = ({
                     {/* 1. Form Identitas */}
                     <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3">
                         <form onSubmit={handleSubmit} id="mainForm">
+                            {/* BARIS 1: KM, GENDER, NO. RM, NAMA PASIEN */}
                             <div className="flex space-x-2 mb-2">
-                                <div className="w-[25%]"><CustomSelect label="Km" value={formData.roomNumber} onChange={(e) => handleInputChange({ target: { name: 'roomNumber', value: e.target.value } })} options={availableRooms} /></div>
-                                <div className="w-[25%]">
+                                <div className="w-[15%]">
+                                    <CustomSelect 
+                                        label="Km" 
+                                        value={formData.roomNumber} 
+                                        onChange={(e) => handleInputChange({ target: { name: 'roomNumber', value: e.target.value } })} 
+                                        options={availableRooms} 
+                                    />
+                                </div>
+                                <div className="w-[20%]">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Gender *</label>
-                                    <select className="w-full p-2 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 bg-white" value={formData.gender} onChange={(e) => handleInputChange({ target: { name: 'gender', value: e.target.value } })} required>
-                                        <option value="" disabled>-</option><option value="L">Lk</option><option value="P">Pr</option>
+                                    <select 
+                                        className="w-full p-2 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 bg-white" 
+                                        value={formData.gender} 
+                                        onChange={(e) => handleInputChange({ target: { name: 'gender', value: e.target.value } })} 
+                                        required
+                                    >
+                                        <option value="" disabled>-</option>
+                                        <option value="L">Lk</option>
+                                        <option value="P">Pr</option>
                                     </select>
                                 </div>
-                                <div className="w-[50%]"><CustomInput label="Nama Pasien" name="name" value={formData.name} onChange={handleInputChange} /></div>
+                                <div className="w-[25%]">
+                                    <CustomInput 
+                                        label="No. RM" 
+                                        name="rmNumber" 
+                                        value={formData.rmNumber || ''} 
+                                        onChange={handleInputChange} 
+                                        placeholder="Cont: 123456" 
+                                    />
+                                </div>
+                                <div className="w-[40%] relative">
+                                    <CustomInput 
+                                        label="Nama Pasien *" 
+                                        name="name" 
+                                        value={formData.name} 
+                                        onChange={handleInputChange} 
+                                        required 
+                                    />
+                                    
+                                    {/* --- SUGGESTION LIST PASIEN LAMA (DARI ARSIP) --- */}
+                                    {archivedMatches && archivedMatches.length > 0 && (
+                                        <div className="absolute z-50 w-full bg-white border-2 border-indigo-500 shadow-2xl rounded-md mt-[-8px] max-h-48 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
+                                            <div className="bg-indigo-600 px-2 py-1 text-[9px] font-bold text-white flex justify-between items-center">
+                                                <span>📂 PASIEN LAMA TERDETEKSI</span>
+                                                <span className="bg-white text-indigo-600 px-1 rounded text-[8px]">ARSIP</span>
+                                            </div>
+                                            {archivedMatches.map(old => (
+                                                <div 
+                                                    key={old.id} 
+                                                    onClick={() => {
+                                                        handleInputChange({ target: { name: 'name', value: old.name } });
+                                                        handleInputChange({ target: { name: 'rmNumber', value: old.rmNumber || '' } });
+                                                        handleInputChange({ target: { name: 'gender', value: old.gender || '' } });
+                                                        handleInputChange({ target: { name: 'dpjpName', value: old.dpjpName || '' } });
+                                                        alert(`Data riwayat ${old.name} ditarik.`);
+                                                    }}
+                                                    className="p-2 hover:bg-indigo-50 cursor-pointer border-b last:border-0 transition-colors"
+                                                >
+                                                    <div className="text-[10px] font-bold text-indigo-900 uppercase">{old.name}</div>
+                                                    <div className="text-[9px] text-gray-500 font-mono">
+                                                        RM: {old.rmNumber || '-'} | {old.gender === 'L' ? 'Lk' : 'Pr'} | {old.dpjpName}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
+                            {/* BARIS 2: DPJP & RABER */}
                             <div className="mb-2">
                                 <div className="flex space-x-2 mb-1">
-                                    <CustomSelect label="DPJP Utama" value={formData.dpjpName} onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} options={sortedDpjpOptions} />
+                                    <div className="flex-1">
+                                        <CustomSelect 
+                                            label="DPJP Utama *" 
+                                            value={formData.dpjpName} 
+                                            onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} 
+                                            options={sortedDpjpOptions} 
+                                            required
+                                        />
+                                    </div>
                                     <div className="w-1/2">
                                         {showRaber1 ? (
-                                            <div className="relative"><CustomSelect label="Raber 1" value={formData.raberName} onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} options={dpjpOptions} /><button type="button" onClick={() => { setShowRaber1(false); handleInputChange({ target: { name: 'raberName', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button></div>
-                                        ) : (<button type="button" onClick={() => setShowRaber1(true)} className="text-[10px] mt-6 text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 1</button>)}
+                                            <div className="relative">
+                                                <CustomSelect label="Raber 1" value={formData.raberName} onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} options={dpjpOptions} />
+                                                <button type="button" onClick={() => { setShowRaber1(false); handleInputChange({ target: { name: 'raberName', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button>
+                                            </div>
+                                        ) : (
+                                            <button type="button" onClick={() => setShowRaber1(true)} className="text-[10px] mt-6 text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 1</button>
+                                        )}
                                     </div>
                                 </div>
                                 {showRaber1 && (
-                                    <div className="flex space-x-2"><div className="w-1/2"></div><div className="w-1/2">{showRaber2 ? (<div className="relative"><CustomSelect label="Raber 2" value={formData.raber2Name} onChange={(e) => handleInputChange({ target: { name: 'raber2Name', value: e.target.value } })} options={dpjpOptions} /><button type="button" onClick={() => { setShowRaber2(false); handleInputChange({ target: { name: 'raber2Name', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button></div>) : (<button type="button" onClick={() => setShowRaber2(true)} className="text-[10px] text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 2</button>)}</div></div>
+                                    <div className="flex space-x-2">
+                                        <div className="flex-1"></div>
+                                        <div className="w-1/2">
+                                            {showRaber2 ? (
+                                                <div className="relative">
+                                                    <CustomSelect label="Raber 2" value={formData.raber2Name} onChange={(e) => handleInputChange({ target: { name: 'raber2Name', value: e.target.value } })} options={dpjpOptions} />
+                                                    <button type="button" onClick={() => { setShowRaber2(false); handleInputChange({ target: { name: 'raber2Name', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button>
+                                                </div>
+                                            ) : (
+                                                <button type="button" onClick={() => setShowRaber2(true)} className="text-[10px] text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 2</button>
+                                            )}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         </form>
@@ -4235,9 +4024,9 @@ const InputSidePanel = ({
                                             <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[10px]">#{historyLogs.length - idx}</span>
                                             <span className="text-[9px] text-gray-400 font-mono">
                                                 {log.updatedAt && log.updatedAt.seconds 
-                                                    ? new Date(log.updatedAt.seconds * 1000).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                                                    ? new Date(log.updatedAt.seconds * 1000).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':')
                                                     : log.updatedAt instanceof Date 
-                                                        ? log.updatedAt.toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                                        ? log.updatedAt.toLocaleString('id-ID', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':')
                                                         : 'Baru saja'}
                                             </span>
                                         </div>
@@ -4303,60 +4092,56 @@ const InputSidePanel = ({
     );
 };
 
-const App = () => {
-  const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isOfflineReady, setIsOfflineReady] = useState(false);
-  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
-  const [userRole, setUserRole] = useState(null);
+// --- DATABASE USER (UNTUK FITUR KEUANGAN & MEDIS) ---
+const USERS_DB = [
+    { id: 'abi', pass: 'admin', name: 'Ns. Abi Nugroho', role: 'admin', cfLabel: 'Laporan Gabungan' },
+    { id: 'vivi', pass: '123', name: 'Vivi Erlina', role: 'finance_jm', cfLabel: 'Jasa Medis (JM)' },
+    { id: 'ira', pass: '123', name: 'Ira Armydha', role: 'finance_kas', cfLabel: 'Uang Kas' },
+    { id: 'novia', pass: '123', name: 'Novia Luciana', role: 'finance_doc', cfLabel: 'Uang Dokter' },
+    { id: 'siti', pass: '123', name: 'Siti Aisah', role: 'admin', cfLabel: 'Laporan Gabungan' },
+    { id: 'umi', pass: '123', name: 'Umi Kulsum', role: 'admin', cfLabel: 'Laporan Gabungan' },
+    { id: 'kadar', pass: '123', name: 'Muhamad Kadar', role: 'admin', cfLabel: 'Laporan Gabungan' },
+    { id: 'mery', pass: '123', name: 'Mery Mawarni', role: 'member' },
+    { id: 'noveana', pass: '123', name: 'Noveana Erita', role: 'member' },
+    { id: 'agung', pass: '123', name: 'Agung Pratama', role: 'member' },
+    { id: 'dita', pass: '123', name: 'Dita Wulandari', role: 'member' },
+    { id: 'yuyu', pass: '123', name: 'Yuyu Eka', role: 'member' },
+    { id: 'dodi', pass: '123', name: 'Dodi Setiawan', role: 'member' },
+    { id: 'latifah', pass: '123', name: 'Latifah Rahmawati', role: 'member' },
+    { id: 'elsa', pass: '123', name: 'Elsa Ainun', role: 'member' },
+    { id: 'risti', pass: '123', name: 'Risti Nuraini', role: 'member' },
+    { id: 'yunesta', pass: '123', name: 'Yunesta Wiko', role: 'member' },
+    { id: 'rima', pass: '123', name: 'Rima Apriyana', role: 'member' },
+];
 
-// --- FUNGSI BARU UNTUK MENGAMBIL ROLE ---
+const App = () => {
+  // 1. State System (VERSI BERSIH)
+  const [db, setDb] = useState(null);
+  const [userId, setUserId] = useState(null); // Tetap dipakai untuk kompatibilitas MedicalRecordApp
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  
+  // 2. State Login Lokal & Mode
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginForm, setLoginForm] = useState({ id: '', pass: '' });
+  const [appMode, setAppMode] = useState('MEDIS');
+  const [allUsers, setAllUsers] = useState([]); 
+
+  // --- INIT FIREBASE (VERSI BERSIH: HANYA DATABASE) ---
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    let firestoreInstance;
     try {
       const app = initializeApp(firebaseConfig);
-      const auth = getAuth(app);
-      firestoreInstance = getFirestore(app);
+      // Kita HAPUS bagian Auth karena pakai sistem sendiri
+      const firestoreInstance = getFirestore(app);
       
-      setDb(firestoreInstance);
-      setIsOfflineReady(true);
-
-      const unsubscribe = onAuthStateChanged(auth, async (u) => { 
-        setUserId(u ? u.uid : null); 
-        setIsAuthReady(true);
-        if (u) {
-            try {
-                const userProfilesRef = collection(firestoreInstance, 'userProfiles');
-                const q = query(userProfilesRef, where('email', '==', u.email));
-                const querySnapshot = await getDocs(q);
-
-                if (!querySnapshot.empty) {
-                    const userData = querySnapshot.docs[0].data();
-                    setUserRole(userData.role || 'user');
-                    console.log("Role loaded:", userData.role);
-                } else {
-                    setUserRole('guest');
-                }
-            } catch (e) {
-                console.error("Error fetching role:", e);
-                setUserRole('guest');
-            }
-        } else {
-            setUserRole(null); 
-        }
-      }); 
-
-      return () => unsubscribe();
-
+      setDb(firestoreInstance); // Database siap digunakan (termasuk mode offline bawaan)
+      
     } catch (e) { 
-        console.error("Firebase Initialization Error:", e);
-        setIsAuthReady(true); 
+        console.error("Firebase Init Error:", e);
     }
 
     return () => {
@@ -4365,29 +4150,207 @@ const App = () => {
     };
   }, []);
 
- // --- GATE LOGIN CHECK YANG BENAR ---
-  
-  // 1. Jika User BELUM Login (userId kosong), Tampilkan Login Page
-  if (!userId) {
-      return <LoginPage />;
+  // --- MONITORING USER DARI DATABASE (GLOBAL) ---
+  useEffect(() => {
+      if (!db) return;
+      const usersRef = collection(db, 'users');
+      // Pastikan 'name' sesuai dengan field di database kamu
+      const q = query(usersRef, orderBy('name', 'asc')); 
+      
+      const unsub = onSnapshot(q, (snap) => {
+          const users = snap.docs.map(d => d.data());
+          setAllUsers(users);
+      });
+      return () => unsub();
+  }, [db]);
+ 
+  // --- [LEVEL 3] LOGIC LOGIN VIA DATABASE (FINAL) ---
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    
+    // Cek koneksi db
+    if (!db) {
+        alert("Database belum siap. Coba refresh halaman.");
+        return;
+    }
+
+    try {
+        // 1. Cari User di Firestore berdasarkan ID (misal: 'abi')
+        // Kita paksa lowercase biar tidak case-sensitive
+        const targetId = loginForm.id.toLowerCase().trim();
+        const userDocRef = doc(db, 'users', targetId);
+        
+        // Ambil data dari awan...
+        const userSnap = await getDoc(userDocRef);
+
+        if (userSnap.exists()) {
+            const userData = userSnap.data();
+            
+            // 2. Cek Password (password dari input VS password dari database)
+            if (userData.pass === loginForm.pass) {
+                // SUKSES!
+                console.log("Login Berhasil via Firestore:", userData.name);
+                setCurrentUser(userData);
+                setAppMode('MEDIS');
+                setUserId(userData.id); 
+            } else {
+                alert('Password salah!');
+            }
+        } else {
+            alert('Username tidak ditemukan di Database!');
+        }
+    } catch (error) {
+        console.error("Login Error:", error);
+        alert("Terjadi kesalahan koneksi. Cek internet.");
+    }
+  };
+
+  const handleInternalLogout = () => {
+      setCurrentUser(null);
+      setUserId(null);
+      setLoginForm({ id: '', pass: '' });
+      setAppMode('MEDIS');
+  };
+
+  const getCashflowRole = () => {
+      if (!currentUser) return null;
+      if (currentUser.role === 'admin') return 'ALL';
+      if (currentUser.role === 'finance_jm') return 'JM';
+      if (currentUser.role === 'finance_kas') return 'KAS';
+      if (currentUser.role === 'finance_doc') return 'DOKTER';
+      return null;
+  };
+
+  // --- 1. TAMPILAN LOGIN ---
+  if (!currentUser) {
+      return (
+          <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
+              <div className="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-purple-600"></div>
+                  
+                  <div className="text-center mb-8 mt-2 flex flex-col items-center">
+                      <img src="/logo1.png" alt="Logo SIMPAN" className="h-40 object-contain drop-shadow-sm mb-2" />
+                      <p className="text-slate-400 text-[9px] font-medium uppercase tracking-widest mt-2 border-t border-slate-100 pt-2 w-3/4 mx-auto">Authorized Access Only</p>
+                  </div>
+                  
+                  <form onSubmit={handleLogin} className="space-y-5">
+                      <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Username</label>
+                          <div className="relative">
+                              <span className="absolute left-3 top-3 text-slate-400">👤</span>
+                              <input 
+                                  type="text" 
+                                  placeholder="Ketik username..." 
+                                  className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-sm font-medium placeholder:text-slate-400" 
+                                  value={loginForm.id} 
+                                  onChange={e => setLoginForm({...loginForm, id: e.target.value})}
+                                  autoFocus
+                              />
+                          </div>
+                      </div>
+                      
+                      <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Password</label>
+                          <div className="relative">
+                              <span className="absolute left-3 top-3 text-slate-400">🔒</span>
+                              <input 
+                                  type="password" 
+                                  placeholder="••••••" 
+                                  className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-sm font-medium placeholder:text-slate-400" 
+                                  value={loginForm.pass} 
+                                  onChange={e => setLoginForm({...loginForm, pass: e.target.value})} 
+                              />
+                          </div>
+                      </div>
+
+                      <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700 active:scale-[0.98] transition shadow-lg shadow-indigo-200/50 flex items-center justify-center gap-2 mt-2">
+                          <span>🚀</span> Masuk
+                      </button>                      
+                  </form>
+                  
+                  <div className="text-center mt-4">
+                      <p className="text-[10px] text-slate-400">&copy; 2026 SIMPAN</p>
+                  </div>
+              </div>
+          </div>
+      );
   }
 
-  // 2. Jika Sedang Loading
-  if (!isAuthReady || !db || !isOfflineReady) 
-    return <div className="flex h-screen items-center justify-center text-indigo-600 font-bold animate-pulse">Memuat Aplikasi...</div>;
-   
-  
+  // Loading Check (Sudah dibersihkan dari isAuthReady & isOfflineReady)
+  if (!db) return <div className="flex h-screen items-center justify-center text-teal-600 animate-pulse font-bold">Memuat Database...</div>;
 
-  // 3. Jika SUDAH Login (userId ada), Buka Aplikasi Utama
+  // --- 2. TAMPILAN UTAMA (ROUTING) ---
   return (
-    <MedicalRecordApp 
-        db={db} 
-        userId={userId} 
-        appId={firebaseConfig.appId} 
-        isOnline={isOnline} 
-        onLogout={() => signOut(getAuth())}
-        userRole={userRole} 
-    />
+      <div className="min-h-screen bg-slate-50">
+          {appMode === 'MEDIS' ? (
+              <MedicalRecordApp 
+                  db={db} 
+                  userId={userId} 
+                  appId={firebaseConfig.appId} 
+                  isOnline={isOnline} 
+                  onLogout={handleInternalLogout}
+                  userRole={currentUser.role}
+                  // Props Penting
+                  currentUser={currentUser}
+                  appMode={appMode}
+                  setAppMode={setAppMode}
+                  cashflowRole={getCashflowRole()}
+              />
+          ) : (
+              // --- MODE KEUANGAN: HEADER SINGLE (CLEAN LOOK) ---
+              <div className="flex flex-col h-screen animate-in fade-in zoom-in-95 duration-300 bg-slate-50">
+                  <div className="bg-white border-b px-4 h-14 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+                      
+                      {/* KIRI: TOMBOL KEMBALI & JUDUL */}
+                      <div className="flex items-center gap-3">
+                          <button 
+                              onClick={() => setAppMode('MEDIS')} 
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition"
+                          >
+                              <ChevronLeft size={16}/> Kembali ke Medis
+                          </button>
+                          <div className="h-6 w-[1px] bg-slate-200"></div>
+                          
+                          <div className="flex flex-col leading-none justify-center">
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Mode Keuangan</span>
+                              <span className="font-bold text-indigo-800 text-sm flex items-center gap-2">
+                                  <Wallet size={16}/> {currentUser.cfLabel}
+                              </span>
+                          </div>
+                      </div>
+
+                      {/* KANAN: USER INFO & LOGOUT */}
+                      <div className="flex items-center gap-3">
+                          <div className="flex flex-col items-end leading-none">
+                              <span className="text-[10px] text-slate-400 font-bold">Logged in as</span>
+                              <span className="text-xs font-bold text-slate-700">{currentUser.name}</span>
+                          </div>
+                          <div className="h-6 w-[1px] bg-slate-200"></div>
+                          <button 
+                              onClick={handleInternalLogout}
+                              className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition border border-transparent hover:border-rose-100"
+                              title="Keluar / Logout"
+                          >
+                              <LogOut size={18}/>
+                          </button>
+                      </div>
+                  </div>
+                  
+                  {/* KONTEN CASHFLOW */}
+                  <div className="flex-1 overflow-auto">
+                      <Cashflow 
+                          currentUser={{
+                              ...currentUser,
+                              cashflowRole: getCashflowRole(),
+                              cashflowLabel: currentUser.cfLabel
+                          }} 
+                          membersList={allUsers} // Menggunakan data user dari Firestore
+                          onLogout={handleInternalLogout} 
+                      />
+                  </div>
+              </div>
+          )}
+      </div>
   );
 };
 
