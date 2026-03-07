@@ -7,23 +7,23 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      includeAssets: ['logo2.png', 'apple-touch-icon.png'], // Sesuaikan dengan nama file icon kamu
       manifest: {
-        name: 'EOA - Elektronik Ontang-Anting Melati',
-        short_name: 'EOA',
-        description: 'Aplikasi Rekam Medis Harian Melati',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
+        name: 'SIMPAN - Sistem Manajemen Pelayanan',
+        short_name: 'SIMPAN',
+        description: 'Sistem Manajemen Pelayanan Abi Nugroho',
+        theme_color: '#4f46e5', // Warna indigo agar senada dengan tema aplikasi
+        background_color: '#f8fafc', // Warna slate-50
         display: 'standalone',
         icons: [
           {
-            src: 'logo.png', // <--- Ganti jadi logo.png
-            sizes: '192x192', // Kita paksa sistem anggap ini ukuran kecil
+            src: 'logo2.png', // Pastikan ini mengarah ke file icon kotak milikmu
+            sizes: '192x192', 
             type: 'image/png'
           },
           {
-            src: 'logo.png', // <--- Ganti jadi logo.png juga
-            sizes: '512x512', // Kita paksa sistem anggap ini ukuran besar
+            src: 'logo2.png', // Pastikan ini mengarah ke file icon kotak milikmu
+            sizes: '512x512', 
             type: 'image/png'
           }
         ]
