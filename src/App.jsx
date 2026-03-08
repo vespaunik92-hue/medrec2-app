@@ -4354,4 +4354,6 @@ const App = () => {
   );
 };
 
+// Percobaan fix PWA branding 2
+
 export default App;
