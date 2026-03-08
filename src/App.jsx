@@ -1065,9 +1065,9 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
         return text;
     };
 
-    // --- 2. SIHIR AUTO-FORMAT TANGGAL (Ketikan otomatis tambah / dan :) ---
+    // --- 2. SIHIR AUTO-FORMAT TANGGAL ---
     const handleDateMasking = (e) => {
-        let v = e.target.value.replace(/[^\d]/g, ''); // Ambil angka saja
+        let v = e.target.value.replace(/[^\d]/g, ''); 
         let final = '';
         if (v.length > 0) final += v.substring(0, 2);
         if (v.length > 2) final += '/' + v.substring(2, 4);
@@ -1095,7 +1095,7 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
             <div className="p-3 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center no-print flex-shrink-0">
                 <div>
                     <h2 className="font-bold text-emerald-800 flex items-center gap-2 text-sm">📖 Buku Register Ruangan (CM)</h2>
-                    <p className="text-[9px] text-emerald-600">Urutan kamar otomatis (K1-K15). Kosong tetap muncul untuk tulis tangan.</p>
+                    <p className="text-[9px] text-emerald-600">Urutan kamar otomatis (K1-K15). Geser tabel ke kanan untuk isi data.</p>
                 </div>
                 <button onClick={onPrint} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow hover:bg-emerald-700 transition flex items-center gap-2">
                     🖨️ Cetak Register
@@ -1112,17 +1112,20 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
                         .no-print { display: none !important; }
                         .print-text { display: block !important; text-align: center; width: 100%; }
                         table { border-collapse: collapse; width: 100%; }
-                        th, td { border: 1px solid black !important; padding: 4px; color: black !important; font-size: 11px; text-align: center !important; }
+                        th, td { 
+                            border: 1px solid black !important; padding: 4px; color: black !important; font-size: 11px; text-align: center !important; 
+                            position: static !important; box-shadow: none !important; 
+                        }
                         th { background-color: #eee !important; -webkit-print-color-adjust: exact; }
                     }
                 `}</style>
 
                 <div id="buku-cm-print" className="p-4 pt-0">
-                    <table className="w-full text-center border-collapse table-fixed">
-                        <thead className="bg-gray-100 text-gray-700 text-[10px] uppercase font-bold border-y border-gray-300 sticky top-0 z-20 shadow-sm">
+                    <table className="w-full text-center border-collapse table-fixed min-w-[900px]">
+                        <thead className="bg-gray-100 text-gray-700 text-[10px] uppercase font-bold border-y border-gray-300 sticky top-0 z-40 shadow-sm">
                             <tr>
-                                <th className="p-2 border-x border-gray-300 w-8 bg-gray-100">No</th>
-                                <th className="p-2 border-x border-gray-300 min-w-[150px] bg-gray-100">Nama Pasien</th>
+                                <th className="p-2 border-x border-gray-300 w-[40px] sticky left-0 bg-gray-200 z-50">No</th>
+                                <th className="p-2 border-x border-gray-300 w-[180px] sticky left-[40px] bg-gray-200 z-50 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Nama Pasien</th>
                                 <th className="p-2 border-x border-gray-300 w-12 bg-gray-100">KMR</th>
                                 <th className="p-2 border-x border-gray-300 w-24 bg-gray-100">No. RM</th>
                                 <th className="p-2 border-x border-gray-300 min-w-[130px] bg-gray-100">Dokter</th>
@@ -1134,16 +1137,19 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
                         <tbody className="text-[11px] divide-y divide-gray-200">
                             {sortedRooms.map((room, index) => {
                                 const rec = records.find(r => r.roomNumber === room);
+                                
                                 return (
-                                    <tr key={room} className={`transition-colors ${rec ? 'hover:bg-emerald-50/30' : 'bg-gray-50/10'}`}>
-                                        <td className="p-1 border-x border-gray-200 text-gray-400">{index + 1}</td>
-                                        <td className="p-1 px-2 border-x border-gray-200 font-bold text-gray-800 uppercase truncate text-left">
+                                    <tr key={room} className={`transition-colors ${rec ? 'bg-white hover:bg-emerald-50' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                                        <td className="p-1 border-x border-gray-200 text-gray-400 sticky left-0 bg-inherit z-30">
+                                            {index + 1}
+                                        </td>
+                                        <td className="p-1 px-2 border-x border-gray-200 font-bold text-gray-800 uppercase truncate text-left sticky left-[40px] bg-inherit z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                             {rec ? rec.name : ''}
                                         </td>
                                         <td className="p-1 border-x border-gray-200 font-bold text-indigo-700">
                                             {formatRoom(room)}
                                         </td>
-                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/10">
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20">
                                             {rec && (
                                                 <>
                                                     <input type="text" defaultValue={rec.rmNumber || ''} onBlur={(e) => handleInlineSave(rec.id, 'rmNumber', e.target.value)} className="w-full bg-transparent outline-none text-center font-mono no-print" placeholder="..." />
@@ -1163,7 +1169,7 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
                                                 </>
                                             ) : ''}
                                         </td>
-                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/10">
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20">
                                             {rec && (
                                                 <>
                                                     <input type="text" defaultValue={rec.bpjsClass || ''} onBlur={(e) => handleInlineSave(rec.id, 'bpjsClass', e.target.value)} className="w-full bg-transparent outline-none text-center no-print" placeholder="..." />
@@ -1171,7 +1177,7 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
                                                 </>
                                             )}
                                         </td>
-                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/10">
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20">
                                             {rec && (
                                                 <>
                                                     <input 
@@ -1437,6 +1443,17 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
     };
 
     if (records.length === 0) return <div className="text-center p-10 text-gray-400 italic text-sm bg-white h-full border rounded">Data tidak ditemukan sesuai filter.</div>;
+    // --- SIHIR AUTO-FORMAT TANGGAL (UNTUK MODE TTV) ---
+    const handleDateMasking = (e) => {
+        let v = e.target.value.replace(/[^\d]/g, ''); // Ambil angka saja
+        let final = '';
+        if (v.length > 0) final += v.substring(0, 2);
+        if (v.length > 2) final += '/' + v.substring(2, 4);
+        if (v.length > 4) final += '/' + v.substring(4, 6);
+        if (v.length > 6) final += ' ' + v.substring(6, 8);
+        if (v.length > 8) final += ':' + v.substring(8, 10);
+        e.target.value = final;
+    };
 
     return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
@@ -1614,7 +1631,14 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                             <td className="p-1 border-r border-gray-300 align-middle text-center bg-emerald-50/30 hover:bg-yellow-100/50" onClick={(e) => { if(rec) e.stopPropagation(); }}>
                                                 {rec ? (
                                                     <>
-                                                        <input type="text" defaultValue={formatDateCM(rec.admissionDate)} onBlur={(e) => { const pd = parseDateCM(e.target.value); if(pd !== rec.admissionDate) updateRecord(rec.id, { admissionDate: pd }); }} className="w-full bg-transparent outline-none text-center font-mono text-[9px] no-print focus:border-b border-indigo-500" placeholder="dd/mm/yy hh:mm" />
+                                                        <input 
+                                                            type="text" 
+                                                            defaultValue={formatDateCM(rec.admissionDate)} 
+                                                            onChange={handleDateMasking} 
+                                                            onBlur={(e) => { const pd = parseDateCM(e.target.value); if(pd !== rec.admissionDate) updateRecord(rec.id, { admissionDate: pd }); }} 
+                                                            className="w-full bg-transparent outline-none text-center font-mono text-[9px] no-print focus:border-b border-indigo-500" 
+                                                            placeholder="dd/mm/yy hh:mm" 
+                                                        />
                                                         <span className="hidden print:inline text-[8px] font-mono">{formatDateCM(rec.admissionDate) || ''}</span>
                                                     </>
                                                 ) : null}
@@ -2436,17 +2460,24 @@ const MedicalRecordApp = ({
     try {
         const ref = getCollectionRef();
         const updatePromises = ids.map(id => {
-            const p = patients.find(item => item.id === id); // Cari data pasien dulu
+            // FIX: Ganti 'patients' menjadi 'activeRecords' agar data kamar terbaca
+            const p = activeRecords.find(item => item.id === id); 
             return updateDoc(doc(ref, id), { 
                 isDischarged: true, 
-                lastRoom: p?.roomNumber || '', // Simpan kamarnya
+                lastRoom: p?.roomNumber || '', 
                 roomNumber: '', 
                 dischargeDate: new Date().toISOString(), 
                 updatedAt: Timestamp.now() 
             });
         });
         await Promise.all(updatePromises);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+        alert(`${ids.length} pasien berhasil dipulangkan.`); // Tambah notifikasi biar mantap
+    } catch (e) { 
+        console.error(e); 
+        alert("Gagal memulangkan pasien masal.");
+    } finally { 
+        setLoading(false); 
+    }
 };
 
   // --- FUNGSI RESTORE (BATAL PULANG) ---
@@ -2464,6 +2495,23 @@ const MedicalRecordApp = ({
               alert("Gagal mengembalikan pasien.");
               console.error(e);
           }
+      }
+  };
+
+  // --- FUNGSI HAPUS PERMANEN DARI ARSIP ---
+  const handleDeletePermanent = async (id, name) => {
+      if (!window.confirm(`PERINGATAN: Hapus permanen data ${name}?\nData ini akan hilang selamanya dari database.`)) return;
+      
+      setLoading(true);
+      try {
+          const ref = getCollectionRef();
+          await deleteDoc(doc(ref, id));
+          alert(`Data ${name} telah dihapus permanen.`);
+      } catch (e) {
+          alert("Gagal menghapus data.");
+          console.error(e);
+      } finally {
+          setLoading(false);
       }
   };
 
@@ -2869,6 +2917,14 @@ const MedicalRecordApp = ({
                                                         className="bg-white text-indigo-600 px-3 py-1.5 rounded border border-indigo-200 hover:bg-indigo-600 hover:text-white transition shadow-sm font-bold text-[10px]"
                                                     >
                                                         ↩️ Balikkan
+                                                    </button>
+                                                    {/* TOMBOL HAPUS PERMANEN (BARU) */}
+                                                    <button 
+                                                        onClick={() => handleDeletePermanent(rec.id, rec.name)}
+                                                        className="bg-white text-red-600 px-3 py-1.5 rounded border border-red-200 hover:bg-red-600 hover:text-white transition shadow-sm font-bold text-[10px]"
+                                                        title="Hapus Permanen dari Database"
+                                                    >
+                                                        🗑️ Hapus
                                                     </button>
                                                 </td>
                                             </tr>
@@ -3814,11 +3870,15 @@ const archivedMatches = useMemo(() => {
                                                 <div 
                                                     key={old.id} 
                                                     onClick={() => {
+                                                        // 1. Tarik Nama, RM, dan Gender saja (Data Permanen Pasien)
                                                         handleInputChange({ target: { name: 'name', value: old.name } });
                                                         handleInputChange({ target: { name: 'rmNumber', value: old.rmNumber || '' } });
                                                         handleInputChange({ target: { name: 'gender', value: old.gender || '' } });
-                                                        handleInputChange({ target: { name: 'dpjpName', value: old.dpjpName || '' } });
-                                                        alert(`Data riwayat ${old.name} ditarik.`);
+                                                        
+                                                        // 2. JANGAN tarik DPJP (Biarkan user pilih manual sesuai shift RS hari ini)
+                                                        // Baris dpjpName dihapus dari sini.
+                                                        
+                                                        alert(`Biodata ${old.name} ditarik. Silakan tentukan DPJP hari ini.`);
                                                     }}
                                                     className="p-2 hover:bg-indigo-50 cursor-pointer border-b last:border-0 transition-colors"
                                                 >
