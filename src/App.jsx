@@ -37,15 +37,32 @@ const firebaseConfig = {
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
 
 // --- UTILS: PRINT HANDLER ---
+// --- FUNGSI HELPER UNTUK PRINT DI HP/TABLET (ANTI-CRASH) ---
+const cetakPWA = (htmlContent, title = 'Cetak') => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`<title>${title}</title>` + htmlContent);
+    doc.close();
+
+    setTimeout(() => {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 3000);
+    }, 800);
+};
+
 const handlePrintWindow = (elementId, title) => {
     const content = document.getElementById(elementId);
     if (!content) return;
-
-    const printWindow = window.open('', '_blank', 'width=800,height=1000');
-    if (!printWindow) {
-        alert("Pop-up diblokir. Mohon izinkan pop-up.");
-        return;
-    }
 
     const html = `
         <!DOCTYPE html>
@@ -55,43 +72,17 @@ const handlePrintWindow = (elementId, title) => {
             <title>${title}</title>
             <script src="https://cdn.tailwindcss.com"></script>
             <style>
-                body { 
-                    background-color: white; 
-                    -webkit-print-color-adjust: exact; 
-                    print-color-adjust: exact;
-                    font-size: 11pt;
-                }
-                @media print {
-                    @page { 
-                        size: A5 portrait; 
-                        margin: 0.5cm;
-                    }
-                    body { margin: 0; }
-                    .no-print { display: none !important; }
-                    .print-break { page-break-after: always; }
-                    #print-container { width: 100%; max-width: 148mm; }
-                }
+                body { background-color: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 11pt; }
+                @media print { @page { size: A5 portrait; margin: 0.5cm; } body { margin: 0; } .no-print { display: none !important; } .print-break { page-break-after: always; } #print-container { width: 100%; max-width: 148mm; } }
             </style>
         </head>
         <body>
-            <div id="print-container">
-                ${content.innerHTML}
-            </div>
-            <script>
-                window.onload = function() {
-                    setTimeout(() => {
-                        window.print();
-                    }, 800);
-                }
-            </script>
+            <div id="print-container">${content.innerHTML}</div>
         </body>
         </html>
     `;
-
-    printWindow.document.write(html);
-    printWindow.document.close();
+    cetakPWA(html, title); // <--- INI YANG BERUBAH
 };
-
 
 // --- COMPONENTS UI (DEFINED GLOBALLY) ---
 
@@ -1365,7 +1356,7 @@ const hitungHariCM = (tanggalMasuk) => {
 };
 
 // --- PATIENT TABLE FINAL (DENGAN BUKU CM INLINE DI MODE TTV) ---
-const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onQuickTtv, onBulkDischarge, updateRecord, onPrintBukuCM }) => {
+const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onQuickTtv, onBulkDischarge, updateRecord, onPrintBukuCM, onPrintLabel }) => {
     
     const [viewMode, setViewMode] = useState('soap');
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -2480,8 +2471,8 @@ const MedicalRecordApp = ({
     const element = document.getElementById('ttv-table-area');
     if (!element) return alert("Tabel tidak ditemukan.");
     const content = element.innerHTML;
-    const printWindow = window.open('', '_blank', 'width=1100,height=800');
-    printWindow.document.write(`
+    
+    const html = `
         <html><head><title>Print TTV</title>
         <style>
             @page { size: A4 portrait; margin: 5mm; }
@@ -2489,37 +2480,18 @@ const MedicalRecordApp = ({
             table { width: 100%; border-collapse: collapse; font-size: 9pt; }
             th, td { border: 1px solid black; padding: 2px 3px; }
             th { background-color: #f0f0f0; text-align: center; height: 25px; font-size: 8pt; }
-            
-            /* --- ATURAN LEBAR KOLOM BARU (DIURUTKAN DARI KIRI KE KANAN) --- */
-            td:nth-child(1) { width: 130px; } /* Identitas */
-            td:nth-child(2) { width: 55px; text-align: center; font-family: monospace; } /* No.RM */
-            td:nth-child(3) { width: 30px; text-align: center; } /* Kls */
-            td:nth-child(4) { width: 65px; text-align: center; font-family: monospace; } /* Tgl Msk */
-            td:nth-child(5) { width: 35px; text-align: center; font-weight: bold; } /* Hari */
-            
-            /* Kolom TTV (TD s/d SpO2) */
-            td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10) { 
-                width: 35px; text-align: center; font-family: monospace; 
-            } 
-            
-            /* Kolom Rencana (Dibiarkan otomatis mengambil sisa kertas) */
+            td:nth-child(1) { width: 130px; } td:nth-child(2) { width: 55px; text-align: center; font-family: monospace; } td:nth-child(3) { width: 30px; text-align: center; } td:nth-child(4) { width: 65px; text-align: center; font-family: monospace; } td:nth-child(5) { width: 35px; text-align: center; font-weight: bold; }
+            td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10) { width: 35px; text-align: center; font-family: monospace; } 
             td:nth-child(11) { text-align: left; } 
-
-            /* --- SIHIR MENGHILANGKAN KOTAK INPUT & MEMUNCULKAN TEKS ASLI --- */
-            .no-print { display: none !important; }
-            input { display: none !important; } /* Basmi semua kotak ketikan */
-            span.hidden { display: inline !important; } /* Munculkan teks biasa yang tadi tersembunyi */
-
-            h3 { text-align: center; margin: 5px 0 2px 0; font-size: 14pt; }
-            .date-print { text-align: center; font-size: 8pt; margin-bottom: 5px; color: #555; }
+            .no-print { display: none !important; } input { display: none !important; } span.hidden { display: inline !important; }
+            h3 { text-align: center; margin: 5px 0 2px 0; font-size: 14pt; } .date-print { text-align: center; font-size: 8pt; margin-bottom: 5px; color: #555; }
         </style></head><body>
         <h3>Lembar Observasi Tanda Vital & Rencana Harian</h3>
         <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
         ${content}
-        <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
         </body></html>
-    `);
-    printWindow.document.close();
+    `;
+    cetakPWA(html, 'Print TTV'); // <--- INI YANG BERUBAH
   };  
 
   const handlePrintCPO = (record) => {
@@ -2546,7 +2518,6 @@ const MedicalRecordApp = ({
     const MAX_ROWS = 7; 
     const pages = [];
     for (let i = 0; i < fullMedList.length; i += MAX_ROWS) { pages.push(fullMedList.slice(i, i + MAX_ROWS)); }
-    const printWindow = window.open('', '_blank', 'width=1200,height=800');
     const htmlContent = `
         <html><head><title>Print CPO</title><style>
             @page { size: 330mm 215mm; margin: 0; }
@@ -2575,18 +2546,16 @@ const MedicalRecordApp = ({
                     }).join('')}
                     ${pages.length > 1 ? `<div style="position:absolute; bottom:5mm; right:5mm; font-size:8pt;">Hal ${pageIndex + 1}/${pages.length}</div>` : ''}
                 </div>`).join('')}
-            <script>setTimeout(() => { window.print(); }, 1500);</script>
         </body></html>`;
-    printWindow.document.write(htmlContent); printWindow.document.close();
+        
+    cetakPWA(htmlContent, 'Print CPO'); // <--- INI YANG BERUBAH
   };
-
-  // Taruh ini di dalam MedicalRecordApp (di atas return)
+  
   const handlePrintBukuCM = () => {
     const content = document.getElementById('buku-cm-print');
     if (!content) return alert("Konten tidak ditemukan.");
     
-    const printWindow = window.open('', '_blank', 'width=1100,height=800');
-    printWindow.document.write(`
+    const html = `
         <html><head><title>Cetak Buku Register (CM)</title>
         <style>
             @page { size: A4 portrait; margin: 5mm; }
@@ -2595,46 +2564,25 @@ const MedicalRecordApp = ({
             th, td { border: 1px solid black; padding: 4px; font-size: 9pt; text-align: center; }
             th { background-color: #f3f4f6; font-weight: bold; text-transform: uppercase; font-size: 8pt; }
             .text-left { text-align: left !important; }
-            th:nth-child(1), td:nth-child(1) { width: 30px; }
-            th:nth-child(2), td:nth-child(2) { width: 180px; }
-            th:nth-child(3), td:nth-child(3) { width: 40px; }
-            th:nth-child(4), td:nth-child(4) { width: 80px; }
-            th:nth-child(5), td:nth-child(5) { width: 150px; }
-            th:nth-child(6), td:nth-child(6) { width: 40px; }
-            th:nth-child(7), td:nth-child(7) { width: 110px; }
-            th:nth-child(8), td:nth-child(8) { width: 40px; }
-            input { display: none !important; }
-            span.print-text { display: inline !important; }
-            .no-print { display: none !important; }
+            th:nth-child(1), td:nth-child(1) { width: 30px; } th:nth-child(2), td:nth-child(2) { width: 180px; } th:nth-child(3), td:nth-child(3) { width: 40px; } th:nth-child(4), td:nth-child(4) { width: 80px; } th:nth-child(5), td:nth-child(5) { width: 150px; } th:nth-child(6), td:nth-child(6) { width: 40px; } th:nth-child(7), td:nth-child(7) { width: 110px; } th:nth-child(8), td:nth-child(8) { width: 40px; }
+            input { display: none !important; } span.print-text { display: inline !important; } .no-print { display: none !important; }
             h3 { text-align: center; margin-bottom: 10px; font-size: 14pt; color: #065f46; }
         </style></head><body>
         <h3>BUKU REGISTER RUANGAN (CM) - SIMPAN</h3>
-        ${content.innerHTML}  <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        ${content.innerHTML}
         </body></html>
-    `);
-    printWindow.document.close();
+    `;
+    cetakPWA(html, 'Cetak Buku Register (CM)'); // <--- INI YANG BERUBAH
   };
 
-// Taruh ini di dalam MedicalRecordApp (di bawah handlePrintCPO)
   const handlePrintLabel = (record) => {
     if (!record) return;
-    const printWindow = window.open('', '_blank', 'width=600,height=600');
-    printWindow.document.write(`
+    const html = `
         <html><head><title>Label Pasien - ${record.name}</title>
         <style>
             @page { size: A4 portrait; margin: 10mm; }
             body { font-family: Arial, sans-serif; display: flex; flex-wrap: wrap; gap: 4mm; padding: 5mm; }
-            .label-box { 
-                width: 64mm; 
-                height: 32mm; 
-                border: 1px dashed #ccc; 
-                padding: 5mm; 
-                box-sizing: border-box; 
-                display: flex; 
-                flex-direction: column; 
-                justify-content: center;
-                position: relative;
-            }
+            .label-box { width: 64mm; height: 32mm; border: 1px dashed #ccc; padding: 5mm; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; position: relative; }
             .name { font-size: 10pt; font-weight: bold; text-transform: uppercase; margin-bottom: 2mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
             .rm { font-size: 18pt; font-family: 'Courier New', monospace; font-weight: bold; border-top: 2px solid black; padding-top: 2mm; }
             .room { position: absolute; bottom: 2mm; right: 3mm; font-size: 9pt; font-weight: bold; color: #666; }
@@ -2647,10 +2595,9 @@ const MedicalRecordApp = ({
                     <div class="room">${record.roomNumber || ''}</div>
                 </div>
             `).join('')}
-            <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
         </body></html>
-    `);
-    printWindow.document.close();
+    `;
+    cetakPWA(html, `Label Pasien - ${record.name}`); // <--- INI YANG BERUBAH
   };  
 
   const handleExportExcel = () => {
@@ -2775,7 +2722,7 @@ const MedicalRecordApp = ({
         {/* HEADER V5 (FIX: Menu Navigasi Stabil) */}
         <div className="bg-white shadow-sm px-4 h-14 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
             <div onClick={() => setView('dashboard')} className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none py-1">
-                <img src="/logo3.png" alt="SIMPAN Header" className="h-36 object-contain" />
+                <img src="/logo3.png" alt="SIMPAN Header" className="h-28 object-contain" />
             </div>
             <div className="flex items-center gap-2">
                 <div className="hidden lg:block border-r pr-3 mr-1"><DigitalClock /></div>

@@ -9,7 +9,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['logo2.png', 'apple-touch-icon.png'], // Sesuaikan dengan nama file icon kamu
       manifest: {
-        name: 'SIMPAN - Sistem Manajemen Pelayanan',
+        name: 'SIMPAN - Sistem Manajemen Pelayanan Abi Nugroho',
         short_name: 'SIMPAN',
         description: 'Sistem Manajemen Pelayanan Abi Nugroho',
         theme_color: '#4f46e5', // Warna indigo agar senada dengan tema aplikasi

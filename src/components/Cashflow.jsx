@@ -240,7 +240,92 @@ export default function Cashflow({ currentUser, membersList, onUpdateMembers }) 
   const handleDeleteIuran = () => { if(iuranModalData.transId) setTransactions(p=>p.filter(t=>t.id!==iuranModalData.transId)); setIuranModalData(null); };
   const handlePayFullYear = (member) => { if(!confirm(`Bayar lunas?`)) return; const n=[]; MONTHS.forEach((m,i)=>{ if(!duesMatrix[member.id][m]) n.push({id:Date.now()+i, date:`${filterYear}-${String(i+1).padStart(2,'0')}-05`, description:`Iuran: ${member.name}`, amount:IURAN_AMOUNT, type:'IN', category:'KAS', user:currentUser.name, isIuran:true, memberId:member.id, month:m}); }); setTransactions([...n,...transactions]); };
   const handleDownloadCSV = () => { const h = ['Tanggal,Uraian,Masuk,Keluar,Saldo']; const r = ledgerData.map(t => `${t.date},"${t.description}",${t.type==='IN'?t.amount:0},${t.type==='OUT'?t.amount:0},${t.currentBalance}`); const l = document.createElement("a"); l.href = encodeURI("data:text/csv;charset=utf-8,"+ [h,...r].join("\n")); l.download = `Laporan_${MONTHS[filterMonth]}.csv`; document.body.appendChild(l); l.click(); document.body.removeChild(l); };
-  
+  const handleWhatsAppReport = () => {
+    // 1. Tentukan Kategori & Label
+    const category = isAdmin ? 'ALL' : currentUser.cashflowRole;
+    const catLabel = isAdmin ? "LAPORAN GABUNGAN" : currentUser.cashflowLabel;
+
+    // 2. Hitung Saldo Bulan Lalu
+    const reportDate = new Date(filterYear, filterMonth, 1);
+    const saldoLalu = transactions.reduce((acc, t) => {
+        const tDate = new Date(t.date);
+        const matchesCategory = isAdmin || t.category === category;
+        if (matchesCategory && tDate < reportDate) {
+            return t.type === 'IN' ? acc + t.amount : acc - t.amount;
+        }
+        return acc;
+    }, 0);
+
+    // 3. Ambil Rincian Transaksi Bulan Ini (Filter & Sortir)
+    const thisMonthTrans = transactions.filter(t => 
+        (isAdmin || t.category === category) && 
+        new Date(t.date).getMonth() === filterMonth && 
+        new Date(t.date).getFullYear() === filterYear
+    ).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const incomes = thisMonthTrans.filter(t => t.type === 'IN');
+    const expenses = thisMonthTrans.filter(t => t.type === 'OUT');
+
+    // KODE ANTI-ERROR EMOJI
+    const chartEmoji = '\uD83D\uDCCA'; 
+
+    // 4. Susun Pesan sesuai Template User
+    let msg = `${chartEmoji} *Laporan Bulanan: ${catLabel} - ${MONTHS[filterMonth]} ${filterYear}*\n\n`;
+    msg += `Saldo bulan Lalu = ${formatRupiah(saldoLalu)}\n\n`;
+    
+    msg += `*Total Masuk: ${formatRupiah(monthlyStats.income)}*\n`;
+    incomes.forEach(t => {
+      msg += `- ${t.description} = ${formatRupiah(t.amount)}\n`;
+    });
+    
+    msg += `\n*Total Keluar: ${formatRupiah(monthlyStats.expense)}*\n`;
+    expenses.forEach(t => {
+      msg += `- ${t.description} = ${formatRupiah(t.amount)}\n`;
+    });
+    
+    msg += `\n*Sisa Saldo sampai saat ini: ${formatRupiah(saldoLalu + monthlyStats.net)}*`;
+
+    // 5. Direct ke WA
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+  const handleWhatsAppTagihan = (loan) => {
+    const sisaHutang = loan.amount - loan.paidAmount;
+    
+    // Kode Unicode Emoji agar aman di semua perangkat (Laptop/HP)
+    const calendarEmoji = '\uD83D\uDCC5';
+    const moneyEmoji = '\uD83D\uDCB0';
+    const checkEmoji = '\u2705';
+    const memoEmoji = '\uD83D\uDCDD';
+    const prayEmoji = '\uD83D\uDE4F';
+
+    // Susun Pesan sesuai Template Baru
+    let msg = `Assalamualaikum, izin mengingatkan terkait pinjaman uang ${loan.category}.\n`;
+    msg += `${calendarEmoji} Tanggal Pinjam: ${formatDateID(loan.date)}\n`;
+    msg += `${moneyEmoji} Total Pinjaman: *${formatRupiah(loan.amount)}*\n`;
+    msg += `${checkEmoji} Sudah Dibayar: ${formatRupiah(loan.paidAmount)}\n`;
+    
+    // Looping Rincian Pembayaran (Jika Ada)
+    if (loan.history && loan.history.length > 0) {
+        loan.history.forEach((h) => {
+            msg += `  - ${formatDateID(h.date)} = ${formatRupiah(h.amount)}\n`;
+        });
+    } else {
+        msg += `  - (Belum ada riwayat pembayaran)\n`;
+    }
+    
+    msg += `Sisa Tagihan: *${formatRupiah(sisaHutang)}*\n`;
+    
+    // Tambahkan Catatan Jika Ada
+    if (loan.notes) {
+        msg += `${memoEmoji} Catatan: ${loan.notes}\n`;
+    }
+    
+    msg += `Terima kasih atas pengertiannya ${prayEmoji}`;
+
+    // Direct ke WA
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
   // FIX: Reset Data (Bersihkan LocalStorage)
   const handleResetData = () => { if(confirm("⚠️ HAPUS SEMUA DATA?")) { setTransactions([]); setLoans([]); localStorage.removeItem('cf_transactions'); localStorage.removeItem('cf_loans'); alert("Data bersih."); } };
 
@@ -351,82 +436,96 @@ export default function Cashflow({ currentUser, membersList, onUpdateMembers }) 
              <div className="flex flex-col h-full">
                  
                  {/* B. TABEL FIXED HEADER (UPDATE: HIDE 1-PER-1) */}
-                 <div className="flex-1 overflow-hidden flex flex-col relative">
-                     
-                     <div className="bg-indigo-50 border-y border-indigo-100 p-2 flex justify-between items-center text-xs sticky top-0 z-20">
-                        <div className="font-bold text-indigo-900 uppercase flex items-center gap-2">
-                             📊 Rekap {MONTHS[filterMonth]} {filterYear}
-                        </div>
+                    <div className="flex-1 overflow-hidden flex flex-col relative">
                         
-                        {/* KONTROL VISIBILITY INDIVIDU */}
-                        <div className="flex gap-3 font-mono font-bold items-center">
-                            <div className="flex items-center gap-1 cursor-pointer hover:bg-emerald-100 px-1 rounded transition select-none" onClick={() => toggleStat('income')}>
-                                <span className="text-emerald-700">IN:</span>
-                                <span className={`text-emerald-600 ${!statVisibility.income && 'tracking-widest'}`}>{statVisibility.income ? formatRupiah(monthlyStats.income) : '••••••'}</span>
-                                {statVisibility.income ? <Eye size={10} className="text-emerald-400"/> : <EyeOff size={10} className="text-emerald-400"/>}
-                            </div>
-                            <div className="flex items-center gap-1 cursor-pointer hover:bg-rose-100 px-1 rounded transition select-none" onClick={() => toggleStat('expense')}>
-                                <span className="text-rose-700">OUT:</span>
-                                <span className={`text-rose-600 ${!statVisibility.expense && 'tracking-widest'}`}>{statVisibility.expense ? formatRupiah(monthlyStats.expense) : '••••••'}</span>
-                                {statVisibility.expense ? <Eye size={10} className="text-rose-400"/> : <EyeOff size={10} className="text-rose-400"/>}
-                            </div>
-                            <div className="flex items-center gap-1 cursor-pointer bg-white border border-indigo-200 px-2 rounded hover:bg-indigo-50 transition select-none" onClick={() => toggleStat('net')}>
-                                <span className="text-indigo-800">NET:</span>
-                                <span className={`text-indigo-700 ${!statVisibility.net && 'tracking-widest'}`}>{statVisibility.net ? formatRupiah(monthlyStats.net) : '••••••'}</span>
-                                {statVisibility.net ? <Eye size={10} className="text-indigo-400"/> : <EyeOff size={10} className="text-indigo-400"/>}
-                            </div>
-                        </div>
-                     </div>
-
-                     <div className="bg-gray-100 text-gray-600 text-xs font-bold uppercase border-b border-gray-200 flex pr-4"> 
-                        <div className="p-3 w-[100px] flex items-center gap-1 cursor-pointer hover:bg-gray-200 transition" onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}>Tgl <ArrowUpDown size={10}/></div>
-                        <div className="p-3 flex-1">Uraian</div>
-                        <div className="p-3 w-[110px] text-right text-emerald-700">Masuk</div>
-                        <div className="p-3 w-[110px] text-right text-rose-700">Keluar</div>
-                        <div className="p-3 w-[120px] text-right text-indigo-900">Saldo</div>
-                        <div className="p-3 w-[60px] text-center">#</div>
-                     </div>
-
-                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
-                        {ledgerData.length === 0 ? (
-                            <div className="text-center p-10 text-gray-400 italic text-xs">Belum ada transaksi di periode ini.</div>
-                        ) : (
-                            ledgerData.map((t) => (
-                                <div key={t.id} className="flex text-xs border-b border-gray-100 hover:bg-indigo-50/30 transition-colors items-center">
-                                    <div className="p-3 w-[100px] font-mono text-slate-500">{formatDateID(t.date)}</div>
-                                    <div className="p-3 flex-1 font-medium text-slate-700">
-                                        {t.description} 
-                                        {t.isIuran && <span className="bg-emerald-100 text-emerald-700 text-[9px] px-1.5 py-0.5 rounded ml-2 font-bold">IURAN</span>}
-                                        {isAdmin && <span className="text-[9px] text-gray-400 ml-1">({t.category})</span>}
-                                    </div>
-                                    <div className="p-3 w-[110px] text-right font-medium text-emerald-600 bg-emerald-50/10">
-                                        {t.type === 'IN' ? formatRupiah(t.amount) : '-'}
-                                    </div>
-                                    <div className="p-3 w-[110px] text-right font-medium text-rose-600 bg-rose-50/10">
-                                        {t.type === 'OUT' ? formatRupiah(t.amount) : '-'}
-                                    </div>
-                                    <div className="p-3 w-[120px] text-right font-bold text-indigo-800 bg-indigo-50/20">
-                                        {formatRupiah(t.currentBalance)}
-                                    </div>
-                                    <div className="p-3 w-[60px] text-center flex justify-center gap-1">
-                                        {!t.isIuran && (
-                                            <>
-                                            <button onClick={() => openTransactionForm(t)} className="text-slate-400 hover:text-indigo-600"><Edit2 size={12}/></button>
-                                            <button onClick={() => setDeleteModalData({id: t.id, type: 'transaction'})} className="text-slate-400 hover:text-rose-600"><Trash2 size={12}/></button>
-                                            </>
-                                        )}
-                                    </div>
+                        <div className="bg-indigo-50 border-y border-indigo-100 p-2 flex justify-between items-center text-xs sticky top-0 z-20">
+                            
+                            {/* SISI KIRI: Judul Rekap & Tombol Lapor */}
+                            <div className="flex items-center gap-3">
+                                <div className="font-bold text-indigo-900 uppercase flex items-center gap-2">
+                                    📊 Rekap {MONTHS[filterMonth]} {filterYear}
                                 </div>
-                            ))
-                        )}
-                        
-                        <div className="p-8 flex justify-center">
-                            <button onClick={handleResetData} className="text-[10px] text-gray-300 flex items-center gap-1 hover:text-red-400 transition" title="Hapus semua data di browser ini">
-                                <Trash2 size={12}/> Reset Data Local
-                            </button>
+                                
+                                {/* TOMBOL LAPOR WA */}
+                                <button 
+                                    onClick={handleWhatsAppReport}
+                                    className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[9px] font-bold flex items-center gap-1 shadow-sm transition"
+                                >
+                                    <span>📢</span> Lapor WA
+                                </button>
+                            </div>
+                            
+                            {/* SISI KANAN: KONTROL VISIBILITY INDIVIDU */}
+                            <div className="flex gap-3 font-mono font-bold items-center">
+                                <div className="flex items-center gap-1 cursor-pointer hover:bg-emerald-100 px-1 rounded transition select-none" onClick={() => toggleStat('income')}>
+                                    <span className="text-emerald-700">IN:</span>
+                                    <span className={`text-emerald-600 ${!statVisibility.income && 'tracking-widest'}`}>{statVisibility.income ? formatRupiah(monthlyStats.income) : '••••••'}</span>
+                                    {statVisibility.income ? <Eye size={10} className="text-emerald-400"/> : <EyeOff size={10} className="text-emerald-400"/>}
+                                </div>
+                                <div className="flex items-center gap-1 cursor-pointer hover:bg-rose-100 px-1 rounded transition select-none" onClick={() => toggleStat('expense')}>
+                                    <span className="text-rose-700">OUT:</span>
+                                    <span className={`text-rose-600 ${!statVisibility.expense && 'tracking-widest'}`}>{statVisibility.expense ? formatRupiah(monthlyStats.expense) : '••••••'}</span>
+                                    {statVisibility.expense ? <Eye size={10} className="text-rose-400"/> : <EyeOff size={10} className="text-rose-400"/>}
+                                </div>
+                                <div className="flex items-center gap-1 cursor-pointer bg-white border border-indigo-200 px-2 rounded hover:bg-indigo-50 transition select-none" onClick={() => toggleStat('net')}>
+                                    <span className="text-indigo-800">NET:</span>
+                                    <span className={`text-indigo-700 ${!statVisibility.net && 'tracking-widest'}`}>{statVisibility.net ? formatRupiah(monthlyStats.net) : '••••••'}</span>
+                                    {statVisibility.net ? <Eye size={10} className="text-indigo-400"/> : <EyeOff size={10} className="text-indigo-400"/>}
+                                </div>
+                            </div>
                         </div>
-                     </div>
-                 </div>
+
+                        {/* HEADER TABEL KOLOM */}
+                        <div className="bg-gray-100 text-gray-600 text-xs font-bold uppercase border-b border-gray-200 flex pr-4"> 
+                            <div className="p-3 w-[100px] flex items-center gap-1 cursor-pointer hover:bg-gray-200 transition" onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}>Tgl <ArrowUpDown size={10}/></div>
+                            <div className="p-3 flex-1">Uraian</div>
+                            <div className="p-3 w-[110px] text-right text-emerald-700">Masuk</div>
+                            <div className="p-3 w-[110px] text-right text-rose-700">Keluar</div>
+                            <div className="p-3 w-[120px] text-right text-indigo-900">Saldo</div>
+                            <div className="p-3 w-[60px] text-center">#</div>
+                        </div>
+
+                        {/* ISI TABEL */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
+                            {ledgerData.length === 0 ? (
+                                <div className="text-center p-10 text-gray-400 italic text-xs">Belum ada transaksi di periode ini.</div>
+                            ) : (
+                                ledgerData.map((t) => (
+                                    <div key={t.id} className="flex text-xs border-b border-gray-100 hover:bg-indigo-50/30 transition-colors items-center">
+                                        <div className="p-3 w-[100px] font-mono text-slate-500">{formatDateID(t.date)}</div>
+                                        <div className="p-3 flex-1 font-medium text-slate-700">
+                                            {t.description} 
+                                            {t.isIuran && <span className="bg-emerald-100 text-emerald-700 text-[9px] px-1.5 py-0.5 rounded ml-2 font-bold">IURAN</span>}
+                                            {isAdmin && <span className="text-[9px] text-gray-400 ml-1">({t.category})</span>}
+                                        </div>
+                                        <div className="p-3 w-[110px] text-right font-medium text-emerald-600 bg-emerald-50/10">
+                                            {t.type === 'IN' ? formatRupiah(t.amount) : '-'}
+                                        </div>
+                                        <div className="p-3 w-[110px] text-right font-medium text-rose-600 bg-rose-50/10">
+                                            {t.type === 'OUT' ? formatRupiah(t.amount) : '-'}
+                                        </div>
+                                        <div className="p-3 w-[120px] text-right font-bold text-indigo-800 bg-indigo-50/20">
+                                            {formatRupiah(t.currentBalance)}
+                                        </div>
+                                        <div className="p-3 w-[60px] text-center flex justify-center gap-1">
+                                            {!t.isIuran && (
+                                                <>
+                                                <button onClick={() => openTransactionForm(t)} className="text-slate-400 hover:text-indigo-600"><Edit2 size={12}/></button>
+                                                <button onClick={() => setDeleteModalData({id: t.id, type: 'transaction'})} className="text-slate-400 hover:text-rose-600"><Trash2 size={12}/></button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            
+                            <div className="p-8 flex justify-center">
+                                <button onClick={handleResetData} className="text-[10px] text-gray-300 flex items-center gap-1 hover:text-red-400 transition" title="Hapus semua data di browser ini">
+                                    <Trash2 size={12}/> Reset Data Local
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
                  {/* A. GRAFIK BATANG BERTUMPUK DENGAN GARIS TREND */}
                  <div className="p-4 border-t border-slate-100 bg-white flex-shrink-0">
@@ -570,10 +669,33 @@ export default function Cashflow({ currentUser, membersList, onUpdateMembers }) 
                             </div>
                             <div className="flex gap-2">
                                 {!isLunas && (
-                                    <button onClick={() => { setSelectedLoan(loan); setRepayForm({ amount: '', date: new Date().toISOString().split('T')[0] }); setView('pay-loan'); }} className="flex-1 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 font-medium rounded-lg text-sm transition">Bayar Cicilan</button>
+                                    <>
+                                    {/* TOMBOL TAGIH WA (BARU) */}
+                                    <button 
+                                        onClick={() => handleWhatsAppTagihan(loan)} 
+                                        className="flex-1 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 font-medium rounded-lg text-sm transition flex items-center justify-center gap-1 border border-emerald-100"
+                                    >
+                                        <span>💬</span> Tagih
+                                    </button>
+                                    
+                                    {/* TOMBOL BAYAR CICILAN */}
+                                    <button 
+                                        onClick={() => { setSelectedLoan(loan); setRepayForm({ amount: '', date: new Date().toISOString().split('T')[0] }); setView('pay-loan'); }} 
+                                        className="flex-1 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 font-medium rounded-lg text-sm transition border border-indigo-100"
+                                    >
+                                        Bayar
+                                    </button>
+                                    </>
                                 )}
+                                
+                                {/* TOMBOL RIWAYAT */}
                                 {loan.history && loan.history.length > 0 && (
-                                    <button onClick={() => setHistoryModalData(loan)} className="flex-1 py-2 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-700 font-medium rounded-lg text-sm transition flex items-center justify-center gap-1"><History size={14}/> Riwayat</button>
+                                    <button 
+                                        onClick={() => setHistoryModalData(loan)} 
+                                        className="flex-1 py-2 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-700 font-medium rounded-lg text-sm transition flex items-center justify-center gap-1 border border-slate-200"
+                                    >
+                                        <History size={14}/> Riwayat
+                                    </button>
                                 )}
                             </div>
                           </div>
