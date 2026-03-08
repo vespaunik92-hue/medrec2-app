@@ -1,4 +1,3 @@
 [build]
-  # Perintah ini akan mengecek apakah pesan commit mengandung kata [netlify]
-  # Jika TIDAK ADA kata tersebut, Netlify akan membatalkan build (menghemat kuota)
-  ignore = "git log -1 --pretty=%B | grep -qv '\\[netlify\\]'"
+  # Gunakan -F agar [netlify] dibaca sebagai teks biasa tanpa perlu backslash
+  ignore = "git log -1 --pretty=%B | grep -Fqv '[netlify]'"
