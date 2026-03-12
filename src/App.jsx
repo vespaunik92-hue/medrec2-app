@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
-    getFirestore, 
+    getFirestore,
+    initializeFirestore, 
     collection, 
     query, 
     onSnapshot, 
@@ -14,6 +15,7 @@ import {
     orderBy, 
     getDocs,
     getDoc,
+    limit,
 } from 'firebase/firestore';
 
 import Cashflow from './components/Cashflow';
@@ -2153,7 +2155,7 @@ const MedicalRecordApp = ({
     if (!userId) return;
     const ref = getCollectionRef();
     if (!ref) return;
-    const q = query(ref, orderBy('createdAt', 'desc'));
+    const q = query(ref, orderBy('createdAt', 'desc'), limit (200));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => {
           const docData = d.data();
@@ -2232,7 +2234,7 @@ const MedicalRecordApp = ({
       setFormData(p => ({ ...p, [field]: p[field] ? p[field] + '\n' + text : text }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => { // Hapus kata 'async' di sini
       e.preventDefault();
       if (!formData.name || !formData.roomNumber || !formData.dpjpName) {
           alert('Mohon lengkapi data wajib (Nama, Kamar, DPJP).');
@@ -2248,30 +2250,27 @@ const MedicalRecordApp = ({
            if (existingOccupant) return alert(`Kamar ${formData.roomNumber} sudah terisi oleh ${existingOccupant.name}.`);
       }
 
-      setLoading(true);
+      // 1. Siapkan Data
+      const now = Timestamp.now();
+      const data = { ...formData, updatedAt: now };
+      if (!isEditing) data.createdAt = now;
       const ref = getCollectionRef();
-      try {
-          const now = Timestamp.now();
-          const data = { ...formData, updatedAt: now };
-          if (!isEditing) data.createdAt = now;
 
-          let recordId = currentRecordId;
-          if (isEditing && currentRecordId) {
-              await updateDoc(doc(ref, currentRecordId), data);
-          } else {
-              const newDoc = await addDoc(ref, data);
-              recordId = newDoc.id;
-          }
-          
-          if (db && appId && recordId) {
-              const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${recordId}/notes`);
-              await addDoc(notesRef, { ...formData, createdAt: now, noteType: 'daily_update' });
-          }
+      // 2. TEMBAK KE DATABASE (Jalan diam-diam di background tanpa 'await')
+      if (isEditing && currentRecordId) {
+          updateDoc(doc(ref, currentRecordId), data).catch(err => console.error("Gagal update:", err));
+      } else {
+          addDoc(ref, data).then(newDoc => {
+              if (db && appId) {
+                  const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${newDoc.id}/notes`);
+                  addDoc(notesRef, { ...formData, createdAt: now, noteType: 'daily_update' }).catch(err => console.error("Gagal tambah catatan:", err));
+              }
+          }).catch(err => console.error("Gagal tambah pasien:", err));
+      }
 
-          resetForm();
-          setShowInputModal(false);
-      } catch (err) { alert("Gagal menyimpan."); } 
-      finally { setTimeout(() => setLoading(false), 100); }
+      // 3. AKSI INSTAN: Langsung bersihkan dan tutup layar detik itu juga!
+      resetForm();
+      setShowInputModal(false);
   };
 
   const handleSaveQuickTtv = async (ttvString) => {
@@ -4154,7 +4153,7 @@ const App = () => {
   const [appMode, setAppMode] = useState('MEDIS');
   const [allUsers, setAllUsers] = useState([]); 
 
-  // --- INIT FIREBASE (VERSI BERSIH: HANYA DATABASE) ---
+  // --- INIT FIREBASE (VERSI BYPASS JARINGAN RS) ---
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -4163,10 +4162,13 @@ const App = () => {
 
     try {
       const app = initializeApp(firebaseConfig);
-      // Kita HAPUS bagian Auth karena pakai sistem sendiri
-      const firestoreInstance = getFirestore(app);
       
-      setDb(firestoreInstance); // Database siap digunakan (termasuk mode offline bawaan)
+      // TRIK 1: Bypass WebSocket dan paksa Long-Polling agar tidak kena blokir Wi-Fi RS
+      const firestoreInstance = initializeFirestore(app, {
+          experimentalForceLongPolling: true 
+      });
+      
+      setDb(firestoreInstance); 
       
     } catch (e) { 
         console.error("Firebase Init Error:", e);
