@@ -894,45 +894,6 @@ const BulkPrintView = ({ records, onClose }) => {
     );
 };
 
-// --- LOGIKA WARNA KAMAR CANGGIH (UPDATE FORMAT K1A / K1B) ---
-
-// Daftar Kamar Single Bed (Bed Sendiri) - NAMA SUDAH DIUPDATE
-const SINGLE_BED_ROOMS = ['K7A', 'K8A', 'K9A', 'K11A', 'K12A', 'K14A']; 
-
-// --- LOGIKA WARNA KAMAR (SUPPORT WAITING LIST & FORMAT BARU) ---
-const getRoomColorStatus = (roomName, activeRecords, waitingList = []) => {
-    // 1. Cek apakah kamar ini TERISI di Dashboard?
-    const patient = activeRecords.find(r => r.roomNumber === roomName);
-    if (patient) return { color: 'red', status: 'Terisi', patient }; // Merah (Prioritas Utama)
-
-    // 2. Jika Kosong, cek apakah ada BOOKING di Waiting List?
-    const booking = waitingList.find(w => w.plannedRoom === roomName);
-    if (booking) return { color: 'yellow', status: 'Booked', booking }; // Kuning (Booking)
-
-    // 3. Jika benar-benar kosong, cek tipe kamar (Single Bed)
-    if (SINGLE_BED_ROOMS.includes(roomName)) {
-        return { color: 'green', status: 'Kosong' };
-    }
-
-    // 4. Logika Double Bed (Deteksi Tetangga Lk/Pr pakai Regex format A/B)
-    const match = roomName.match(/^(K\d+)([AB])$/);
-    if (match) {
-        const roomCode = match[1]; // misal: "K1"
-        const bedCode = match[2];  // misal: "A" atau "B"
-        const neighborBed = bedCode === 'A' ? 'B' : 'A';
-        const neighborRoomName = `${roomCode}${neighborBed}`; // misal menjadi "K1B"
-        
-        const neighbor = activeRecords.find(r => r.roomNumber === neighborRoomName);
-        if (neighbor) {
-            if (neighbor.gender === 'L') return { color: 'sky', status: 'Sisa Lk' };
-            if (neighbor.gender === 'P') return { color: 'purple', status: 'Sisa Pr' };
-        }
-    }
-
-    // Jika tidak ada tetangga atau format kamar tidak terdeteksi, anggap kosong
-    return { color: 'green', status: 'Kosong' };
-};
-
 // --- COMPONENT: DENAH KAMAR (RESPONSIVE: MOBILE, TABLET, LAPTOP) ---
 const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList }) => {
     const renderRoom = (roomNumber) => {
@@ -1095,7 +1056,7 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
             <div className="p-3 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center no-print flex-shrink-0">
                 <div>
                     <h2 className="font-bold text-emerald-800 flex items-center gap-2 text-sm">📖 Buku Register Ruangan (CM)</h2>
-                    <p className="text-[9px] text-emerald-600">Urutan kamar otomatis (K1-K15). Geser tabel ke kanan untuk isi data.</p>
+                    <p className="text-[9px] text-emerald-600">isi tanggal-jam masuk 2 angka, langsung saja tanpa /</p>
                 </div>
                 <button onClick={onPrint} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow hover:bg-emerald-700 transition flex items-center gap-2">
                     🖨️ Cetak Register
@@ -1367,11 +1328,6 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
     const [viewMode, setViewMode] = useState('soap');
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
-    const sortedRooms = useMemo(() => {
-        return [...ROOM_LIST].sort((a, b) => 
-            a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
-        );
-    }, []);
 
     useEffect(() => { if (!isSelectionMode) setSelectedIds([]); }, [isSelectionMode]);
 
@@ -1424,12 +1380,47 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
 
     const renderTtvPlanning = (planningText) => {
         if (!planningText) return '-';
-        const { labs, rads } = parsePlanning(planningText);
-        if (labs.length === 0 && rads.length === 0) return <span className="text-gray-300">-</span>;
+        // Tarik semua kategori dari parsePlanning
+        const { labs, rads, tms, rxs } = parsePlanning(planningText);
+        
+        // Cek apakah semuanya kosong
+        if (labs.length === 0 && rads.length === 0 && tms.length === 0 && rxs.length === 0) {
+            return <span className="text-gray-300">-</span>;
+        }
+
         return (
             <div className="text-[10px] leading-tight space-y-1">
-                {labs.length > 0 && <div className="text-red-700 font-medium"><span className="font-bold text-[9px] bg-red-50 border border-red-100 px-1 rounded mr-1">LAB</span>{labs.join(', ')}</div>}
-                {rads.length > 0 && <div className="text-blue-700 font-medium"><span className="font-bold text-[9px] bg-blue-50 border border-blue-100 px-1 rounded mr-1">RAD</span>{rads.join(', ')}</div>}
+                {/* LAB dengan titik dua literal */}
+                {labs.length > 0 && (
+                    <div className="text-red-700 font-medium">
+                        <span className="font-bold text-[9px] bg-red-50 border border-red-100 px-1 rounded mr-1">LAB: </span>
+                        {labs.join(', ')}
+                    </div>
+                )}
+                
+                {/* RADIOLOGI dengan titik dua literal */}
+                {rads.length > 0 && (
+                    <div className="text-blue-700 font-medium">
+                        <span className="font-bold text-[9px] bg-blue-50 border border-blue-100 px-1 rounded mr-1">RAD: </span>
+                        {rads.join(', ')}
+                    </div>
+                )}
+
+                {/* TINDAKAN (TM) - Tambahan agar konsisten */}
+                {tms.length > 0 && (
+                    <div className="text-emerald-700 font-medium">
+                        <span className="font-bold text-[9px] bg-emerald-50 border border-emerald-100 px-1 rounded mr-1">TM: </span>
+                        {tms.join(', ')}
+                    </div>
+                )}
+
+                {/* TERAPI (TH) - Tambahan agar konsisten */}
+                {rxs.length > 0 && (
+                    <div className="text-fuchsia-700 font-medium">
+                        <span className="font-bold text-[9px] bg-fuchsia-50 border border-fuchsia-100 px-1 rounded mr-1">TH: </span>
+                        {rxs.join(', ')}
+                    </div>
+                )}
             </div>
         );
     };
@@ -1872,8 +1863,8 @@ const DigitalClock = () => {
 
 // --- LOGIC UTAMA (MEDICAL RECORD APP - LEVEL 4 COMPLETED) ---
 const MedicalRecordApp = ({ 
-    db, userId, appId, isOnline, onLogout, userRole, 
-    currentUser, appMode, setAppMode, cashflowRole 
+    db, userId, appId, isOnline, onLogout, 
+    currentUser, setAppMode, cashflowRole 
 }) => {
   // --- STATE LEVEL 4: MANAJEMEN USER (BARU) ---
   const [allUsers, setAllUsers] = useState([]); // Daftar user (Admin Only)
@@ -1889,7 +1880,6 @@ const MedicalRecordApp = ({
   const [waitingList, setWaitingList] = useState([]);
   const [showWaitingModal, setShowWaitingModal] = useState(false);
   const [quickTtvTarget, setQuickTtvTarget] = useState(null);
-  const [patientListMode, setPatientListMode] = useState('standard');
   const [archiveSearch, setArchiveSearch] = useState('');
   
   // State untuk Data Dinamis (Setelan)
@@ -1942,7 +1932,7 @@ const MedicalRecordApp = ({
   
   const [formData, setFormData] = useState({
     roomNumber: '', name: '', rmNumber: '', gender: '', 
-    dpjpName: '', raberName: '', raber2Name: '',
+    dpjpName: '', raberName: '', raber2Name: '', admissionDate: '',
     subjective: '', objective: '', analysis: '', planning: '', isDischarged: false,
   });
 
@@ -2219,8 +2209,9 @@ const MedicalRecordApp = ({
 
   const resetForm = () => {
     setFormData({
-      roomNumber: '', name: '', dpjpName: '', raberName: '', raber2Name: '',
+      roomNumber: '', name: '', rmNumber: '', gender: '', dpjpName: '', raberName: '', raber2Name: '',
       subjective: '', objective: '', analysis: '', planning: '', isDischarged: false,
+      admissionDate: new Date().toISOString()
     });
     setIsEditing(false);
     setShowRaber1(false); setShowRaber2(false);
@@ -2363,7 +2354,7 @@ const MedicalRecordApp = ({
     setFormData({
         roomNumber: rec.roomNumber, name: rec.name, rmNumber: rec.rmNumber || '', gender: rec.gender || '', 
         dpjpName: rec.dpjpName, raberName: rec.raberName || '', raber2Name: rec.raber2Name || '',
-        subjective: rec.subjective || '', objective: rec.objective || '', 
+        subjective: rec.subjective || '', objective: rec.objective || '', admissionDate: rec.admissionDate || '',
         analysis: rec.analysis || '', planning: rec.planning || '', isDischarged: false
     });
     setCurrentRecordId(rec.id);
@@ -3096,7 +3087,7 @@ const MedicalRecordApp = ({
 };
 
 // --- PANEL INPUT WAITING LIST (FINAL: EDIT KAMAR + WARNA GENDER PINTAR) ---
-const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, occupiedRooms = [], waitingList = [], onUpdateRoom, activeRecords = [] }) => {
+const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingList = [], onUpdateRoom, activeRecords = [] }) => {
     
     // State Form Input
     const [form, setForm] = useState({ 
@@ -3312,13 +3303,33 @@ const InputSidePanel = ({
     const [labTrends, setLabTrends] = useState({});
     const [showRadModal, setShowRadModal] = useState(false);
     const [rawRadData, setRawRadData] = useState('');
-    const [showArchiveSuggestions, setShowArchiveSuggestions] = useState(false);
-const archivedMatches = useMemo(() => {
-    if (!formData.name || formData.name.length < 3 || isEditing) return [];
-    return archivedRecords.filter(r => 
-        r.name.toLowerCase().includes(formData.name.toLowerCase())
-    ).slice(0, 5); // Tampilkan max 5 saran
-}, [formData.name, archivedRecords, isEditing]);
+    const archivedMatches = useMemo(() => {
+    // Cek apakah ada ketikan di Nama ATAU di RM
+    const hasName = formData.name && formData.name.length >= 3;
+    const hasRm = formData.rmNumber && formData.rmNumber.length >= 2;
+    
+    if (!hasName && !hasRm) return [];
+    
+    return archivedRecords.filter(r => {
+        // Cari kecocokan di Nama ATAU RM
+        const matchName = hasName && r.name.toLowerCase().includes(formData.name.toLowerCase());
+        const matchRm = hasRm && r.rmNumber && r.rmNumber.includes(formData.rmNumber);
+        return matchName || matchRm;
+    }).slice(0, 5); // Tampilkan max 5 saran
+}, [formData.name, formData.rmNumber, archivedRecords]); 
+// PERHATIKAN: isEditing dihapus dari batas syarat agar tetap muncul saat validasi
+
+// 👇 TARUH FUNGSI AUTO-FORMAT TANGGAL DI SINI 👇
+    const handleDateMasking = (e) => {
+        let v = e.target.value.replace(/[^\d]/g, ''); 
+        let final = '';
+        if (v.length > 0) final += v.substring(0, 2);
+        if (v.length > 2) final += '/' + v.substring(2, 4);
+        if (v.length > 4) final += '/' + v.substring(4, 6);
+        if (v.length > 6) final += ' ' + v.substring(6, 8);
+        if (v.length > 8) final += ':' + v.substring(8, 10);
+        e.target.value = final;
+    };
 
     useEffect(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
@@ -3373,11 +3384,7 @@ const archivedMatches = useMemo(() => {
         ...Array.from(new Set([...(PROCEDURES || []), ...masterProcedures])),
     ];
 
-    // --- HELPER STRINGS ---
-    const toTitleCase = (str) => str.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
-    const cleanCase = (str) => { if (!str) return ''; return str.toLowerCase().replace(/(^\s*\w|[\.\!\?]\s*\w|\n\s*\w)/g, c => c.toUpperCase()); };
-
-    // --- SMART PASTE V5 (APPEND MODE: GAK NIMPA DATA LAMA) ---
+        // --- SMART PASTE V5 (APPEND MODE: GAK NIMPA DATA LAMA) ---
     const handleProcessSmartPaste = () => {
         if (!rawPasteData.trim()) return;
 
@@ -3818,9 +3825,10 @@ const archivedMatches = useMemo(() => {
                     {/* 1. Form Identitas */}
                     <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3">
                         <form onSubmit={handleSubmit} id="mainForm">
-                            {/* BARIS 1: KM, GENDER, NO. RM, NAMA PASIEN */}
-                            <div className="flex space-x-2 mb-2">
-                                <div className="w-[15%]">
+                            
+                            {/* --- BARIS 1: KM | GENDER | NO. RM | TGL MASUK --- */}
+                            <div className="flex space-x-2 mb-2 items-end">
+                                <div className="w-[20%]">
                                     <CustomSelect 
                                         label="Km" 
                                         value={formData.roomNumber} 
@@ -3831,7 +3839,7 @@ const archivedMatches = useMemo(() => {
                                 <div className="w-[20%]">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Gender *</label>
                                     <select 
-                                        className="w-full p-2 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 bg-white" 
+                                        className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 bg-white" 
                                         value={formData.gender} 
                                         onChange={(e) => handleInputChange({ target: { name: 'gender', value: e.target.value } })} 
                                         required
@@ -3841,7 +3849,7 @@ const archivedMatches = useMemo(() => {
                                         <option value="P">Pr</option>
                                     </select>
                                 </div>
-                                <div className="w-[25%]">
+                                <div className="w-[30%]">
                                     <CustomInput 
                                         label="No. RM" 
                                         name="rmNumber" 
@@ -3850,7 +3858,22 @@ const archivedMatches = useMemo(() => {
                                         placeholder="Cont: 123456" 
                                     />
                                 </div>
-                                <div className="w-[40%] relative">
+                                <div className="w-[30%] mb-2">
+                                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Tgl Masuk </label>
+                                    <input 
+                                        type="text" 
+                                        defaultValue={formatDateCM(formData.admissionDate)}
+                                        onChange={handleDateMasking}
+                                        onBlur={(e) => handleInputChange({ target: { name: 'admissionDate', value: parseDateCM(e.target.value) } })}
+                                        className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 font-mono bg-white outline-none" 
+                                        placeholder="dd/mm/yy hh:mm" 
+                                    />
+                                </div>
+                            </div>
+
+                            {/* --- BARIS 2: NAMA PASIEN | DPJP UTAMA --- */}
+                            <div className="flex space-x-2 mb-2 items-start">
+                                <div className="w-[50%] relative">
                                     <CustomInput 
                                         label="Nama Pasien *" 
                                         name="name" 
@@ -3859,7 +3882,7 @@ const archivedMatches = useMemo(() => {
                                         required 
                                     />
                                     
-                                    {/* --- SUGGESTION LIST PASIEN LAMA (DARI ARSIP) --- */}
+                                    {/* SUGGESTION LIST PASIEN LAMA */}
                                     {archivedMatches && archivedMatches.length > 0 && (
                                         <div className="absolute z-50 w-full bg-white border-2 border-indigo-500 shadow-2xl rounded-md mt-[-8px] max-h-48 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
                                             <div className="bg-indigo-600 px-2 py-1 text-[9px] font-bold text-white flex justify-between items-center">
@@ -3870,14 +3893,9 @@ const archivedMatches = useMemo(() => {
                                                 <div 
                                                     key={old.id} 
                                                     onClick={() => {
-                                                        // 1. Tarik Nama, RM, dan Gender saja (Data Permanen Pasien)
                                                         handleInputChange({ target: { name: 'name', value: old.name } });
                                                         handleInputChange({ target: { name: 'rmNumber', value: old.rmNumber || '' } });
                                                         handleInputChange({ target: { name: 'gender', value: old.gender || '' } });
-                                                        
-                                                        // 2. JANGAN tarik DPJP (Biarkan user pilih manual sesuai shift RS hari ini)
-                                                        // Baris dpjpName dihapus dari sini.
-                                                        
                                                         alert(`Biodata ${old.name} ditarik. Silakan tentukan DPJP hari ini.`);
                                                     }}
                                                     className="p-2 hover:bg-indigo-50 cursor-pointer border-b last:border-0 transition-colors"
@@ -3891,47 +3909,72 @@ const archivedMatches = useMemo(() => {
                                         </div>
                                     )}
                                 </div>
+                                <div className="w-[50%]">
+                                    <CustomSelect 
+                                        label="DPJP Utama *" 
+                                        value={formData.dpjpName} 
+                                        onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} 
+                                        options={sortedDpjpOptions} 
+                                        required
+                                    />
+                                </div>
                             </div>
 
-                            {/* BARIS 2: DPJP & RABER */}
-                            <div className="mb-2">
-                                <div className="flex space-x-2 mb-1">
-                                    <div className="flex-1">
-                                        <CustomSelect 
-                                            label="DPJP Utama *" 
-                                            value={formData.dpjpName} 
-                                            onChange={(e) => handleInputChange({ target: { name: 'dpjpName', value: e.target.value } })} 
-                                            options={sortedDpjpOptions} 
-                                            required
-                                        />
-                                    </div>
-                                    <div className="w-1/2">
-                                        {showRaber1 ? (
+                            {/* --- BARIS 3 (BARU): RABER 1 & RABER 2 (BERJEJER KE SAMPING) --- */}
+                            <div className="flex space-x-2 mt-1 min-h-[40px]">
+                                {/* KOLOM KIRI (DI BAWAH NAMA PASIEN) */}
+                                <div className="w-1/2">
+                                    {showRaber1 ? (
+                                        <div className="relative">
+                                            <CustomSelect 
+                                                label="Raber 1" 
+                                                value={formData.raberName} 
+                                                onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} 
+                                                options={dpjpOptions} 
+                                            />
+                                            <button 
+                                                type="button" 
+                                                onClick={() => { setShowRaber1(false); handleInputChange({ target: { name: 'raberName', value: '' } }); }} 
+                                                className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition"
+                                            >✕</button>
+                                        </div>
+                                    ) : (
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setShowRaber1(true)} 
+                                            className="text-[10px] text-blue-600 underline font-bold hover:text-blue-800 transition py-2"
+                                        >+ Tambah Raber 1</button>
+                                    )}
+                                </div>
+
+                                {/* KOLOM KANAN (DI BAWAH DPJP UTAMA) */}
+                                <div className="w-1/2">
+                                    {showRaber1 && (
+                                        showRaber2 ? (
                                             <div className="relative">
-                                                <CustomSelect label="Raber 1" value={formData.raberName} onChange={(e) => handleInputChange({ target: { name: 'raberName', value: e.target.value } })} options={dpjpOptions} />
-                                                <button type="button" onClick={() => { setShowRaber1(false); handleInputChange({ target: { name: 'raberName', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button>
+                                                <CustomSelect 
+                                                    label="Raber 2" 
+                                                    value={formData.raber2Name} 
+                                                    onChange={(e) => handleInputChange({ target: { name: 'raber2Name', value: e.target.value } })} 
+                                                    options={dpjpOptions} 
+                                                />
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => { setShowRaber2(false); handleInputChange({ target: { name: 'raber2Name', value: '' } }); }} 
+                                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition"
+                                                >✕</button>
                                             </div>
                                         ) : (
-                                            <button type="button" onClick={() => setShowRaber1(true)} className="text-[10px] mt-6 text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 1</button>
-                                        )}
-                                    </div>
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setShowRaber2(true)} 
+                                                className="text-[10px] text-blue-600 underline font-bold hover:text-blue-800 transition py-2"
+                                            >+ Tambah Raber 2</button>
+                                        )
+                                    )}
                                 </div>
-                                {showRaber1 && (
-                                    <div className="flex space-x-2">
-                                        <div className="flex-1"></div>
-                                        <div className="w-1/2">
-                                            {showRaber2 ? (
-                                                <div className="relative">
-                                                    <CustomSelect label="Raber 2" value={formData.raber2Name} onChange={(e) => handleInputChange({ target: { name: 'raber2Name', value: e.target.value } })} options={dpjpOptions} />
-                                                    <button type="button" onClick={() => { setShowRaber2(false); handleInputChange({ target: { name: 'raber2Name', value: '' } }); }} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center shadow-sm hover:bg-red-700 transition">✕</button>
-                                                </div>
-                                            ) : (
-                                                <button type="button" onClick={() => setShowRaber2(true)} className="text-[10px] text-blue-600 underline font-bold hover:text-blue-800 transition">+ Tambah Raber 2</button>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
+                            
                         </form>
                     </div>
 
@@ -4098,28 +4141,6 @@ const archivedMatches = useMemo(() => {
         </div>
     );
 };
-
-// --- DATABASE USER (UNTUK FITUR KEUANGAN & MEDIS) ---
-const USERS_DB = [
-    { id: 'abi', pass: 'admin', name: 'Ns. Abi Nugroho', role: 'admin', cfLabel: 'Laporan Gabungan' },
-    { id: 'vivi', pass: '123', name: 'Vivi Erlina', role: 'finance_jm', cfLabel: 'Jasa Medis (JM)' },
-    { id: 'ira', pass: '123', name: 'Ira Armydha', role: 'finance_kas', cfLabel: 'Uang Kas' },
-    { id: 'novia', pass: '123', name: 'Novia Luciana', role: 'finance_doc', cfLabel: 'Uang Dokter' },
-    { id: 'siti', pass: '123', name: 'Siti Aisah', role: 'admin', cfLabel: 'Laporan Gabungan' },
-    { id: 'umi', pass: '123', name: 'Umi Kulsum', role: 'admin', cfLabel: 'Laporan Gabungan' },
-    { id: 'kadar', pass: '123', name: 'Muhamad Kadar', role: 'admin', cfLabel: 'Laporan Gabungan' },
-    { id: 'mery', pass: '123', name: 'Mery Mawarni', role: 'member' },
-    { id: 'noveana', pass: '123', name: 'Noveana Erita', role: 'member' },
-    { id: 'agung', pass: '123', name: 'Agung Pratama', role: 'member' },
-    { id: 'dita', pass: '123', name: 'Dita Wulandari', role: 'member' },
-    { id: 'yuyu', pass: '123', name: 'Yuyu Eka', role: 'member' },
-    { id: 'dodi', pass: '123', name: 'Dodi Setiawan', role: 'member' },
-    { id: 'latifah', pass: '123', name: 'Latifah Rahmawati', role: 'member' },
-    { id: 'elsa', pass: '123', name: 'Elsa Ainun', role: 'member' },
-    { id: 'risti', pass: '123', name: 'Risti Nuraini', role: 'member' },
-    { id: 'yunesta', pass: '123', name: 'Yunesta Wiko', role: 'member' },
-    { id: 'rima', pass: '123', name: 'Rima Apriyana', role: 'member' },
-];
 
 const App = () => {
   // 1. State System (VERSI BERSIH)
