@@ -1934,7 +1934,7 @@ const MedicalRecordApp = ({
   
   const [formData, setFormData] = useState({
     roomNumber: '', name: '', rmNumber: '', gender: '', 
-    dpjpName: '', raberName: '', raber2Name: '', admissionDate: '',
+    dpjpName: '', raberName: '', raber2Name: '', admissionDate: '', evidenceImages: [],
     subjective: '', objective: '', analysis: '', planning: '', isDischarged: false,
   });
 
@@ -2155,7 +2155,7 @@ const MedicalRecordApp = ({
     if (!userId) return;
     const ref = getCollectionRef();
     if (!ref) return;
-    const q = query(ref, orderBy('createdAt', 'desc'), limit (200));
+    const q = query(ref, orderBy('createdAt', 'desc'), limit (1000));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => {
           const docData = d.data();
@@ -2189,22 +2189,25 @@ const MedicalRecordApp = ({
     return () => unsubscribe();
   }, [getCollectionRef, userId]);
 
-  // --- LOGIC FORM & OPERASIONAL ---
+  // --- UPDATE: Logika Tarik Data (Mendukung Gambar) ---
   const pullDataForField = (field) => {
     if (!historyLogs || historyLogs.length === 0) return alert("Belum ada riwayat.");
-    const foundLog = historyLogs.find(log => log[field] && log[field].trim().length > 0);
+    
+    // Cari log terakhir yang punya data di field tersebut
+    const foundLog = historyLogs.find(log => {
+        if (Array.isArray(log[field])) return log[field].length > 0; // Cek jika itu array gambar
+        return log[field] && log[field].trim().length > 0; // Cek jika itu teks
+    });
+
     if (foundLog) {
         setFormData(prev => ({ ...prev, [field]: foundLog[field] }));
-        const btn = document.activeElement;
-        if(btn && btn.tagName === 'BUTTON') { 
-            const originalText = btn.innerText;
-            btn.innerText = "✅ Sukses!";
-            setTimeout(() => btn.innerText = originalText, 1000);
-        }
-    } else { alert(`Data ${field.toUpperCase()} tidak ditemukan di riwayat.`); }
+        alert(`Data ${field === 'evidenceImages' ? 'Gambar' : field.toUpperCase()} berhasil ditarik.`);
+    } else { 
+        alert(`Tidak ada data ${field === 'evidenceImages' ? 'Gambar' : field.toUpperCase()} di riwayat.`); 
+    }
   };
 
-  const handleInputChange = (e) => {
+    const handleInputChange = (e) => {
       const { name, value } = e.target;
       setFormData(p => ({ ...p, [name]: value }));
   };
@@ -2213,7 +2216,7 @@ const MedicalRecordApp = ({
     setFormData({
       roomNumber: '', name: '', rmNumber: '', gender: '', dpjpName: '', raberName: '', raber2Name: '',
       subjective: '', objective: '', analysis: '', planning: '', isDischarged: false,
-      admissionDate: new Date().toISOString()
+      admissionDate: new Date().toISOString(), evidenceImages: []
     });
     setIsEditing(false);
     setShowRaber1(false); setShowRaber2(false);
@@ -2234,7 +2237,7 @@ const MedicalRecordApp = ({
       setFormData(p => ({ ...p, [field]: p[field] ? p[field] + '\n' + text : text }));
   };
 
-  const handleSubmit = (e) => { // Hapus kata 'async' di sini
+  const handleSubmit = (e) => { 
       e.preventDefault();
       if (!formData.name || !formData.roomNumber || !formData.dpjpName) {
           alert('Mohon lengkapi data wajib (Nama, Kamar, DPJP).');
@@ -2245,30 +2248,33 @@ const MedicalRecordApp = ({
                              (!isEditing || (isEditing && formData.roomNumber !== activeRecords.find(r => r.id === currentRecordId)?.roomNumber));
       
       if (!isEditing && isRoomOccupied) return alert(`Kamar ${formData.roomNumber} sudah terisi.`);
-      else if (isEditing && isRoomOccupied) {
-           const existingOccupant = activeRecords.find(r => r.roomNumber === formData.roomNumber && r.id !== currentRecordId);
-           if (existingOccupant) return alert(`Kamar ${formData.roomNumber} sudah terisi oleh ${existingOccupant.name}.`);
-      }
 
-      // 1. Siapkan Data
       const now = Timestamp.now();
       const data = { ...formData, updatedAt: now };
       if (!isEditing) data.createdAt = now;
       const ref = getCollectionRef();
 
-      // 2. TEMBAK KE DATABASE (Jalan diam-diam di background tanpa 'await')
+      // --- LOGIKA SIMPAN & RIWAYAT ---
       if (isEditing && currentRecordId) {
+          // 1. Update Dokumen Utama
           updateDoc(doc(ref, currentRecordId), data).catch(err => console.error("Gagal update:", err));
+          
+          // 2. TAMBAHKAN CATATAN KE RIWAYAT (Yang tadinya bolong di sini)
+          if (db && appId) {
+              const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${currentRecordId}/notes`);
+              addDoc(notesRef, { ...formData, createdAt: now, noteType: 'daily_update' })
+                .catch(err => console.error("Gagal tambah riwayat:", err));
+          }
       } else {
+          // Kasus Pasien Baru
           addDoc(ref, data).then(newDoc => {
               if (db && appId) {
                   const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${newDoc.id}/notes`);
-                  addDoc(notesRef, { ...formData, createdAt: now, noteType: 'daily_update' }).catch(err => console.error("Gagal tambah catatan:", err));
+                  addDoc(notesRef, { ...formData, createdAt: now, noteType: 'daily_update' });
               }
           }).catch(err => console.error("Gagal tambah pasien:", err));
       }
 
-      // 3. AKSI INSTAN: Langsung bersihkan dan tutup layar detik itu juga!
       resetForm();
       setShowInputModal(false);
   };
@@ -2354,7 +2360,7 @@ const MedicalRecordApp = ({
         roomNumber: rec.roomNumber, name: rec.name, rmNumber: rec.rmNumber || '', gender: rec.gender || '', 
         dpjpName: rec.dpjpName, raberName: rec.raberName || '', raber2Name: rec.raber2Name || '',
         subjective: rec.subjective || '', objective: rec.objective || '', admissionDate: rec.admissionDate || '',
-        analysis: rec.analysis || '', planning: rec.planning || '', isDischarged: false
+        analysis: rec.analysis || '', planning: rec.planning || '', isDischarged: false, evidenceImages: rec.evidenceImages || []
     });
     setCurrentRecordId(rec.id);
     setIsEditing(true);
@@ -2421,24 +2427,80 @@ const MedicalRecordApp = ({
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  const handleLapor = (rec, type) => {
+  // --- FUNGSI PENGGABUNG GAMBAR (ANTI-RIBET) ---
+  const combineImages = async (imageSources) => {
+      if (!imageSources || imageSources.length === 0) return null;
+      if (imageSources.length === 1) return imageSources[0];
+
+      return new Promise((resolve) => {
+          const images = imageSources.map(src => {
+              const img = new Image();
+              img.src = src;
+              return img;
+          });
+
+          // Tunggu semua gambar termuat
+          Promise.all(images.map(img => new Promise(res => img.onload = res))).then(() => {
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+
+              // Atur lebar mengikuti gambar terlebar, tinggi dijumlahkan semua
+              const maxWidth = Math.max(...images.map(img => img.width));
+              const totalHeight = images.reduce((sum, img) => sum + img.height + 10, 0); // +10 untuk spasi antar gambar
+
+              canvas.width = maxWidth;
+              canvas.height = totalHeight;
+              
+              // Beri background putih agar rapi
+              ctx.fillStyle = "white";
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+              let currentY = 0;
+              images.forEach(img => {
+                  ctx.drawImage(img, (maxWidth - img.width) / 2, currentY); // Draw di tengah
+                  currentY += img.height + 10;
+              });
+
+              resolve(canvas.toDataURL('image/jpeg', 0.8));
+          });
+      });
+  };
+
+  const handleLapor = async (rec, type) => {
       let targetNumber = '';
       if (type === 'DPJP') {
           const profile = dpjpProfiles.find(p => p.name === rec.dpjpName);
           targetNumber = normalizePhone(profile?.waNumber);
           if (!targetNumber) return alert(`Nomor WA ${rec.dpjpName} belum disetting.`);
       } 
+      
       const { labs, rads, tms, others } = parsePlanning(rec.planning);
-      const planningText = [
-          ...others.filter(Boolean),
-          labs.length > 0 ? `Lab: ${labs.join(', ')}` : null,
-          rads.length > 0 ? `Rad: ${rads.join(', ')}` : null,
-          tms.length > 0 ? `Tndkn: ${tms.join(', ')}` : null,
-      ].filter(Boolean).join('\n');
-
+      const planningText = [...others.filter(Boolean), labs.length > 0 ? `Lab: ${labs.join(', ')}` : null, rads.length > 0 ? `Rad: ${rads.join(', ')}` : null, tms.length > 0 ? `Tndkn: ${tms.join(', ')}` : null].filter(Boolean).join('\n');
       const dpjpInfo = type === 'Forward' ? `\nDPJP: ${rec.dpjpName || '-'}` : '';
-      const header = `Dokter Izin Lapor Pasien \na.n ${rec.name} ${dpjpInfo}`;
-      const text = `${header}\n\n*S:*\n${rec.subjective || '-'}\n\n*O:*\n${rec.objective || '-'}\n\n*A:*\n${rec.analysis || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis,\nTerimakasih`;
+      const text = `Dokter dari Ruang Melati Izin Lapor Pasien \n*a.n ${rec.name}* ${dpjpInfo}\n\n*S:*\n${rec.subjective || '-'}\n\n*O:*\n${rec.objective || '-'}\n\n*A:*\n${rec.analysis || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis,\nTerimakasih`;
+
+      try {
+          // 1. Salin Teks Laporan
+          await navigator.clipboard.writeText(text);
+          
+          // 2. Proses Gambar Lampiran
+          if (rec.evidenceImages && rec.evidenceImages.length > 0) {
+              // GABUNGKAN SEMUA GAMBAR JADI SATU!
+              const combinedImg = await combineImages(rec.evidenceImages);
+              
+              const imgWindow = window.open("", "_blank", "width=600,height=800");
+              imgWindow.document.write(`
+                  <html><head><title>Lampiran Gabungan - ${rec.name}</title></head>
+                  <body style="margin:0; background:#000; color:#fff; font-family:sans-serif; text-align:center; padding:20px;">
+                      <p style="font-size:12px;">📸 <b>1 Gambar Gabungan</b> (${rec.evidenceImages.length} Lampiran)</p>
+                      <img src="${combinedImg}" style="max-width:95%; border:2px solid white; box-shadow: 0 0 15px rgba(0,0,0,0.5);">
+                      <p style="font-size:11px; margin-top:15px; color:#aaa;">Tahan gambar lalu pilih <b>"Copy Image"</b> atau <b>"Share"</b> ke WA</p>
+                      <button onclick="window.close()" style="margin-top:10px; padding:8px 20px; border-radius:5px; background:#444; color:#fff; border:none;">Tutup</button>
+                  </body></html>
+              `);
+              alert("LAPORAN DISALIN!\n\nSemua lampiran rontgen sudah DIGABUNG menjadi 1 gambar. Silakan copas gambar tersebut ke WA.");
+          }
+      } catch (err) { console.error(err); }
 
       const url = targetNumber ? `https://wa.me/${targetNumber}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
       window.open(url, '_blank');
@@ -2757,55 +2819,65 @@ const MedicalRecordApp = ({
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-800 pb-20">
-        {/* HEADER V5 (FIX: Menu Navigasi Stabil) */}
+        
+        {/* HEADER V5 (MENU UNIVERSAL) */}
         <div className="bg-white shadow-sm px-4 h-14 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
+            
+            {/* KIRI: LOGO */}
             <div onClick={() => setView('dashboard')} className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none py-1">
                 <img src="/logo3.png" alt="SIMPAN Header" className="h-28 object-contain" />
             </div>
+            
+            {/* KANAN: JAM, LAPOR, MENU, BARU */}
             <div className="flex items-center gap-2">
                 <div className="hidden lg:block border-r pr-3 mr-1"><DigitalClock /></div>
-                <button onClick={() => { const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles); window.open(`https://wa.me/?text=${waLink}`, '_blank'); }} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-1.5 rounded-lg text-[10px] font-bold border border-indigo-200 transition shadow-sm"><span className="mr-1">📢</span> Lap.</button>
-                <div className={`hidden sm:block w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-green-400' : 'bg-red-500'} ring-2 ring-white`} title={isOnline?"Online":"Offline"}></div>
                 
-                {cashflowRole ? (
-                    <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 relative ml-2">
-                        <div className="relative group">
-                            <button className="px-3 py-1.5 text-[10px] font-bold rounded flex items-center gap-2 bg-white text-teal-700 shadow-sm border border-slate-100 cursor-pointer"><FileText size={12}/> MEDIS ▾</button>
+                <button onClick={() => { const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles); window.open(`https://wa.me/?text=${waLink}`, '_blank'); }} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-1.5 rounded-lg text-[10px] font-bold border border-indigo-200 transition shadow-sm">
+                    <span className="mr-1">📢</span> Lap.
+                </button>
+                
+                <div className={`hidden sm:block w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-green-400' : 'bg-red-500'} ring-2 ring-white`} title={isOnline ? "Online" : "Offline"}></div>
+                
+                {/* --- MENU NAVIGASI UNIVERSAL --- */}
+                <div className="relative group ml-2">
+                    <button className="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm hover:bg-gray-50 transition">
+                        <span>☰</span> MENU ▾
+                    </button>
+                    
+                    <div className="absolute top-full right-0 pt-2 w-48 z-[90] hidden group-hover:block animate-in fade-in zoom-in-95 origin-top-right">
+                        <div className="bg-white rounded-lg shadow-xl border border-gray-100 py-1">
                             
-                            {/* FIX DROPDOWN 1: Pakai pt-2 (padding) dan bg-white dipindah ke dalam */}
-                            <div className="absolute top-full right-0 pt-2 w-48 z-[90] hidden group-hover:block animate-in fade-in zoom-in-95 origin-top-right">
-                                <div className="bg-white rounded-lg shadow-xl border border-gray-100 py-1">
-                                    <div className="px-4 py-2 border-b border-gray-100 bg-teal-50/50"><p className="text-[9px] text-gray-500 uppercase font-bold">Menu Navigasi</p></div>
-                                    <div className="px-2 py-1"><span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded w-fit block">👤 {currentUser ? currentUser.name : 'Guest'}</span></div>
-                                    <button onClick={() => setView('dashboard')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🏠 Dashboard</button>
-                                    <button onClick={() => setView('patient-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">📋 Daftar Pasien</button>
-                                    <button onClick={() => setView('archived-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🗃️ Gudang Arsip Pasien</button>
-                                    <button onClick={() => setView('settings')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">⚙️ Setelan</button>
+                            <div className="px-2 py-1">
+                                <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded w-fit block">
+                                    👤 {currentUser ? currentUser.name : 'Guest'}
+                                </span>
+                            </div>
+                            
+                            <button onClick={() => setView('dashboard')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🏠 Dashboard</button>
+                            <button onClick={() => setView('patient-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">📋 Daftar Pasien</button>
+                            <button onClick={() => setView('archived-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🗃️ Gudang Arsip Pasien</button>
+                            <button onClick={() => setView('settings')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">⚙️ Setelan</button>
+                            
+                            {/* MENU KEUANGAN (HANYA MUNCUL JIKA USER ADALAH PJ) */}
+                            {cashflowRole && (
+                                <>
                                     <div className="border-t border-gray-100 my-1"></div>
-                                    <button onClick={onLogout} className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-bold flex items-center">🚪 Keluar</button>
-                                </div>
-                            </div>
-                        </div>
-                        <button onClick={() => setAppMode('KEUANGAN')} className="px-3 py-1.5 text-[10px] font-bold rounded flex items-center gap-2 text-slate-500 hover:text-indigo-700 hover:bg-white/60 transition ml-1"><Wallet size={12}/> KEUANGAN</button>
-                    </div>
-                ) : (
-                    <div className="relative group ml-2">
-                        <button className="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm hover:bg-gray-50"><span>☰</span> MENU ▾</button>
-                        
-                        {/* FIX DROPDOWN 2: Pakai pt-2 (padding) dan bg-white dipindah ke dalam */}
-                        <div className="absolute top-full right-0 pt-2 w-48 z-[90] hidden group-hover:block animate-in fade-in zoom-in-95 origin-top-right">
-                            <div className="bg-white rounded-lg shadow-xl border border-gray-100 py-1">
-                                <div className="px-2 py-1"><span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded w-fit block">👤 {currentUser ? currentUser.name : 'Guest'}</span></div>
-                                <button onClick={() => setView('dashboard')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🏠 Dashboard</button>
-                                <button onClick={() => setView('patient-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">📋 Daftar Pasien</button>
-                                <button onClick={() => setView('settings')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">⚙️ Setelan</button>
-                                <div className="border-t border-gray-100 my-1"></div>
-                                <button onClick={onLogout} className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-bold flex items-center">🚪 Keluar</button>
-                            </div>
+                                    <button onClick={() => setAppMode('KEUANGAN')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-teal-50 text-teal-700 font-bold">
+                                        <Wallet size={14} className="mr-2"/> Panel Keuangan
+                                    </button>
+                                </>
+                            )}
+
+                            <div className="border-t border-gray-100 my-1"></div>
+                            
+                            <button onClick={onLogout} className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-bold flex items-center">🚪 Keluar</button>
                         </div>
                     </div>
-                )}
-                <button onClick={() => setShowInputModal(true)} className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-bold transition flex items-center gap-1 ml-1"><span>+</span> Baru</button>
+                </div>
+
+                <button onClick={() => setShowInputModal(true)} className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-bold transition flex items-center gap-1 ml-1">
+                    <span>+</span> Baru
+                </button>
             </div>
         </div>
 
@@ -3383,6 +3455,44 @@ const InputSidePanel = ({
         ...Array.from(new Set([...(PROCEDURES || []), ...masterProcedures])),
     ];
 
+    // --- HELPER: KOMPRESI & MULTI UPLOAD GAMBAR ---
+    const handleMultiImageUpload = async (e) => {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+
+        const compressedImages = await Promise.all(files.map(file => {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 800; // Kompres ukuran agar ringan
+                        const scaleSize = MAX_WIDTH / img.width;
+                        canvas.width = MAX_WIDTH;
+                        canvas.height = img.height * scaleSize;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.6)); // Kualitas 60%
+                    }
+                };
+            });
+        }));
+
+        handleInputChange({ 
+            target: { 
+                name: 'evidenceImages', 
+                value: [...(formData.evidenceImages || []), ...compressedImages] 
+            } 
+        });
+    };
+
+    const removeImage = (indexToRemove) => {
+        const newImages = formData.evidenceImages.filter((_, idx) => idx !== indexToRemove);
+        handleInputChange({ target: { name: 'evidenceImages', value: newImages } });
+    };
         // --- SMART PASTE V5 (APPEND MODE: GAK NIMPA DATA LAMA) ---
     const handleProcessSmartPaste = () => {
         if (!rawPasteData.trim()) return;
@@ -3756,11 +3866,14 @@ const InputSidePanel = ({
     };
 
     const handleClearSoap = () => {
-        if(window.confirm("Kosongkan semua kolom SOAP untuk operan baru?")) {
+        if(window.confirm("Kosongkan semua kolom SOAP & Lampiran untuk operan baru?")) {
+            // Langsung set ke state awal sekaligus
             handleInputChange({ target: { name: 'subjective', value: '' } });
             handleInputChange({ target: { name: 'objective', value: '' } });
             handleInputChange({ target: { name: 'analysis', value: '' } });
             handleInputChange({ target: { name: 'planning', value: '' } });
+            handleInputChange({ target: { name: 'evidenceImages', value: [] } }); // Pastikan PLURAL 's'
+            alert("SOAP & Lampiran dibersihkan.");
         }
     };
 
@@ -3826,8 +3939,9 @@ const InputSidePanel = ({
                         <form onSubmit={handleSubmit} id="mainForm">
                             
                             {/* --- BARIS 1: KM | GENDER | NO. RM | TGL MASUK --- */}
-                            <div className="flex space-x-2 mb-2 items-end">
-                                <div className="w-[20%]">
+                            <div className="flex space-x-2 mb-1 items-start">
+                                {/* KOLOM 1: KM */}
+                                <div className="w-[18%]">
                                     <CustomSelect 
                                         label="Km" 
                                         value={formData.roomNumber} 
@@ -3835,10 +3949,12 @@ const InputSidePanel = ({
                                         options={availableRooms} 
                                     />
                                 </div>
-                                <div className="w-[20%]">
+
+                                {/* KOLOM 2: GENDER (FIX ALIGNMENT) */}
+                                <div className="w-[18%] mb-2">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Gender *</label>
                                     <select 
-                                        className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 bg-white" 
+                                        className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 bg-white h-[34px]" 
                                         value={formData.gender} 
                                         onChange={(e) => handleInputChange({ target: { name: 'gender', value: e.target.value } })} 
                                         required
@@ -3848,23 +3964,27 @@ const InputSidePanel = ({
                                         <option value="P">Pr</option>
                                     </select>
                                 </div>
-                                <div className="w-[30%]">
+
+                                {/* KOLOM 3: NO. RM */}
+                                <div className="w-[28%]">
                                     <CustomInput 
                                         label="No. RM" 
                                         name="rmNumber" 
                                         value={formData.rmNumber || ''} 
                                         onChange={handleInputChange} 
-                                        placeholder="Cont: 123456" 
+                                        placeholder="Cont: 123" 
                                     />
                                 </div>
-                                <div className="w-[30%] mb-2">
-                                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Tgl Masuk </label>
+
+                                {/* KOLOM 4: TGL MASUK (FIX ALIGNMENT) */}
+                                <div className="w-[36%] mb-2">
+                                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Tgl Masuk</label>
                                     <input 
                                         type="text" 
                                         defaultValue={formatDateCM(formData.admissionDate)}
                                         onChange={handleDateMasking}
                                         onBlur={(e) => handleInputChange({ target: { name: 'admissionDate', value: parseDateCM(e.target.value) } })}
-                                        className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 font-mono bg-white outline-none" 
+                                        className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 font-mono bg-white outline-none h-[34px]" 
                                         placeholder="dd/mm/yy hh:mm" 
                                     />
                                 </div>
@@ -3972,8 +4092,7 @@ const InputSidePanel = ({
                                         )
                                     )}
                                 </div>
-                            </div>
-                            
+                            </div>                            
                         </form>
                     </div>
 
@@ -4036,6 +4155,17 @@ const InputSidePanel = ({
                             } 
                         >
                             <div className="mb-1"><TagSelector label="" options={lacakOptions} placeholder="Lacak Lab/Rad..." category="Lacak" onSelect={(_, item) => appendText('objective', `Lacak/Lapor ${item}`)} /></div>
+                            {/* --- TAMBAHAN BARU: MUNCUL DI BAWAH KOLOM OBJEKTIF --- */}
+                            {formData.evidenceImages && formData.evidenceImages.length > 0 && (
+                                <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded">
+                                    <span className="text-[9px] font-bold text-slate-500 uppercase block mb-1">🖼️ Lampiran Tersimpan:</span>
+                                    <div className="flex flex-wrap gap-2">
+                                        {formData.evidenceImages.map((img, idx) => (
+                                            <img key={idx} src={img} className="w-10 h-10 object-cover rounded border shadow-sm cursor-pointer hover:scale-150 transition-transform origin-bottom-left" alt="Lampiran" title="Arahkan kursor untuk memperbesar" />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </CustomTextArea>
 
                         <CustomTextArea label="A (Analisa)" name="analysis" value={formData.analysis} onChange={handleInputChange} 
@@ -4084,6 +4214,21 @@ const InputSidePanel = ({
                                     <div className="space-y-1.5">
                                         <div className="flex gap-2"><span className="font-bold text-red-600 w-3 shrink-0">S:</span> <span className="text-gray-700">{log.subjective || '-'}</span></div>
                                         <div className="flex gap-2"><span className="font-bold text-red-600 w-3 shrink-0">O:</span> <span className="text-gray-700">{log.objective || '-'}</span></div>
+                                        {/* --- TAMBAHAN: TAMPILKAN GAMBAR DI RIWAYAT --- */}
+                                        {log.evidenceImages && log.evidenceImages.length > 0 && (
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                {log.evidenceImages.map((img, iIndex) => (
+                                                    <img 
+                                                        key={iIndex} 
+                                                        src={img} 
+                                                        className="w-12 h-12 object-cover rounded border border-gray-300 shadow-sm cursor-zoom-in hover:scale-110 transition-transform" 
+                                                        alt="Lampiran Riwayat"
+                                                        onClick={() => window.open(img, '_blank')} // Klik untuk lihat full-size
+                                                        title="Klik untuk memperbesar"
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
                                         <div className="flex gap-2"><span className="font-bold text-red-600 w-3 shrink-0">A:</span> <span className="text-gray-700">{log.analysis || '-'}</span></div>
                                         <div className="mt-1">
                                             <div className="flex gap-2 mb-1"><span className="font-bold text-red-600 w-3 shrink-0">P:</span></div>
@@ -4123,6 +4268,51 @@ const InputSidePanel = ({
                         <div className="text-[10px] text-gray-600 mb-2 bg-blue-50 p-2 rounded border border-blue-100">Paste hasil lab mentah (GDS, Elektrolit, dll) di bawah.</div>
                         <textarea className="w-full h-32 border border-gray-300 rounded p-2 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none mb-3" placeholder="Contoh Paste:&#10;Gula Darah Sewaktu 199 High&#10;Natrium 137..." value={rawLabData} onChange={(e) => setRawLabData(e.target.value)} autoFocus />
                         <div className="flex gap-2"><button onClick={() => setShowLabModal(false)} className="flex-1 py-2 text-xs border rounded hover:bg-gray-100">Batal</button><button onClick={processLabData} className="flex-1 py-2 text-xs bg-blue-600 text-white font-bold rounded hover:bg-blue-700 shadow-md">Proses ke O ⬇️</button></div>
+                        {/* LAMPIRAN FOTO (RONTGEN/LAB) MULTIPLE */}
+                        <div className="mt-3 p-2 bg-slate-50 border-2 border-dashed border-slate-200 rounded-lg">
+                            {/* HEADER LABEL & TOMBOL TARIK */}
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="block text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1">
+                                    📸 Lampiran Foto (Maks 3)
+                                </label>
+                                
+                                {/* TOMBOL TARIK: Hanya muncul jika sedang mode Edit */}
+                                {isEditing && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => pullDataForField('evidenceImages')}
+                                        className="text-[9px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 font-bold transition shadow-sm"
+                                    >
+                                        ↺ Tarik Gambar Lama
+                                    </button>
+                                )}
+                            </div>
+
+                            <input 
+                                type="file" 
+                                accept="image/*" 
+                                multiple 
+                                capture="environment" 
+                                onChange={handleMultiImageUpload}
+                                className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 mb-2"
+                            />
+                            
+                            {/* TAMPILAN GALLERY THUMBNAIL */}
+                            {formData.evidenceImages && formData.evidenceImages.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                    {formData.evidenceImages.map((imgBase64, idx) => (
+                                        <div key={idx} className="relative w-14 h-14">
+                                            <img src={imgBase64} className="w-full h-full object-cover rounded border border-slate-300 shadow-sm" alt="Preview" />
+                                            <button 
+                                                type="button" 
+                                                onClick={() => removeImage(idx)}
+                                                className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center hover:bg-red-600 shadow-sm"
+                                            >✕</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -4134,6 +4324,51 @@ const InputSidePanel = ({
                         <div className="text-[10px] text-gray-600 mb-2 bg-gray-50 p-2 rounded border border-gray-100">Paste bagian <b>"KESAN"</b> atau <b>"KESIMPULAN"</b> saja.</div>
                         <textarea className="w-full h-32 border border-gray-300 rounded p-2 text-xs font-mono focus:ring-2 focus:ring-gray-500 outline-none mb-3" placeholder="Contoh:&#10;Cor tak membesar..." value={rawRadData} onChange={(e) => setRawRadData(e.target.value)} autoFocus />
                         <div className="flex gap-2"><button onClick={() => setShowRadModal(false)} className="flex-1 py-2 text-xs border rounded hover:bg-gray-100">Batal</button><button onClick={processRadData} className="flex-1 py-2 text-xs bg-gray-700 text-white font-bold rounded hover:bg-gray-800 shadow-md">Masukkan ke O ⬇️</button></div>
+                        {/* LAMPIRAN FOTO (RONTGEN/LAB) MULTIPLE */}
+                        <div className="mt-3 p-2 bg-slate-50 border-2 border-dashed border-slate-200 rounded-lg">
+                            {/* HEADER LABEL & TOMBOL TARIK */}
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="block text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1">
+                                    📸 Lampiran Foto (Maks 3)
+                                </label>
+                                
+                                {/* TOMBOL TARIK: Hanya muncul jika sedang mode Edit */}
+                                {isEditing && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => pullDataForField('evidenceImages')}
+                                        className="text-[9px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 font-bold transition shadow-sm"
+                                    >
+                                        ↺ Tarik Gambar Lama
+                                    </button>
+                                )}
+                            </div>
+
+                            <input 
+                                type="file" 
+                                accept="image/*" 
+                                multiple 
+                                capture="environment" 
+                                onChange={handleMultiImageUpload}
+                                className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 mb-2"
+                            />
+                            
+                            {/* TAMPILAN GALLERY THUMBNAIL */}
+                            {formData.evidenceImages && formData.evidenceImages.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                    {formData.evidenceImages.map((imgBase64, idx) => (
+                                        <div key={idx} className="relative w-14 h-14">
+                                            <img src={imgBase64} className="w-full h-full object-cover rounded border border-slate-300 shadow-sm" alt="Preview" />
+                                            <button 
+                                                type="button" 
+                                                onClick={() => removeImage(idx)}
+                                                className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center hover:bg-red-600 shadow-sm"
+                                            >✕</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
