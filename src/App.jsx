@@ -1743,21 +1743,32 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles) 
     // 4. HITUNG KAMAR KOSONG & GENDER
     let emptyCount = 0; let emptyMale = 0; let emptyFemale = 0; let emptyIso = 0;
     const occupiedRooms = activeRecords.map(r => r.roomNumber);
-    const isoRooms = ['K14B1', 'K15B1', 'K15B2'];
+    
+    // PERHATIAN: Sesuaikan array isoRooms ini dengan nama kamar isolasimu yang baru
+    // Dulu: ['K14B1', 'K15B1', 'K15B2']. Sekarang misal jadi begini:
+    const isoRooms = ['K14A', 'K15A', 'K15B']; 
     const allRooms = ROOM_LIST;
 
     allRooms.forEach(room => {
         if (!occupiedRooms.includes(room)) {
-            if (isoRooms.includes(room)) emptyIso++;
-            else {
+            if (isoRooms.includes(room)) {
+                emptyIso++;
+            } else {
                 emptyCount++;
-                const roomCode = room.split('B')[0];
-                const bedCode = room.split('B')[1];
-                const neighborBed = bedCode === '1' ? '2' : '1';
-                const neighborRec = activeRecords.find(r => r.roomNumber === `${roomCode}B${neighborBed}`);
-                if (neighborRec) {
-                    if (neighborRec.gender === 'L') emptyMale++;
-                    else if (neighborRec.gender === 'P') emptyFemale++;
+                
+                // LOGIKA BARU UNTUK NAMA KAMAR A & B
+                const bedCode = room.slice(-1); // Ambil huruf paling belakang (A atau B)
+                const roomCode = room.slice(0, -1); // Ambil sisanya di depan (Misal: K1)
+                
+                // Cek tetangga kasur sebelahnya
+                if (bedCode === 'A' || bedCode === 'B') {
+                    const neighborBed = bedCode === 'A' ? 'B' : 'A';
+                    const neighborRec = activeRecords.find(r => r.roomNumber === `${roomCode}${neighborBed}`);
+                    
+                    if (neighborRec) {
+                        if (neighborRec.gender === 'L') emptyMale++;
+                        else if (neighborRec.gender === 'P') emptyFemale++;
+                    }
                 }
             }
         }
@@ -1766,7 +1777,14 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles) 
     // 5. STATISTIK PERGERAKAN
     const newPatientCount = activeRecords.filter(r => { if(!r.createdAt) return false; const t = r.createdAt.seconds ? new Date(r.createdAt.seconds * 1000) : r.createdAt; return t >= shiftStart && t <= shiftEnd; }).length;
     const dischargedCount = records.filter(r => { if(!r.isDischarged || !r.updatedAt) return false; const t = r.updatedAt.seconds ? new Date(r.updatedAt.seconds * 1000) : r.updatedAt; return t >= shiftStart && t <= shiftEnd; }).length;
-    const blplCount = activeRecords.filter(r => (r.planning && r.planning.toLowerCase().includes('blpl')) || (r.planning && r.planning.toLowerCase().includes('pulang')) || (r.planning && r.planning.toLowerCase().includes('aps'))).length;
+    
+    // PERBAIKAN BLPL: Menggunakan Regex \b agar kata yang mirip tidak ikut terhitung
+    const blplCount = activeRecords.filter(r => {
+        if (!r.planning) return false;
+        const p = r.planning.toLowerCase();
+        // \b memastikan kata tersebut berdiri sendiri. "aps" tidak akan match dengan "capsul"
+        return /\b(blpl|pulang|aps)\b/.test(p);
+    }).length;
 
     // --- 6. FILTER DPJP (YANG 0 PASIEN HILANG) ---
     const activeDpjpList = dpjpProfiles
@@ -3375,20 +3393,55 @@ const InputSidePanel = ({
     const [showRadModal, setShowRadModal] = useState(false);
     const [rawRadData, setRawRadData] = useState('');
     const archivedMatches = useMemo(() => {
+    // Pakai pengaman tambahan (?.) untuk menghindari error saat formData belum siap
+    const currentName = formData?.name || '';
+    const currentRm = formData?.rmNumber || '';
+
     // Cek apakah ada ketikan di Nama ATAU di RM
-    const hasName = formData.name && formData.name.length >= 3;
-    const hasRm = formData.rmNumber && formData.rmNumber.length >= 2;
+    const hasName = currentName.length >= 3;
+    const hasRm = currentRm.length >= 2;
     
     if (!hasName && !hasRm) return [];
     
-    return archivedRecords.filter(r => {
-        // Cari kecocokan di Nama ATAU RM
-        const matchName = hasName && r.name.toLowerCase().includes(formData.name.toLowerCase());
-        const matchRm = hasRm && r.rmNumber && r.rmNumber.includes(formData.rmNumber);
+    // 1. FILTER DASAR (Pencarian Nama atau RM dengan Pengaman Anti-Crash)
+    let matches = archivedRecords.filter(r => {
+        if (!r) return false;
+        
+        // PENGAMAN: Cek pastikan r.name adalah teks, kalau bukan jadikan kosong ('')
+        const safeName = typeof r.name === 'string' ? r.name.toLowerCase() : '';
+        const matchName = hasName && safeName.includes(currentName.toLowerCase());
+        
+        const matchRm = hasRm && r.rmNumber && r.rmNumber.includes(currentRm);
+        
         return matchName || matchRm;
-    }).slice(0, 5); // Tampilkan max 5 saran
-}, [formData.name, formData.rmNumber, archivedRecords]); 
-// PERHATIKAN: isEditing dihapus dari batas syarat agar tetap muncul saat validasi
+    });
+
+    // 2. JURUS UX: Sembunyikan saran JIKA nama di form SUDAH SAMA PERSIS dengan di database
+    const isAlreadySelected = matches.some(r => {
+        const safeName = typeof r.name === 'string' ? r.name.toLowerCase() : '';
+        return safeName === currentName.toLowerCase() && currentName.length > 0;
+    });
+    if (isAlreadySelected) return [];
+
+    // 3. JURUS PASIEN LAMA (Asep Mumuh): Urutkan dari tanggal rawat paling baru
+    matches.sort((a, b) => {
+        const dateA = a.admissionDate ? new Date(a.admissionDate) : new Date(0);
+        const dateB = b.admissionDate ? new Date(b.admissionDate) : new Date(0);
+        return dateB - dateA;
+    });
+
+    // 4. BUANG GANDA: Sisakan 1 data terbaru jika ada RM atau Nama yang sama
+    const uniqueMatches = matches.filter((item, index, self) =>
+        index === self.findIndex((t) => {
+            const isSameRM = t.rmNumber && item.rmNumber && t.rmNumber === item.rmNumber;
+            const isSameName = typeof t.name === 'string' && typeof item.name === 'string' && t.name.toLowerCase() === item.name.toLowerCase();
+            return isSameRM || isSameName;
+        })
+    );
+
+    return uniqueMatches.slice(0, 5); // Tampilkan max 5 saran
+
+}, [formData?.name, formData?.rmNumber, archivedRecords]);
 
 // 👇 TARUH FUNGSI AUTO-FORMAT TANGGAL DI SINI 👇
     const handleDateMasking = (e) => {
@@ -4002,7 +4055,7 @@ const InputSidePanel = ({
                                     />
                                     
                                     {/* SUGGESTION LIST PASIEN LAMA */}
-                                    {archivedMatches && archivedMatches.length > 0 && (
+                                    {archivedMatches && archivedMatches.length > 0 && formData.name.length > 0 && !archivedMatches.some(old => old.name === formData.name) && (
                                         <div className="absolute z-50 w-full bg-white border-2 border-indigo-500 shadow-2xl rounded-md mt-[-8px] max-h-48 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
                                             <div className="bg-indigo-600 px-2 py-1 text-[9px] font-bold text-white flex justify-between items-center">
                                                 <span>📂 PASIEN LAMA TERDETEKSI</span>
@@ -4021,8 +4074,8 @@ const InputSidePanel = ({
                                                 >
                                                     <div className="text-[10px] font-bold text-indigo-900 uppercase">{old.name}</div>
                                                     <div className="text-[9px] text-gray-500 font-mono">
-                                                        RM: {old.rmNumber || '-'} | {old.gender === 'L' ? 'Lk' : 'Pr'} | {old.dpjpName}
-                                                    </div>
+                                                    RM: {old.rmNumber || '-'} | {old.gender === 'L' ? 'Lk' : 'Pr'} | Terakhir: {new Date(old.admissionDate).toLocaleDateString('id-ID')}
+                                                </div>
                                                 </div>
                                             ))}
                                         </div>
