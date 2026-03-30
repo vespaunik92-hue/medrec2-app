@@ -449,6 +449,50 @@ const TtvModal = ({ onClose, onSave }) => {
     );
 };
 
+// --- MODAL PILIHAN PULANG / PINDAH / MENINGGAL ---
+const DischargeModal = ({ patientName, onCancel, onPindah, onPulang, onMeninggal }) => (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-xs p-4 border-2 border-red-100 animate-in zoom-in-95 duration-200">
+            <h3 className="text-sm font-bold text-red-800 mb-3 border-b pb-1 uppercase">Keluar: {patientName}</h3>
+            <p className="text-[11px] text-gray-600 mb-4">Pilih kategori keluar pasien untuk akurasi laporan:</p>
+            <div className="flex flex-col gap-2">
+                <button onClick={onPindah} className="w-full px-3 py-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow-sm flex items-center justify-center gap-2">
+                    🏥 Pindah Ruangan
+                </button>
+                <button onClick={onPulang} className="w-full px-3 py-2 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 font-bold shadow-sm flex items-center justify-center gap-2">
+                    🏠 Pulang (KRS/BLPL)
+                </button>
+                <button onClick={onMeninggal} className="w-full px-3 py-2 text-xs bg-gray-800 text-white rounded hover:bg-black font-bold shadow-sm flex items-center justify-center gap-2">
+                    💀 Meninggal Dunia
+                </button>
+            </div>
+            <button onClick={onCancel} className="mt-4 w-full px-3 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-100 text-gray-700 font-bold text-center">
+                Batal
+            </button>
+        </div>
+    </div>
+);
+
+// --- MODAL PILIHAN LAPOR (SHIFT / CS) ---
+const LaporModal = ({ onCancel, onLaporShift, onLaporCS }) => (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-xs p-4 border-2 border-indigo-100 animate-in zoom-in-95 duration-200">
+            <h3 className="text-sm font-bold text-indigo-800 mb-3 border-b pb-1 uppercase">Pilih Jenis Laporan</h3>
+            <div className="flex flex-col gap-2">
+                <button onClick={onLaporShift} className="w-full px-3 py-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow-sm flex items-center justify-center gap-2">
+                    📝 Laporan Shift
+                </button>
+                <button onClick={onLaporCS} className="w-full px-3 py-2 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 font-bold shadow-sm flex items-center justify-center gap-2">
+                    🧹 Lapor CS (Cleaning Service)
+                </button>
+            </div>
+            <button onClick={onCancel} className="mt-4 w-full px-3 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-100 text-gray-700 font-bold text-center">
+                Batal
+            </button>
+        </div>
+    </div>
+);
+
 // --- Confirmation Modal ---
 const ConfirmationModal = ({ message, onConfirm, onCancel, title, children }) => {
     return (
@@ -1563,7 +1607,7 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                                 <button onClick={() => onPrint(rec)} className="flex flex-col items-center justify-center p-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 border border-gray-300" title="Cetak"><span className="text-sm">🖨️</span><span className="text-[8px] font-bold">Cetak</span></button>
                                                 <button onClick={() => onPrintLabel(rec)} className="flex flex-col items-center justify-center p-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 border border-purple-300" title="Label Spuit"><span className="text-sm">🏷️</span><span className="text-[7px] font-bold">Label</span></button>
                                                 <button onClick={() => onShowLaporModal(rec)} className="flex flex-col items-center justify-center p-1 bg-green-100 text-green-700 rounded hover:bg-green-200 border border-green-300" title="Lapor WA"><span className="text-sm">📱</span><span className="text-[8px] font-bold">Lapor</span></button>
-                                                <button onClick={() => onDischarge(rec.id, rec.name, rec.roomNumber)} className="flex flex-col items-center justify-center p-1 bg-red-100 text-red-700 rounded hover:bg-red-200 border border-red-300" title="Pulang"><span className="text-sm">🚪</span><span className="text-[8px] font-bold">Plg</span></button>
+                                                <button onClick={() => onDischarge(rec.id, rec.name, rec.roomNumber)} className="flex flex-col items-center justify-center p-1 bg-red-100 text-red-700 rounded hover:bg-red-200 border border-red-300" title="Keluar"><span className="text-sm">🚪</span><span className="text-[8px] font-bold">Keluar</span></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -1741,34 +1785,51 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles) 
     const activeCount = activeRecords.length;
     
     // 4. HITUNG KAMAR KOSONG & GENDER
-    let emptyCount = 0; let emptyMale = 0; let emptyFemale = 0; let emptyIso = 0;
+    let emptyCount = 0; let emptyMale = 0; let emptyFemale = 0; 
+    let emptyIso = 0; let emptyIsoMale = 0; let emptyIsoFemale = 0;
     const occupiedRooms = activeRecords.map(r => r.roomNumber);
     
     // PERHATIAN: Sesuaikan array isoRooms ini dengan nama kamar isolasimu yang baru
-    // Dulu: ['K14B1', 'K15B1', 'K15B2']. Sekarang misal jadi begini:
     const isoRooms = ['K14A', 'K15A', 'K15B']; 
     const allRooms = ROOM_LIST;
 
     allRooms.forEach(room => {
         if (!occupiedRooms.includes(room)) {
-            if (isoRooms.includes(room)) {
-                emptyIso++;
-            } else {
-                emptyCount++;
+            // Cek apakah punya tetangga
+            const bedCode = room.slice(-1); // A atau B
+            const roomCode = room.slice(0, -1); // K1, K15, dll
+            
+            let isSisaBed = false;
+            let neighborGender = null;
+
+            if (bedCode === 'A' || bedCode === 'B') {
+                const neighborBed = bedCode === 'A' ? 'B' : 'A';
+                const neighborRoom = `${roomCode}${neighborBed}`;
                 
-                // LOGIKA BARU UNTUK NAMA KAMAR A & B
-                const bedCode = room.slice(-1); // Ambil huruf paling belakang (A atau B)
-                const roomCode = room.slice(0, -1); // Ambil sisanya di depan (Misal: K1)
-                
-                // Cek tetangga kasur sebelahnya
-                if (bedCode === 'A' || bedCode === 'B') {
-                    const neighborBed = bedCode === 'A' ? 'B' : 'A';
-                    const neighborRec = activeRecords.find(r => r.roomNumber === `${roomCode}${neighborBed}`);
-                    
+                // Cek apakah tetangga ada di daftar seluruh kamar & terisi?
+                if (allRooms.includes(neighborRoom)) {
+                    const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
                     if (neighborRec) {
-                        if (neighborRec.gender === 'L') emptyMale++;
-                        else if (neighborRec.gender === 'P') emptyFemale++;
+                        isSisaBed = true; // Tandai bahwa ini cuma "Sisa Bed", bukan Kamar Kosong
+                        neighborGender = neighborRec.gender;
                     }
+                }
+            }
+
+            // Alokasikan ke Isolasi atau Umum dengan presisi tinggi
+            if (isoRooms.includes(room)) {
+                if (isSisaBed) {
+                    if (neighborGender === 'L') emptyIsoMale++;
+                    else if (neighborGender === 'P') emptyIsoFemale++;
+                } else {
+                    emptyIso++; // Hanya bertambah kalau tetangganya juga kosong
+                }
+            } else {
+                if (isSisaBed) {
+                    if (neighborGender === 'L') emptyMale++;
+                    else if (neighborGender === 'P') emptyFemale++;
+                } else {
+                    emptyCount++; // Hanya bertambah kalau tetangganya juga kosong
                 }
             }
         }
@@ -1776,7 +1837,18 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles) 
 
     // 5. STATISTIK PERGERAKAN
     const newPatientCount = activeRecords.filter(r => { if(!r.createdAt) return false; const t = r.createdAt.seconds ? new Date(r.createdAt.seconds * 1000) : r.createdAt; return t >= shiftStart && t <= shiftEnd; }).length;
-    const dischargedCount = records.filter(r => { if(!r.isDischarged || !r.updatedAt) return false; const t = r.updatedAt.seconds ? new Date(r.updatedAt.seconds * 1000) : r.updatedAt; return t >= shiftStart && t <= shiftEnd; }).length;
+    
+    // Ambil data pasien yang keluar pada shift ini
+    const dischargedRecords = records.filter(r => { 
+        if(!r.isDischarged || !r.updatedAt) return false; 
+        const t = r.updatedAt.seconds ? new Date(r.updatedAt.seconds * 1000) : r.updatedAt; 
+        return t >= shiftStart && t <= shiftEnd; 
+    });
+
+    // PISAHKAN HITUNGAN BERDASARKAN LABEL
+    const pulangCount = dischargedRecords.filter(r => r.dischargeType === 'pulang' || !r.dischargeType).length;
+    const pindahCount = dischargedRecords.filter(r => r.dischargeType === 'pindah').length;
+    const meninggalCount = dischargedRecords.filter(r => r.dischargeType === 'meninggal').length;
     
     // PERBAIKAN BLPL: Menggunakan Regex \b agar kata yang mirip tidak ikut terhitung
     const blplCount = activeRecords.filter(r => {
@@ -1792,7 +1864,7 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles) 
             const count = activeRecords.filter(r => r.dpjpName === dr.name).length;
             return { name: dr.name, count };
         })
-        .filter(item => item.count > 0) // <-- Pastikan ini jalan
+        .filter(item => item.count > 0)
         .sort((a, b) => b.count - a.count);
 
     const dpjpStats = activeDpjpList.length > 0 
@@ -1826,19 +1898,19 @@ Jumlah pasien          : ${activeCount}
 Jumlah pasien virtual : -
 Total pasien keseluruhan : ${activeCount}
 
-Kamar Kosong : ${emptyCount} bed
-${woman}      : ${emptyFemale} Bed
-${man}      : ${emptyMale} Bed
+Kamar Kosong : ${emptyCount > 0 ? emptyCount + ' bed' : '-'}
+${woman}      : ${emptyFemale > 0 ? emptyFemale + ' bed' : '-'}
+${man}      : ${emptyMale > 0 ? emptyMale + ' bed' : '-'}
 
-Kamar Kosong Isolasi  : ${emptyIso}
-${woman}      : - bed
-${man}      : - bed
+Kamar Kosong Isolasi  : ${emptyIso > 0 ? emptyIso + ' bed' : '-'}
+${woman}      : ${emptyIsoFemale > 0 ? emptyIsoFemale + ' bed' : '-'}
+${man}      : ${emptyIsoMale > 0 ? emptyIsoMale + ' bed' : '-'}
 
-Pasien Sudah Pulang        : ${dischargedCount > 0 ? dischargedCount : '-'}
+Pasien Sudah Pulang        : ${pulangCount > 0 ? pulangCount : '-'}
 Pasien Rencana Pulang    : ${blplCount > 0 ? blplCount : '-'}
-Pasien Pindah Ruangan    : -
+Pasien Pindah Ruangan    : ${pindahCount > 0 ? pindahCount : '-'}
 Pasien Pulang Paksa         : -
-Pasien Meninggal              : -
+Pasien Meninggal              : ${meninggalCount > 0 ? meninggalCount : '-'}
 Pasien Rujuk                      : -
 Pasien Baru                        : ${newPatientCount > 0 ? newPatientCount : '-'}
 
@@ -1875,7 +1947,7 @@ const DigitalClock = () => {
                 {time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </div>
             <div className="text-[9px] text-gray-500 uppercase font-bold">
-                {time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' })}
+                {time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
             </div>
         </div>
     );
@@ -1937,6 +2009,8 @@ const MedicalRecordApp = ({
 
   const [showInputModal, setShowInputModal] = useState(false);
   const [recordForLapor, setRecordForLapor] = useState(null);
+  const [recordForDischarge, setRecordForDischarge] = useState(null);
+  const [showLaporModal, setShowLaporModal] = useState(false);
 
   const [dpjpFilter, setDpjpFilter] = useState(''); 
   const [selectedRoomFilter, setSelectedRoomFilter] = useState(ROOM_LIST);
@@ -2403,19 +2477,59 @@ const MedicalRecordApp = ({
   };
 
   const handleDischarge = (id, name, room) => {
-    openConfirm("Konfirmasi Pulang", `Keluarkan pasien ${name}? Data akan dipindah ke Arsip.`, async () => {
-        setLoading(true);
+    setRecordForDischarge({ id, name, room });
+};
+
+// --- FUNGSI KLIK LAPOR SHIFT ---
+    const handleLaporShift = () => {
         try {
-            const ref = getCollectionRef();
-            await updateDoc(doc(ref, id), { 
-                isDischarged: true, 
-                lastRoom: room || '', // Simpan kamar terakhir di sini
-                roomNumber: '', 
-                dischargeDate: new Date().toISOString(), 
-                updatedAt: Timestamp.now() 
-            });
-        } catch (e) { console.error(e); } finally { setLoading(false); closeConfirm(); }
-    });
+            const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles); 
+            window.open(`https://wa.me/?text=${waLink}`, '_blank'); 
+        } catch (err) {
+            alert("Gagal memproses laporan: " + err.message);
+            console.error(err);
+        }
+        setShowLaporModal(false);
+    };
+
+    // --- FUNGSI KLIK LAPOR CS (OTOMATIS DETEKSI KAMAR) ---
+    const handleLaporCS = () => {
+        // Cari kasur mana saja yang kosong
+        const occupiedRooms = activeRecords.map(r => r.roomNumber);
+        const emptyBeds = ROOM_LIST.filter(room => !occupiedRooms.includes(room));
+        
+        // Ekstrak angka, buang duplikat, lalu URUTKAN dari terkecil ke terbesar
+        const emptyRoomNumbers = [...new Set(emptyBeds.map(room => {
+            const match = room.match(/\d+/); // Ambil angkanya saja
+            return match ? match[0] : '';
+        }))]
+        .filter(Boolean)
+        .sort((a, b) => parseInt(a) - parseInt(b)); // <-- INI KUNCI URUTANNYA
+
+        // Gabungkan jadi teks
+        const roomString = emptyRoomNumbers.length > 0 ? emptyRoomNumbers.join(', ') : '(semua penuh)';
+        const text = `Assalamualaikum, a punten minta dibersihin Kamar ${roomString}`;
+        
+        // Buka WA
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        setShowLaporModal(false);
+    };
+
+const processDischarge = async (type) => {
+    if (!recordForDischarge) return;
+    const { id, name, room } = recordForDischarge;
+    setLoading(true);
+    try {
+        const ref = getCollectionRef();
+        await updateDoc(doc(ref, id), { 
+            isDischarged: true, 
+            lastRoom: room || '', 
+            roomNumber: '', 
+            dischargeDate: new Date().toISOString(), 
+            dischargeType: type, // <-- INI KUNCINYA
+            updatedAt: Timestamp.now() 
+        });
+    } catch (e) { console.error(e); } finally { setLoading(false); setRecordForDischarge(null); }
 };  
   
   const normalizePhone = (num) => {
@@ -2850,8 +2964,11 @@ const MedicalRecordApp = ({
             <div className="flex items-center gap-2">
                 <div className="hidden lg:block border-r pr-3 mr-1"><DigitalClock /></div>
                 
-                <button onClick={() => { const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles); window.open(`https://wa.me/?text=${waLink}`, '_blank'); }} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-1.5 rounded-lg text-[10px] font-bold border border-indigo-200 transition shadow-sm">
-                    <span className="mr-1">📢</span> Lap.
+                <button 
+                    onClick={() => setShowLaporModal(true)} 
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-1.5 rounded-lg text-[10px] font-bold border border-indigo-200 transition shadow-sm"
+                >
+                    <span className="mr-1">📢</span> Lapor
                 </button>
                 
                 <div className={`hidden sm:block w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-green-400' : 'bg-red-500'} ring-2 ring-white`} title={isOnline ? "Online" : "Offline"}></div>
@@ -2942,7 +3059,7 @@ const MedicalRecordApp = ({
                         <div className="p-4 bg-white border-b shadow-sm sticky top-0 z-40 space-y-3">
                             <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2">
-                                    <h2 className="font-bold text-lg text-slate-800">🗃️ Gudang Arsip Pasien Pulang</h2>
+                                    <h2 className="font-bold text-lg text-slate-800">🗃️ Gudang Arsip Pasien Keluar</h2>
                                     <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
                                         {archivedRecords.length} Total Data
                                     </span>
@@ -2971,7 +3088,7 @@ const MedicalRecordApp = ({
                                             <th className="p-3 w-20 text-center">Km. Terakhir</th>
                                             <th className="p-3">DPJP Terakhir</th>
                                             <th className="p-3 text-center">Tgl Masuk</th>
-                                            <th className="p-3 text-center">Tgl Pulang</th>
+                                            <th className="p-3 w-30 text-center">Tgl Pulang</th>
                                             <th className="p-3 text-center w-28">Aksi</th>
                                         </tr>
                                     </thead>
@@ -3171,6 +3288,8 @@ const MedicalRecordApp = ({
         {showBulkPrint && <BulkPrintView records={filteredActiveRecords} onClose={() => setShowBulkPrint(false)} />}
         {showTtvModal && <TtvModal onClose={() => { setShowTtvModal(false); setQuickTtvTarget(null); }} onSave={(text) => { if (quickTtvTarget) { handleSaveQuickTtv(text); } else { appendText('objective', text); setShowTtvModal(false); } }} />}
         {confirmDetails.isOpen && <ConfirmationModal title={confirmDetails.title} message={confirmDetails.message} onConfirm={confirmDetails.action} onCancel={closeConfirm} />}
+        {recordForDischarge && <DischargeModal patientName={recordForDischarge.name} onCancel={() => setRecordForDischarge(null)} onPindah={() => processDischarge('pindah')} onPulang={() => processDischarge('pulang')} onMeninggal={() => processDischarge('meninggal')} />}
+        {showLaporModal && <LaporModal onCancel={() => setShowLaporModal(false)}onLaporShift={handleLaporShift} onLaporCS={handleLaporCS}/>}
     </div>
   );
 };
@@ -3960,7 +4079,7 @@ const InputSidePanel = ({
                             <button type="button" onClick={onPrintCPO} className="p-1.5 bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] shadow-sm hover:bg-blue-200 ml-1" title="Cetak CPO (Obat)">💊</button>
                             <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">📱</button>
                             <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print (Ctrl+P)">🖨️</button>                            
-                            <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Pulangkan">🚪</button>                            
+                            <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Keluar">🚪</button>                            
                             
                             {handleDeleteRecord && (
                                 <button type="button" onClick={() => handleDeleteRecord(currentRecordId, formData.name)} className="p-1.5 bg-red-600 text-white border border-red-700 rounded text-[10px] shadow-sm hover:bg-red-800 ml-1" title="Hapus Data Permanen">🗑️</button>
