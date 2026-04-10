@@ -1317,25 +1317,63 @@ const renderPlanningCell = (text) => {
     );
 };
 
-// --- Helper Baru: Format Objektif dengan Balon Lacak ---
+// --- Helper Baru: Format Objektif dengan Balon Lacak Terintegrasi ---
 const renderObjectiveCell = (text) => {
     if (!text) return '-';
     const lines = text.split('\n');
+    
+    // 1. Ambil baris yang mengandung kata "Lacak" (Case-Insensitive)
+    const lacakLines = lines.filter(line => line.trim().toLowerCase().startsWith('lacak'));
+    
+    // 2. Ambil baris sisanya (TTV dan data objektif lainnya)
+    const normalLines = lines.filter(line => !line.trim().toLowerCase().startsWith('lacak'));
+
+    let lacakBubble = null;
+    if (lacakLines.length > 0) {
+        // Ekstrak nama pemeriksaannya saja (menghapus kata "Lacak/Lapor" atau "Lacak")
+        const items = lacakLines.map(line => {
+            return line
+                .replace(/lacak\/lapor\s*/i, '') // Hapus Lacak/Lapor
+                .replace(/lacak\s*/i, '')       // Hapus Lacak (jika inputnya cuma 'Lacak Sputum')
+                .trim();
+        });
+
+        // Gabungkan semua item dengan koma
+        const combinedItems = items.join(', ');
+
+        lacakBubble = (
+            <div className="bg-orange-100 text-orange-900 border border-orange-300 px-2 py-1.5 rounded-lg mb-2 font-bold inline-block w-full shadow-sm animate-pulse">
+                <span className="mr-1">⚠️</span> LACAK/LAPOR: {combinedItems}
+            </div>
+        );
+    }
+
     return (
         <div className="text-xs text-gray-800 whitespace-pre-wrap font-sans">
-            {lines.map((line, idx) => {
-                const trimmed = line.trim();
-                // Jika baris diawali kata "Lacak" (case-insensitive), jadikan balon
-                if (trimmed.toLowerCase().startsWith('lacak')) {
-                    return (
-                        <div key={idx} className="bg-orange-100 text-orange-900 border border-orange-300 px-2 py-1.5 rounded-lg mb-1 font-bold inline-block w-full shadow-sm animate-pulse">
-                            <span className="mr-1">⚠️</span> {trimmed}
-                        </div>
-                    );
-                }
-                // Jika bukan, tampilkan teks biasa
-                return <div key={idx}>{line}</div>;
-            })}
+            {/* Tampilkan Balon Lacak Terlebih Dahulu Jika Ada */}
+            {lacakBubble}
+            
+            {/* Tampilkan Sisa Teks Objektif (TTV, dll) */}
+            {normalLines.map((line, idx) => (
+                <div key={idx}>{line}</div>
+            ))}
+        </div>
+    );
+};
+
+const renderLacakTtv = (objectiveText) => {
+    if (!objectiveText) return <span className="text-gray-300">-</span>;
+    const lines = objectiveText.split('\n');
+    // Ambil hanya yang depannya 'Lacak'
+    const items = lines
+        .filter(line => line.trim().toLowerCase().startsWith('lacak'))
+        .map(line => line.replace(/lacak\/lapor\s*/i, '').replace(/lacak\s*/i, '').trim());
+    
+    if (items.length === 0) return <span className="text-gray-300">-</span>;
+    
+    return (
+        <div className="text-[9px] font-bold text-orange-700 leading-tight">
+            ⚠️ {items.join(', ')}
         </div>
     );
 };
@@ -1498,9 +1536,9 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
         let final = '';
         if (v.length > 0) final += v.substring(0, 2);
         if (v.length > 2) final += '/' + v.substring(2, 4);
-        if (v.length > 4) final += '/' + v.substring(4, 6);
-        if (v.length > 6) final += ' ' + v.substring(6, 8);
-        if (v.length > 8) final += ':' + v.substring(8, 10);
+        if (v.length > 4) final += '/' + v.substring(4, 8); // YYYY (4 digit)
+        if (v.length > 8) final += ', ' + v.substring(8, 10); // Koma dan Jam
+        if (v.length > 10) final += ':' + v.substring(10, 12); // Menit
         e.target.value = final;
     };
 
@@ -1564,16 +1602,18 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                         {/* HEADER TAMBAHAN BUKU CM DI TTV */}
                                         <th className="p-1 border border-gray-300 w-[60px] text-center bg-emerald-50 text-[10px]">No.RM</th>
                                         <th className="p-1 border border-gray-300 w-[35px] text-center bg-emerald-50 text-[10px]">Kls</th>
-                                        <th className="p-1 border border-gray-300 w-[75px] text-center bg-emerald-50 text-[10px]">Tgl Msk</th>
-                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-emerald-50 text-[10px]">Hari</th>
+                                        <th className="p-1 border border-gray-300 w-[100px] text-center bg-emerald-50 text-[10px]">Tgl Msk</th>
+                                        <th className="p-1 border border-gray-300 w-[60px] text-center bg-emerald-50 text-[10px]">Hari</th>
                                         
                                         {/* HEADER TTV ASLI */}
-                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">TD</th>
-                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">Nadi</th>
-                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">Suhu</th>
-                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">RR</th>
-                                        <th className="p-1 border border-gray-300 w-[40px] text-center bg-white text-[10px]">SpO2</th>
-                                        {/* Class w-[250px] dihapus agar kolom rencana otomatis mengisi sisa ruang kertas A4 */}
+                                        <th className="p-1 border border-gray-300 w-[42px] text-center bg-white text-[10px]">TD</th>
+                                        <th className="p-1 border border-gray-300 w-[42px] text-center bg-white text-[10px]">Nadi</th>
+                                        <th className="p-1 border border-gray-300 w-[42px] text-center bg-white text-[10px]">Suhu</th>
+                                        <th className="p-1 border border-gray-300 w-[42px] text-center bg-white text-[10px]">RR</th>
+                                        <th className="p-1 border border-gray-300 w-[42px] text-center bg-white text-[10px]">SpO2</th>
+                                        {/* KOLOM BARU: LACAK HASIL ✨ */}
+                                        <th className="p-1 border border-gray-300 w-[110px] text-center bg-gray-50 text-gray-800 font-bold text-[10px]">⚠️ Lacak Hasil</th>
+                                        
                                         <th className="p-2 border border-gray-300 text-left bg-gray-50 text-gray-800 font-bold text-[10px]">⚠️ Rencana / Persiapan</th>
                                     </>
                                 )}
@@ -1696,7 +1736,7 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                                     </>
                                                 ) : null}
                                             </td>
-                                            <td className="p-1 border-r border-gray-300 align-middle text-center font-bold text-rose-600 text-[10px]">
+                                            <td className="p-1 border-r border-gray-300 align-middle text-center font-bold text-gray-600 text-[10px]">
                                                 {rec ? hitungHariCM(rec.admissionDate) : ''}
                                             </td>
 
@@ -1705,6 +1745,10 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                             <td className="p-1 border-r border-gray-300 align-middle text-center font-mono text-[10px]">{rec ? getTtvValue(rec.objective, 'S') : ''}</td>
                                             <td className="p-1 border-r border-gray-300 align-middle text-center font-mono text-[10px]">{rec ? getTtvValue(rec.objective, 'RR') : ''}</td>
                                             <td className="p-1 border-r border-gray-300 align-middle text-center font-mono text-[10px]">{rec ? getTtvValue(rec.objective, 'SpO2') : ''}</td>
+                                            {/* DATA LACAK HASIL (BARU) ✨ */}
+                                            <td className="p-1.5 border-r border-gray-300 align-top">
+                                                {rec ? renderLacakTtv(rec.objective) : null}
+                                            </td>
                                             <td className="p-1.5 border-r border-gray-300 align-top">
                                                 {rec ? (
                                                     <>
@@ -2722,26 +2766,71 @@ const processDischarge = async (type) => {
     const content = element.innerHTML;
     
     const html = `
-        <html><head><title>Print TTV</title>
+        <!DOCTYPE html>
+        <html><head><title>Print TTV Berwarna</title>
+        <script src="https://cdn.tailwindcss.com"></script>
         <style>
-            @page { size: A4 portrait; margin: 5mm; }
-            body { font-family: Arial; zoom: 0.85; margin: 0; padding: 0; }
-            table { width: 100%; border-collapse: collapse; font-size: 9pt; }
-            th, td { border: 1px solid black; padding: 2px 3px; }
-            th { background-color: #f0f0f0; text-align: center; height: 25px; font-size: 8pt; }
-            td:nth-child(1) { width: 130px; } td:nth-child(2) { width: 55px; text-align: center; font-family: monospace; } td:nth-child(3) { width: 30px; text-align: center; } td:nth-child(4) { width: 65px; text-align: center; font-family: monospace; } td:nth-child(5) { width: 35px; text-align: center; font-weight: bold; }
-            td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10) { width: 35px; text-align: center; font-family: monospace; } 
-            td:nth-child(11) { text-align: left; } 
-            .no-print { display: none !important; } input { display: none !important; } span.hidden { display: inline !important; }
-            h3 { text-align: center; margin: 5px 0 2px 0; font-size: 14pt; } .date-print { text-align: center; font-size: 8pt; margin-bottom: 5px; color: #555; }
+            @page { size: A4 portrait; margin: 8mm; }
+            body { 
+                font-family: Arial, sans-serif; 
+                zoom: 0.85; 
+                margin: 0; padding: 0; 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+            }
+            
+            /* FIX GARIS: Gunakan border-collapse dan satuan pt agar tidak hilang saat zoom out */
+            table { 
+                width: 100%; 
+                border-collapse: collapse !important; 
+                font-size: 8.5pt; 
+                table-layout: fixed; 
+                border: 0.75pt solid black !important;
+            }
+            
+            th, td { 
+                border: 0.5pt solid black !important; /* Garis tipis tapi konsisten */
+                padding: 3px 4px !important; 
+                vertical-align: top; 
+                background-color: white !important;
+            }
+            
+            th { 
+                font-weight: bold; 
+                text-transform: uppercase;
+                text-align: center;
+                font-size: 8pt;
+            }
+
+            /* FIX WARNA HARI RAWAT: Paksa jadi hitam (Kolom ke-5) */
+            td:nth-child(5) { 
+                color: black !important; 
+                font-weight: bold; 
+                text-align: center;
+            }
+            
+            /* Penyesuaian Lebar Kolom */
+            td:nth-child(1) { width: 130px; } 
+            td:nth-child(2) { width: 60px; text-align: center; font-family: monospace; } 
+            td:nth-child(3) { width: 35px; text-align: center; } 
+            td:nth-child(4) { width: 100px; text-align: center; font-family: monospace; } 
+            td:nth-child(5) { width: 60px; } 
+            td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10) { width: 42px; text-align: center; } 
+            td:nth-child(11) { width: 110px; } 
+            
+            .no-print { display: none !important; } 
+            input { display: none !important; } 
+            span.hidden { display: inline !important; }
+            h3 { text-align: center; margin: 0 0 10px 0; font-size: 14pt; font-weight: bold; color: black; } 
+            .date-print { text-align: center; font-size: 8pt; margin-bottom: 10px; color: #555; }
         </style></head><body>
         <h3>Lembar Observasi Tanda Vital & Rencana Harian</h3>
         <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
         ${content}
         </body></html>
     `;
-    cetakPWA(html, 'Print TTV'); // <--- INI YANG BERUBAH
-  }; 
+    cetakPWA(html, 'Print TTV');
+  };
   
   const handlePrintSOAP = () => {
     const element = document.getElementById('ttv-table-area');
@@ -3280,7 +3369,7 @@ const processDischarge = async (type) => {
                     )}
                 </div>
             </div>
-            {showInputModal && <div className="fixed top-16 right-0 bottom-0 w-full md:w-[650px] z-[60] bg-white shadow-2xl border-l transition-all duration-300 flex flex-col">
+            {showInputModal && <div className="fixed top-16 right-0 bottom-0 w-full md:w-[500px] z-[60] bg-white shadow-2xl border-l transition-all duration-300 flex flex-col">
                 <InputSidePanel 
                     showInputModal={showInputModal} 
                     setShowInputModal={setShowInputModal} 
@@ -3594,13 +3683,13 @@ const InputSidePanel = ({
 
 // 👇 TARUH FUNGSI AUTO-FORMAT TANGGAL DI SINI 👇
     const handleDateMasking = (e) => {
-        let v = e.target.value.replace(/[^\d]/g, ''); 
+        let v = e.target.value.replace(/[^\d]/g, ''); // Ambil angka saja
         let final = '';
         if (v.length > 0) final += v.substring(0, 2);
         if (v.length > 2) final += '/' + v.substring(2, 4);
-        if (v.length > 4) final += '/' + v.substring(4, 6);
-        if (v.length > 6) final += ' ' + v.substring(6, 8);
-        if (v.length > 8) final += ':' + v.substring(8, 10);
+        if (v.length > 4) final += '/' + v.substring(4, 8); // YYYY (4 digit)
+        if (v.length > 8) final += ', ' + v.substring(8, 10); // Koma dan Jam
+        if (v.length > 10) final += ':' + v.substring(10, 12); // Menit
         e.target.value = final;
     };
 
