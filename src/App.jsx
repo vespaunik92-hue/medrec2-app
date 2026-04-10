@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 
 import Cashflow from './components/Cashflow';
+import GudangArsip from './components/GudangArsip';
 import { 
     LEFT_ROOMS, RIGHT_ROOMS, ROOM_LIST, 
     DEFAULT_DPJP_DATA, LAB_CHECKS, RADIOLOGY_CHECKS, 
@@ -1055,10 +1056,10 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
         if (isNaN(d)) return isoString;
         const dd = String(d.getDate()).padStart(2, '0');
         const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const yy = String(d.getFullYear()).slice(-2);
+        const yyyy = d.getFullYear();
         const hh = String(d.getHours()).padStart(2, '0');
         const min = String(d.getMinutes()).padStart(2, '0');
-        return `${dd}/${mm}/${yy} ${hh}:${min}`;
+        return `${dd}/${mm}/${yyyy}, ${hh}:${min}`;
     };
 
     const parseCustomDate = (text) => {
@@ -1072,15 +1073,14 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
         return text;
     };
 
-    // --- 2. SIHIR AUTO-FORMAT TANGGAL ---
     const handleDateMasking = (e) => {
-        let v = e.target.value.replace(/[^\d]/g, ''); 
+        let v = e.target.value.replace(/[^\d]/g, ''); // Ambil angka saja
         let final = '';
         if (v.length > 0) final += v.substring(0, 2);
         if (v.length > 2) final += '/' + v.substring(2, 4);
-        if (v.length > 4) final += '/' + v.substring(4, 6);
-        if (v.length > 6) final += ' ' + v.substring(6, 8);
-        if (v.length > 8) final += ':' + v.substring(8, 10);
+        if (v.length > 4) final += '/' + v.substring(4, 8); // YYYY (4 digit)
+        if (v.length > 8) final += ', ' + v.substring(8, 10); // Koma dan Jam
+        if (v.length > 10) final += ':' + v.substring(10, 12); // Menit
         e.target.value = final;
     };
 
@@ -1090,7 +1090,14 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
         if (isNaN(start)) return '?';
         const now = new Date();
         const diffTime = now.getTime() - start.getTime();
-        return diffTime < 0 ? '0 hr' : Math.floor(diffTime / (1000 * 60 * 60 * 24)) + ' hr'; 
+        
+        if (diffTime < 0) return '0 hr 0 jm';
+        
+        // Hitung Hari dan Jam
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        
+        return `${diffDays} hr ${diffHours} jm`; 
     };
 
     const handleInlineSave = (id, field, value) => {
@@ -1131,14 +1138,14 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
                     <table className="w-full text-center border-collapse table-fixed min-w-[900px]">
                         <thead className="bg-gray-100 text-gray-700 text-[10px] uppercase font-bold border-y border-gray-300 sticky top-0 z-40 shadow-sm">
                             <tr>
-                                <th className="p-2 border-x border-gray-300 w-[40px] sticky left-0 bg-gray-200 z-50">No</th>
-                                <th className="p-2 border-x border-gray-300 w-[180px] sticky left-[40px] bg-gray-200 z-50 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Nama Pasien</th>
-                                <th className="p-2 border-x border-gray-300 w-12 bg-gray-100">KMR</th>
-                                <th className="p-2 border-x border-gray-300 w-24 bg-gray-100">No. RM</th>
-                                <th className="p-2 border-x border-gray-300 min-w-[130px] bg-gray-100">Dokter</th>
-                                <th className="p-2 border-x border-gray-300 w-14 bg-gray-100">Kelas</th>
-                                <th className="p-2 border-x border-gray-300 w-32 bg-gray-100">Tgl Masuk</th>
-                                <th className="p-2 border-x border-gray-300 w-12 bg-gray-100">HR</th>
+                                <th className="p-2 border-x border-gray-300 w-[35px] sticky left-0 bg-gray-200 z-50">No</th>
+                                <th className="p-2 border-x border-gray-300 w-[160px] sticky left-[35px] bg-gray-200 z-50 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Nama Pasien</th>
+                                <th className="p-2 border-x border-gray-300 w-10 bg-gray-100">KMR</th>
+                                <th className="p-2 border-x border-gray-300 w-[75px] bg-gray-100">No. RM</th>
+                                <th className="p-2 border-x border-gray-300 min-w-[110px] bg-gray-100 text-left">Dokter</th>
+                                <th className="p-2 border-x border-gray-300 w-10 bg-gray-100">Kls</th>
+                                <th className="p-2 border-x border-gray-300 w-[135px] bg-gray-100">Tgl Masuk</th>
+                                <th className="p-2 border-x border-gray-300 w-[75px] bg-gray-100">Hr</th>
                             </tr>
                         </thead>
                         <tbody className="text-[11px] divide-y divide-gray-200">
@@ -1340,10 +1347,10 @@ const formatDateCM = (isoString) => {
     if (isNaN(d)) return isoString;
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yy = String(d.getFullYear()).slice(-2);
+    const yyyy = d.getFullYear();
     const hh = String(d.getHours()).padStart(2, '0');
     const min = String(d.getMinutes()).padStart(2, '0');
-    return `${dd}/${mm}/${yy} ${hh}:${min}`;
+    return `${dd}/${mm}/${yyyy}, ${hh}:${min}`;
 };
 
 const parseDateCM = (text) => {
@@ -1363,13 +1370,18 @@ const hitungHariCM = (tanggalMasuk) => {
     if (isNaN(start)) return '?';
     const now = new Date();
     const diffTime = now.getTime() - start.getTime();
-    if (diffTime < 0) return '0 hr';
+    
+    if (diffTime < 0) return '0 hr 0 jm';
+    
+    // Hitung Hari dan Jam
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays + ' hr';
+    const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    return `${diffDays} hr ${diffHours} jm`;
 };
 
 // --- PATIENT TABLE FINAL (DENGAN BUKU CM INLINE DI MODE TTV) ---
-const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onQuickTtv, onBulkDischarge, updateRecord, onPrintBukuCM, onPrintLabel }) => {
+const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onPrintSOAP, onQuickTtv, onBulkDischarge, updateRecord, onPrintBukuCM, onPrintLabel }) => {
     
     const [viewMode, setViewMode] = useState('soap');
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -1515,6 +1527,10 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                 
                 {viewMode === 'ttv' && !isSelectionMode && (
                     <button onClick={onPrintTTV} className="px-3 py-1.5 bg-white border border-green-600 text-green-700 text-[10px] font-bold rounded hover:bg-green-50 transition shadow-sm whitespace-nowrap">🖨️ Cetak Lembar TTV</button>
+                )}
+
+                {viewMode === 'soap' && !isSelectionMode && (
+                    <button onClick={onPrintSOAP} className="px-3 py-1.5 bg-white border border-blue-600 text-blue-700 text-[10px] font-bold rounded hover:bg-blue-50 transition shadow-sm whitespace-nowrap">🖨️ Cetak Lembar SOAP</button>
                 )}
             </div>
 
@@ -2308,7 +2324,7 @@ const MedicalRecordApp = ({
     setFormData({
       roomNumber: '', name: '', rmNumber: '', gender: '', dpjpName: '', raberName: '', raber2Name: '',
       subjective: '', objective: '', analysis: '', planning: '', isDischarged: false,
-      admissionDate: new Date().toISOString(), evidenceImages: []
+      admissionDate: new Date().toISOString(), evidenceImages: [], bpjsClass: ''
     });
     setIsEditing(false);
     setShowRaber1(false); setShowRaber2(false);
@@ -2452,7 +2468,8 @@ const MedicalRecordApp = ({
         roomNumber: rec.roomNumber, name: rec.name, rmNumber: rec.rmNumber || '', gender: rec.gender || '', 
         dpjpName: rec.dpjpName, raberName: rec.raberName || '', raber2Name: rec.raber2Name || '',
         subjective: rec.subjective || '', objective: rec.objective || '', admissionDate: rec.admissionDate || '',
-        analysis: rec.analysis || '', planning: rec.planning || '', isDischarged: false, evidenceImages: rec.evidenceImages || []
+        analysis: rec.analysis || '', planning: rec.planning || '', isDischarged: false, evidenceImages: rec.evidenceImages || [],
+        bpjsClass: rec.bpjsClass || ''
     });
     setCurrentRecordId(rec.id);
     setIsEditing(true);
@@ -2724,7 +2741,80 @@ const processDischarge = async (type) => {
         </body></html>
     `;
     cetakPWA(html, 'Print TTV'); // <--- INI YANG BERUBAH
-  };  
+  }; 
+  
+  const handlePrintSOAP = () => {
+    const element = document.getElementById('ttv-table-area');
+    if (!element) return alert("Tabel tidak ditemukan.");
+    const content = element.innerHTML;
+    
+    const html = `
+        <!DOCTYPE html>
+        <html><head><title>Print Laporan SOAP</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        
+        <style>
+            /* Margin kertas diperkecil maksimal (1 Lembar Portrait) */
+            @page { size: A4 portrait; margin: 5mm; }
+            
+            body { 
+                font-family: Arial, sans-serif; 
+                zoom: 0.65; /* Skala dikecilkan drastis agar muat 1 lembar */
+                margin: 0; 
+                padding: 0; 
+                /* 2. WAJIB AGAR BACKGROUND & WARNA TERCETAK OLEH PRINTER */
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+            }
+            
+            /* Font dasar diturunkan ke 7pt */
+            table { 
+                width: 100%; 
+                border-collapse: collapse !important; 
+                font-size: 7pt; 
+                table-layout: fixed; 
+            }
+            
+            /* Padding dikurangi, line-height dirapatkan */
+            th, td { 
+                border: 1px solid black !important; 
+                padding: 3px !important; 
+                vertical-align: top; 
+                line-height: 1.15; 
+            }
+            
+            th { 
+                background-color: #e5e7eb !important; 
+                text-align: center; 
+                font-size: 8pt !important; 
+                font-weight: bold !important; 
+            }
+            
+            /* Lebar Kolom Proporsional di Portrait */
+            th:nth-child(1), td:nth-child(1) { width: 18%; } /* Identitas */
+            th:nth-child(2), td:nth-child(2) { width: 15%; } /* S */
+            th:nth-child(3), td:nth-child(3) { width: 30%; } /* O */
+            th:nth-child(4), td:nth-child(4) { width: 12%; } /* A */
+            th:nth-child(5), td:nth-child(5) { width: 25%; } /* P */
+            th:nth-child(6), td:nth-child(6) { display: none !important; } /* Sembunyikan Aksi */
+            
+            .no-print { display: none !important; } 
+            input { display: none !important; } 
+            span.hidden { display: inline !important; }
+            
+            td { white-space: pre-wrap; word-wrap: break-word; }
+            
+            h3 { text-align: center; margin: 5px 0 2px 0; font-size: 14pt; text-transform: uppercase; color: #1e3a8a; } 
+            .date-print { text-align: center; font-size: 8pt; margin-bottom: 10px; color: #555; }
+        </style></head><body>
+        <h3>Laporan Operan SOAP - Ruang Melati</h3>
+        <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
+        ${content}
+        </body></html>
+    `;
+    
+    cetakPWA(html, 'Print SOAP');
+  };
 
   const handlePrintCPO = (record) => {
     if (!record) return;
@@ -2793,19 +2883,31 @@ const processDischarge = async (type) => {
             @page { size: A4 portrait; margin: 5mm; }
             body { font-family: Arial, sans-serif; margin: 0; padding: 10px; zoom: 0.9; }
             table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-            th, td { border: 1px solid black; padding: 4px; font-size: 9pt; text-align: center; }
-            th { background-color: #f3f4f6; font-weight: bold; text-transform: uppercase; font-size: 8pt; }
-            .text-left { text-align: left !important; }
-            th:nth-child(1), td:nth-child(1) { width: 30px; } th:nth-child(2), td:nth-child(2) { width: 180px; } th:nth-child(3), td:nth-child(3) { width: 40px; } th:nth-child(4), td:nth-child(4) { width: 80px; } th:nth-child(5), td:nth-child(5) { width: 150px; } th:nth-child(6), td:nth-child(6) { width: 40px; } th:nth-child(7), td:nth-child(7) { width: 110px; } th:nth-child(8), td:nth-child(8) { width: 40px; }
-            input { display: none !important; } span.print-text { display: inline !important; } .no-print { display: none !important; }
+            th, td { border: 1px solid black; padding: 4px; font-size: 8.5pt; text-align: center; overflow: hidden; }
+            th { background-color: #f3f4f6; font-weight: bold; text-transform: uppercase; font-size: 7.5pt; }
+            .text-left { text-align: left !important; padding-left: 5px; }
+            
+            /* Penyesuaian Lebar Kolom (Total 650px agar pas di A4) */
+            th:nth-child(1), td:nth-child(1) { width: 30px; }   /* No */
+            th:nth-child(2), td:nth-child(2) { width: 160px; }  /* Nama Pasien */
+            th:nth-child(3), td:nth-child(3) { width: 40px; }   /* KMR */
+            th:nth-child(4), td:nth-child(4) { width: 75px; }   /* No. RM */
+            th:nth-child(5), td:nth-child(5) { width: 110px; }  /* Dokter */
+            th:nth-child(6), td:nth-child(6) { width: 35px; }   /* Kls */
+            th:nth-child(7), td:nth-child(7) { width: 125px; }  /* Tgl Masuk */
+            th:nth-child(8), td:nth-child(8) { width: 75px; }   /* Hr (Lama Rawat) */
+            
+            input { display: none !important; } 
+            span.print-text { display: inline !important; } 
+            .no-print { display: none !important; }
             h3 { text-align: center; margin-bottom: 10px; font-size: 14pt; color: #065f46; }
         </style></head><body>
-        <h3>BUKU REGISTER RUANGAN (CM) - SIMPAN</h3>
+        <h3>BUKU REGISTER RUANGAN (CM) - Melati</h3>
         ${content.innerHTML}
         </body></html>
     `;
-    cetakPWA(html, 'Cetak Buku Register (CM)'); // <--- INI YANG BERUBAH
-  };
+    cetakPWA(html, 'Cetak Buku Register (CM)');
+};
 
   const handlePrintLabel = (record) => {
     if (!record) return;
@@ -3048,90 +3150,17 @@ const processDischarge = async (type) => {
                                 </div>
                             </div>
                             <div className="flex-1 overflow-hidden relative z-0">
-                                <PatientTable records={filteredActiveRecords} onEdit={handleEdit} onPrint={(r) => setSelectedRecordForPrint(r)} onShowLaporModal={setRecordForLapor} onDischarge={handleDischarge} onBulkPrint={() => setShowBulkPrint(true)} roomSortOrder={selectedRoomFilter} onPrintTTV={handlePrintTTV} onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }} onBulkDischarge={handleBulkDischarge} updateRecord={updateRecord} onPrintBukuCM={handlePrintBukuCM} onPrintLabel={handlePrintLabel} />
+                                <PatientTable records={filteredActiveRecords} onEdit={handleEdit} onPrint={(r) => setSelectedRecordForPrint(r)} onShowLaporModal={setRecordForLapor} onDischarge={handleDischarge} onBulkPrint={() => setShowBulkPrint(true)} roomSortOrder={selectedRoomFilter} onPrintTTV={handlePrintTTV} onPrintSOAP={handlePrintSOAP} onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }} onBulkDischarge={handleBulkDischarge} updateRecord={updateRecord} onPrintBukuCM={handlePrintBukuCM} onPrintLabel={handlePrintLabel} />
                             </div>
                         </div>
                     )}
 
-                    {/* --- VIEW 4: ARSIP PASIEN (LEVEL 4 - UPDATE) --- */}
+                    {/* --- VIEW 4: ARSIP PASIEN (KOMPONEN BARU) --- */}
                     {view === 'archived-list' && (
-                    <div className="h-full flex flex-col bg-slate-50">
-                        <div className="p-4 bg-white border-b shadow-sm sticky top-0 z-40 space-y-3">
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-2">
-                                    <h2 className="font-bold text-lg text-slate-800">🗃️ Gudang Arsip Pasien Keluar</h2>
-                                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
-                                        {archivedRecords.length} Total Data
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* --- SEARCHBAR ARSIP --- */}
-                            <div className="relative max-w-md">
-                                <input 
-                                    type="text" 
-                                    placeholder="Cari Nama atau No. RM di arsip..." 
-                                    className="w-full pl-4 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                                    value={archiveSearch}
-                                    onChange={(e) => setArchiveSearch(e.target.value)}
-                                />
-                            </div>
+                        <div className="h-full overflow-hidden bg-slate-50">
+                            <GudangArsip dataPasien={archivedRecords} loading={loading} db={db} onRestore={handleRestorePatient} />                            
                         </div>
-
-                        <div className="flex-1 overflow-auto p-4">
-                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden text-xs">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 sticky top-0 z-10">
-                                        <tr>
-                                            <th className="p-3 w-24 text-center">No. RM</th>
-                                            <th className="p-3">Nama Pasien</th>
-                                            <th className="p-3 w-20 text-center">Km. Terakhir</th>
-                                            <th className="p-3">DPJP Terakhir</th>
-                                            <th className="p-3 text-center">Tgl Masuk</th>
-                                            <th className="p-3 w-30 text-center">Tgl Pulang</th>
-                                            <th className="p-3 text-center w-28">Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {archivedRecords
-                                            .filter(rec => 
-                                                rec.name.toLowerCase().includes(archiveSearch.toLowerCase()) || 
-                                                (rec.rmNumber && rec.rmNumber.includes(archiveSearch))
-                                            )
-                                            .map(rec => (
-                                            <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors">
-                                                <td className="p-3 text-center font-mono text-slate-400">{rec.rmNumber || '-'}</td>
-                                                <td className="p-3 font-bold text-slate-800 uppercase">{rec.name}</td>
-                                                <td className="p-3 text-center font-bold text-indigo-600 bg-indigo-50/30">{rec.lastRoom || '-'}</td>
-                                                <td className="p-3 text-slate-600">{rec.dpjpName}</td>
-                                                <td className="p-3 text-center text-slate-400">{formatDateCM(rec.admissionDate) || '-'}</td>
-                                                <td className="p-3 text-center font-bold text-rose-500">
-                                                    {rec.dischargeDate ? new Date(rec.dischargeDate).toLocaleDateString('id-ID', {day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit'}).replace(/\./g, ':') : '-'}
-                                                </td>
-                                                <td className="p-3 text-center">
-                                                    <button 
-                                                        onClick={() => handleRestorePatient(rec.id, rec.name)}
-                                                        className="bg-white text-indigo-600 px-3 py-1.5 rounded border border-indigo-200 hover:bg-indigo-600 hover:text-white transition shadow-sm font-bold text-[10px]"
-                                                    >
-                                                        ↩️ Balikkan
-                                                    </button>
-                                                    {/* TOMBOL HAPUS PERMANEN (BARU) */}
-                                                    <button 
-                                                        onClick={() => handleDeletePermanent(rec.id, rec.name)}
-                                                        className="bg-white text-red-600 px-3 py-1.5 rounded border border-red-200 hover:bg-red-600 hover:text-white transition shadow-sm font-bold text-[10px]"
-                                                        title="Hapus Permanen dari Database"
-                                                    >
-                                                        🗑️ Hapus
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                    )}
                     
                     {/* --- VIEW 3: SETELAN (LEVEL 4 - UPDATE) --- */}
                     {view === 'settings' && (
@@ -3251,7 +3280,7 @@ const processDischarge = async (type) => {
                     )}
                 </div>
             </div>
-            {showInputModal && <div className="fixed top-16 right-0 bottom-0 w-full md:w-[500px] z-[60] bg-white shadow-2xl border-l transition-all duration-300 flex flex-col">
+            {showInputModal && <div className="fixed top-16 right-0 bottom-0 w-full md:w-[650px] z-[60] bg-white shadow-2xl border-l transition-all duration-300 flex flex-col">
                 <InputSidePanel 
                     showInputModal={showInputModal} 
                     setShowInputModal={setShowInputModal} 
@@ -3511,11 +3540,12 @@ const InputSidePanel = ({
     const [labTrends, setLabTrends] = useState({});
     const [showRadModal, setShowRadModal] = useState(false);
     const [rawRadData, setRawRadData] = useState('');
+    const [hideSuggestion, setHideSuggestion] = useState(false);
+    useEffect(() => { setHideSuggestion(false); }, [formData?.name]);
     const archivedMatches = useMemo(() => {
     // Pakai pengaman tambahan (?.) untuk menghindari error saat formData belum siap
     const currentName = formData?.name || '';
     const currentRm = formData?.rmNumber || '';
-
     // Cek apakah ada ketikan di Nama ATAU di RM
     const hasName = currentName.length >= 3;
     const hasRm = currentRm.length >= 2;
@@ -4110,10 +4140,10 @@ const InputSidePanel = ({
                     <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3">
                         <form onSubmit={handleSubmit} id="mainForm">
                             
-                            {/* --- BARIS 1: KM | GENDER | NO. RM | TGL MASUK --- */}
-                            <div className="flex space-x-2 mb-1 items-start">
+                            {/* --- BARIS 1: RESPONSIVE GRID (HP & LAPTOP AMAN) --- */}
+                            <div className="grid grid-cols-4 md:grid-cols-12 gap-2 mb-2 items-start">
                                 {/* KOLOM 1: KM */}
-                                <div className="w-[18%]">
+                                <div className="col-span-2 md:col-span-2">
                                     <CustomSelect 
                                         label="Km" 
                                         value={formData.roomNumber} 
@@ -4122,8 +4152,8 @@ const InputSidePanel = ({
                                     />
                                 </div>
 
-                                {/* KOLOM 2: GENDER (FIX ALIGNMENT) */}
-                                <div className="w-[18%] mb-2">
+                                {/* KOLOM 2: GENDER */}
+                                <div className="col-span-2 md:col-span-2 mb-2">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Gender *</label>
                                     <select 
                                         className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 bg-white h-[34px]" 
@@ -4138,18 +4168,34 @@ const InputSidePanel = ({
                                 </div>
 
                                 {/* KOLOM 3: NO. RM */}
-                                <div className="w-[28%]">
+                                <div className="col-span-4 md:col-span-3">
                                     <CustomInput 
                                         label="No. RM" 
                                         name="rmNumber" 
                                         value={formData.rmNumber || ''} 
                                         onChange={handleInputChange} 
-                                        placeholder="Cont: 123" 
+                                        placeholder="123456" 
                                     />
                                 </div>
 
-                                {/* KOLOM 4: TGL MASUK (FIX ALIGNMENT) */}
-                                <div className="w-[36%] mb-2">
+                                {/* KOLOM 4: KELAS (BARU) */}
+                                <div className="col-span-2 md:col-span-2 mb-2">
+                                    <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Kls</label>
+                                    <select 
+                                        className="w-full p-2 text-[11px] border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 bg-white h-[34px]" 
+                                        value={formData.bpjsClass || ''} 
+                                        onChange={(e) => handleInputChange({ target: { name: 'bpjsClass', value: e.target.value } })} 
+                                    >
+                                        <option value="">-</option>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="Umum">Umum</option>
+                                    </select>
+                                </div>
+
+                                {/* KOLOM 5: TGL MASUK */}
+                                <div className="col-span-2 md:col-span-3 mb-2">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Tgl Masuk</label>
                                     <input 
                                         type="text" 
@@ -4157,7 +4203,7 @@ const InputSidePanel = ({
                                         onChange={handleDateMasking}
                                         onBlur={(e) => handleInputChange({ target: { name: 'admissionDate', value: parseDateCM(e.target.value) } })}
                                         className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 font-mono bg-white outline-none h-[34px]" 
-                                        placeholder="dd/mm/yy hh:mm" 
+                                        placeholder="dd/mm/yyyy, hh:mm" 
                                     />
                                 </div>
                             </div>
@@ -4174,12 +4220,27 @@ const InputSidePanel = ({
                                     />
                                     
                                     {/* SUGGESTION LIST PASIEN LAMA */}
-                                    {archivedMatches && archivedMatches.length > 0 && formData.name.length > 0 && !archivedMatches.some(old => old.name === formData.name) && (
+                                    {archivedMatches && archivedMatches.length > 0 && formData.name.length > 0 && !archivedMatches.some(old => old.name === formData.name) && !hideSuggestion && (
                                         <div className="absolute z-50 w-full bg-white border-2 border-indigo-500 shadow-2xl rounded-md mt-[-8px] max-h-48 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
-                                            <div className="bg-indigo-600 px-2 py-1 text-[9px] font-bold text-white flex justify-between items-center">
+                                            
+                                            {/* HEADER DITAMBAH STICKY & TOMBOL ABAIKAN */}
+                                            <div className="bg-indigo-600 px-2 py-1 text-[9px] font-bold text-white flex justify-between items-center sticky top-0 z-10">
                                                 <span>📂 PASIEN LAMA TERDETEKSI</span>
-                                                <span className="bg-white text-indigo-600 px-1 rounded text-[8px]">ARSIP</span>
+                                                <div className="flex gap-1 items-center">
+                                                    <span className="bg-white text-indigo-600 px-1 rounded text-[8px] h-fit flex items-center">ARSIP</span>
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={(e) => { 
+                                                            e.stopPropagation(); 
+                                                            setHideSuggestion(true); 
+                                                        }}
+                                                        className="bg-red-500 hover:bg-red-600 text-white px-1.5 py-0.5 rounded shadow-sm text-[8px] transition cursor-pointer"
+                                                    >
+                                                        ✕ Abaikan
+                                                    </button>
+                                                </div>
                                             </div>
+
                                             {archivedMatches.map(old => (
                                                 <div 
                                                     key={old.id} 
