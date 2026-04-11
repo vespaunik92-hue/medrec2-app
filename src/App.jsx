@@ -943,6 +943,12 @@ const BulkPrintView = ({ records, onClose }) => {
 
 // --- COMPONENT: DENAH KAMAR (RESPONSIVE: MOBILE, TABLET, LAPTOP) ---
 const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList }) => {
+    const sortedRoomList = useMemo(() => {
+        return [...roomList].sort((a, b) =>
+            a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+        );
+    }, [roomList]);
+
     const renderRoom = (roomNumber) => {
         const record = activeRecords.find(r => r.roomNumber === roomNumber);
         const booked = waitingList?.find(w => w.plannedRoom === roomNumber);
@@ -1017,24 +1023,26 @@ const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter
 
     return (
         <div className="flex justify-center w-full px-1 py-1">
-            {/* WRAPPER UTAMA: flex-col (HP/Portrait) -> md:flex-row (Tablet Landscape/Laptop) */}
-            <div className="flex flex-col md:flex-row w-full max-w-5xl gap-2 md:gap-3 bg-white p-1.5 rounded-xl shadow-inner border border-gray-100 justify-center">
-                
-                {/* KOLOM KIRI: Selalu 2 grid menyamping agar rapi */}
-                <div className="grid grid-cols-2 gap-1.5 w-full">
-                    {LEFT_ROOMS.map(renderRoom)}
+            <div className="w-full max-w-5xl">
+                {/* MOBILE: tampilkan semua kamar berurutan dalam satu grid 2 kolom */}
+                <div className="grid grid-cols-2 gap-1.5 mb-2 md:hidden bg-white p-1.5 rounded-xl shadow-inner border border-gray-100">
+                    {sortedRoomList.map(renderRoom)}
                 </div>
 
-                {/* LORONG TENGAH: Sembunyi di HP/Portrait (hidden), Muncul di Landscape (md:flex) */}
-                <div className="hidden md:flex flex-col justify-center items-center w-6 bg-gray-100 rounded-full border border-gray-200 shadow-inner relative flex-shrink-0">
-                    <div className="absolute top-10 text-gray-300 text-[9px] font-bold tracking-[0.3em]" style={{ writingMode: 'vertical-rl' }}>LORONG</div>
-                </div>
+                {/* DESKTOP/TABLET: tetap gunakan pembagian kiri/lorong/kanan */}
+                <div className="hidden md:flex w-full gap-2 md:gap-3 bg-white p-1.5 rounded-xl shadow-inner border border-gray-100 justify-center">
+                    <div className="grid grid-cols-2 gap-1.5 w-full">
+                        {LEFT_ROOMS.map(renderRoom)}
+                    </div>
 
-                {/* KOLOM KANAN: Selalu 2 grid menyamping agar rapi */}
-                <div className="grid grid-cols-2 gap-1.5 w-full">
-                    {RIGHT_ROOMS.map(renderRoom)}
-                </div>
+                    <div className="hidden md:flex flex-col justify-center items-center w-6 bg-gray-100 rounded-full border border-gray-200 shadow-inner relative flex-shrink-0">
+                        <div className="absolute top-10 text-gray-300 text-[9px] font-bold tracking-[0.3em]" style={{ writingMode: 'vertical-rl' }}>LORONG</div>
+                    </div>
 
+                    <div className="grid grid-cols-2 gap-1.5 w-full">
+                        {RIGHT_ROOMS.map(renderRoom)}
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -3512,13 +3520,15 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
                             onChange={e => setForm({...form, plannedRoom: e.target.value})}
                         >
                             <option value="">- Pilih Kamar -</option>
-                            {availableRooms.map(r => {
-                                const status = getRoomOptionStatus(r);
-                                return (
-                                    <option key={r} value={r} className={status.colorClass}>
-                                        {status.dot} {r} ({status.label})
-                                    </option>
-                                );
+                            {[...availableRooms]
+                                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+                                .map(r => {
+                                    const status = getRoomOptionStatus(r);
+                                    return (
+                                        <option key={r} value={r} className={status.colorClass}>
+                                            {status.dot} {r} ({status.label})
+                                        </option>
+                                    );
                             })}
                         </select>
                     </div>
@@ -3909,7 +3919,7 @@ const InputSidePanel = ({
         });
 
         let resultP = finalPlanning.join('\n').trim();
-        if (prescriptionList.length > 0) { resultP += `\n\n-- TERAPI OBAT (DARI ECAL) --\n${prescriptionList.join('\n')}`; }
+        if (prescriptionList.length > 0) { resultP += `\n\n-- Terapi Obat --\n${prescriptionList.join('\n')}`; }
 
         // --- INI BAGIAN KUNCINYA (APPEND) ---
         const currentP = formData.planning || '';
@@ -4231,16 +4241,7 @@ const InputSidePanel = ({
                             
                             {/* --- BARIS 1: RESPONSIVE GRID (HP & LAPTOP AMAN) --- */}
                             <div className="grid grid-cols-4 md:grid-cols-12 gap-2 mb-2 items-start">
-                                {/* KOLOM 1: KM */}
-                                <div className="col-span-2 md:col-span-2">
-                                    <CustomSelect 
-                                        label="Km" 
-                                        value={formData.roomNumber} 
-                                        onChange={(e) => handleInputChange({ target: { name: 'roomNumber', value: e.target.value } })} 
-                                        options={availableRooms} 
-                                    />
-                                </div>
-
+                                
                                 {/* KOLOM 2: GENDER */}
                                 <div className="col-span-2 md:col-span-2 mb-2">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Gender *</label>
@@ -4257,7 +4258,7 @@ const InputSidePanel = ({
                                 </div>
 
                                 {/* KOLOM 3: NO. RM */}
-                                <div className="col-span-4 md:col-span-3">
+                                <div className="col-span-4 md:col-span-3 mb-2">
                                     <CustomInput 
                                         label="No. RM" 
                                         name="rmNumber" 
@@ -4284,7 +4285,7 @@ const InputSidePanel = ({
                                 </div>
 
                                 {/* KOLOM 5: TGL MASUK */}
-                                <div className="col-span-2 md:col-span-3 mb-2">
+                                <div className="col-span-2 md:col-span-5 mb-2">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Tgl Masuk</label>
                                     <input 
                                         type="text" 
@@ -4299,7 +4300,16 @@ const InputSidePanel = ({
 
                             {/* --- BARIS 2: NAMA PASIEN | DPJP UTAMA --- */}
                             <div className="flex space-x-2 mb-2 items-start">
-                                <div className="w-[50%] relative">
+                                {/* KOLOM 1: KM */}
+                                <div className="w-[20%] relative">
+                                    <CustomSelect 
+                                        label="Km" 
+                                        value={formData.roomNumber} 
+                                        onChange={(e) => handleInputChange({ target: { name: 'roomNumber', value: e.target.value } })} 
+                                        options={availableRooms} 
+                                    />
+                                </div>
+                                <div className="w-[40%] relative">
                                     <CustomInput 
                                         label="Nama Pasien *" 
                                         name="name" 
@@ -4350,7 +4360,7 @@ const InputSidePanel = ({
                                         </div>
                                     )}
                                 </div>
-                                <div className="w-[50%]">
+                                <div className="w-[40%]">
                                     <CustomSelect 
                                         label="DPJP Utama *" 
                                         value={formData.dpjpName} 
