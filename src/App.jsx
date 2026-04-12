@@ -4240,10 +4240,9 @@ const InputSidePanel = ({
                         <form onSubmit={handleSubmit} id="mainForm">
                             
                             {/* --- BARIS 1: RESPONSIVE GRID (HP & LAPTOP AMAN) --- */}
-                            <div className="grid grid-cols-4 md:grid-cols-12 gap-2 mb-2 items-start">
-                                
-                                {/* KOLOM 2: GENDER */}
-                                <div className="col-span-2 md:col-span-2 mb-2">
+                            <div className="flex space-x-2 mb-2 items-start">                                
+                                {/* KOLOM 1: GENDER */}
+                                <div className="w-[15%] relative">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Gender *</label>
                                     <select 
                                         className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 bg-white h-[34px]" 
@@ -4257,8 +4256,8 @@ const InputSidePanel = ({
                                     </select>
                                 </div>
 
-                                {/* KOLOM 3: NO. RM */}
-                                <div className="col-span-4 md:col-span-3 mb-2">
+                                {/* KOLOM 2: NO. RM */}
+                                <div className="w-[25%] relative">
                                     <CustomInput 
                                         label="No. RM" 
                                         name="rmNumber" 
@@ -4268,8 +4267,8 @@ const InputSidePanel = ({
                                     />
                                 </div>
 
-                                {/* KOLOM 4: KELAS (BARU) */}
-                                <div className="col-span-2 md:col-span-2 mb-2">
+                                {/* KOLOM 3: KELAS (BARU) */}
+                                <div className="w-[20%] relative">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Kls</label>
                                     <select 
                                         className="w-full p-2 text-[11px] border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 bg-white h-[34px]" 
@@ -4284,8 +4283,8 @@ const InputSidePanel = ({
                                     </select>
                                 </div>
 
-                                {/* KOLOM 5: TGL MASUK */}
-                                <div className="col-span-2 md:col-span-5 mb-2">
+                                {/* KOLOM 4: TGL MASUK */}
+                                <div className="w-[40%] relative">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Tgl Masuk</label>
                                     <input 
                                         type="text" 
