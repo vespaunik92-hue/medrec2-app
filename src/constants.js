@@ -18,32 +18,36 @@ export const DEFAULT_DPJP_DATA = [
     { name: 'dr. Ganda, Sp.N', waNumber: '6282121759729' },
     { name: 'dr. Agam, Sp.B', waNumber: '6282218321999' },
     { name: 'dr. Daniel, Sp.B', waNumber: '6281398906655' },
+    { name: 'dr. Synthia, Sp.B', waNumber: '628122004566' },
     { name: 'dr. Irwan, Sp.B', waNumber: '6285721483198' },
     { name: 'dr. Eka, Sp.OT', waNumber: '6281380733477' },
     { name: 'dr. Gamal, Sp.OT', waNumber: '6281312208478' },
     { name: 'dr. Andre, Sp.BS', waNumber: '6287822462203' },
     { name: 'dr. Joko, Sp.U', waNumber: '6281322819326' },
+    { name: 'dr. Eric, Sp.OG', waNumber: '628156226961' },
     { name: 'dr. Huda, Sp.OG', waNumber: '628112294881' },
     { name: 'dr. Sella, Sp.OG', waNumber: '6282226862504' },
+    { name: 'dr. Jamal, Sp.KJ', waNumber: '6282116190858' },
+    { name: 'dr. Virama, Sp.KJ', waNumber: '628121078143' },
     { name: 'dr. Sri Siswanti, Sp.Kk', waNumber: '6281227153161' },
     { name: 'dr. Dian Maifara, Sp.BM', waNumber: '62811119879' },
 ];
 
 export const LAB_CHECKS = [
-    'Darah Rutin', 'HJL', 'Masa Pendarahan (BT/CT)', 'CA125', 'PT/APTT/INR',
+    'Darah Rutin (DR)', 'HJL', 'Masa Pendarahan (BT/CT)', 'CA125', 'PT/APTT/INR',
     'GDS', 'GDP/2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer',
     'Ureum/Creatinin', 'SGOT/SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
-    'Elektrolit (Na/K/Cl)', 'Calsium', 'Analisa Gas Darah (AGD)', 'Lactate', 'IgG//igM Cikungunya',
+    'Elektrolit (Na/K/Cl)', 'Calsium', 'Analisa Gas Darah (AGD)', 'Lactate', 'IgG/igM Cikungunya',
     'Hemokultur', 'Darah Tepi', 'LED', 'PCR Covid-19', 'Swab Antigen', 'Rapid Test Covid-19',
     'Sero Dengue (NS1)', 'Malaria (Tetesan Darah)', 'Widal Test', 'Fungsi Tiroid Lengkap',
     'Fungsi Hati Lengkap', 'Fungsi Ginjal Lengkap', 'Panel Lipid Lengkap',
     'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum', 'CD4', 'igG/igM Dengue', 'igG/igM Leptospirosis',
-    'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV',
+    'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV', 'serologi morbilli',
     'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP', 'SADT'    
 ];
 
 export const RADIOLOGY_CHECKS = [
-    'Thorax PA/AP', 'Thorax Lateral', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
+    'Thorax', 'Thorax Lateral', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
     'USG Whole Abdomen', 'USG Upper Abdomen', 'USG Lower Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Ginjal', 'USG Kandung Empedu', 'USG Jantung',
     'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Thorax non-Kontras', 'CT Scan Abdomen kontras',
     'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography', 'CT Scan Cardiac',
@@ -55,13 +59,13 @@ export const PROCEDURES = [
     'Pasang Infus', 'Pasang Kateter', 'Pasang NGT', 'Nebulizer', 'Oksigenasi', 'Pemasangan Ventilator',
     'EKG', 'Ganti Balutan', 'Suction', 'Injeksi Extra', 'Syringe Pump', 'Hemodialisa (HD)', 
     'Rawat Luka', 'Angkat Jahitan', 'Spooling NGT', 'Spooling Kateter', 'Bladder Training', 'Biopsi Sumsum Tulang',
-    'Parasintesis', 'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites', 'Pungsi Lumbal', 'Aspirasi Sendi',
+    'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites/Parasintesis', 'Pungsi Lumbal', 'Aspirasi Sendi',
     'Nefrostomi', 'Trakeostomi', 'Debridemen', 'Monitor UOP', 'Balance Cairan', 'Pasang CDL'
 ];
 export const MEDICATIONS = [
     'Koreksi KCL  mEq +  500 ml/8 Jam,  siklus on ke', 'Koreksi Meylon  mEq + Ns  100 ml/j', 'Koreksi CaGluconas  gr + D5 100ml', 'Bolus Novorapid 10 iu + D40 2 flash',
-    'Drip Insulin/Novorapid  iu/j', 'Drip Lasix  cc/j', 'Drip Nicardipine  mcg, Kec.  cc/j, Bb  kg', 'Drip Norepinephrine  mcg, Kec.  cc/j, Bb  kg',
+    'Drip Insulin/Novorapid  iu/j', 'Drip Lasix  cc/j', 'Drip Nicardipine  mcg, Kec.  cc/j, Bb  kg', 'Drip vascon/Norepinephrine  mcg, Kec.  cc/j, Bb  kg',
     'Drip Amiodarone', 'Drip Fentanyl', 'Injeksi Extra Lasix', 'Trnfs  PRC, on ke , post ke , premed: , Postmed:', 'Trnfs  TC, on ke , post ke , premed: , Postmed:',
     '3 Way', '2 Line Infus', 'Trnfs Albumin', 'Drip Heparin', 'Drip Dopamine  mcg, Kec.  cc/j, Bb  kg', 'Drip Dobutamine  mcg, Kec.  cc/j, Bb  kg', 'Drip Epinephrine  mcg, Kec.  cc/j, Bb  kg',
-    'Drip pantoprazole 8 mg/j',
+    'Drip pantoprazole 8 mg/j', 'IVFD: clinimix 500 + Clinoleic 250', 'IVFD: Kidmin', 'IVFD: Asering', 'IVFD: Futrolit', 'IVFD: Bfluid', 'IVFD: D5%', 'IVFD: D10%', 'IVFD: NaCl 0.9%', 'IVFD: RL',
 ];
