@@ -1049,14 +1049,64 @@ const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter
 };
 
 const BukuCMTable = ({ records, updateRecord, onPrint }) => {
+    // 1. STATE UNTUK SORTING (Gaya Excel)
+    const [sortConfig, setSortConfig] = useState({ key: 'default', direction: 'asc' });
+
     const formatRoom = (room) => room ? room.replace(/[AB]$/, '') : '';
 
-    // --- 1. URUTKAN KAMAR SECARA NUMERIK (K1, K2, K3...) ---
+    // 2. FUNGSI UNTUK MENGUBAH SORTING SAAT HEADER DIKLIK
+    const requestSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+            key = 'default'; // Kembali ke urut kamar bawaan
+            direction = 'asc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    // 3. LOGIKA PENGURUTAN DATA
     const sortedRooms = useMemo(() => {
-        return [...ROOM_LIST].sort((a, b) => 
+        const baseRooms = [...ROOM_LIST].sort((a, b) => 
             a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
         );
-    }, []);
+
+        if (sortConfig.key === 'default') {
+            return baseRooms;
+        }
+
+        return baseRooms.sort((roomA, roomB) => {
+            const recA = records.find(r => r.roomNumber === roomA);
+            const recB = records.find(r => r.roomNumber === roomB);
+
+            // Selalu lempar kamar kosong ke bawah saat sorting diaktifkan
+            if (!recA && !recB) return 0;
+            if (!recA) return 1;
+            if (!recB) return -1;
+
+            if (sortConfig.key === 'name') {
+                const nameA = (recA.name || '').toLowerCase();
+                const nameB = (recB.name || '').toLowerCase();
+                if (nameA < nameB) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (nameA > nameB) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            } else if (sortConfig.key === 'admissionDate') {
+                const dateA = new Date(recA.admissionDate || 0);
+                const dateB = new Date(recB.admissionDate || 0);
+                // asc = Terlama (tanggal terkecil di atas), desc = Terbaru (tanggal terbesar di atas)
+                return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
+            }
+            return 0;
+        });
+    }, [sortConfig, records]);
+
+    // Helper untuk menampilkan Ikon Panah di Header
+    const getSortIcon = (columnKey) => {
+        if (sortConfig.key !== columnKey) return <span className="opacity-30">↕️</span>;
+        if (sortConfig.direction === 'asc') return <span>🔼</span>;
+        return <span>🔽</span>;
+    };
 
     const formatCustomDate = (isoString) => {
         if (!isoString) return '';
@@ -1082,13 +1132,13 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
     };
 
     const handleDateMasking = (e) => {
-        let v = e.target.value.replace(/[^\d]/g, ''); // Ambil angka saja
+        let v = e.target.value.replace(/[^\d]/g, ''); 
         let final = '';
         if (v.length > 0) final += v.substring(0, 2);
         if (v.length > 2) final += '/' + v.substring(2, 4);
-        if (v.length > 4) final += '/' + v.substring(4, 8); // YYYY (4 digit)
-        if (v.length > 8) final += ', ' + v.substring(8, 10); // Koma dan Jam
-        if (v.length > 10) final += ':' + v.substring(10, 12); // Menit
+        if (v.length > 4) final += '/' + v.substring(4, 8); 
+        if (v.length > 8) final += ', ' + v.substring(8, 10); 
+        if (v.length > 10) final += ':' + v.substring(10, 12); 
         e.target.value = final;
     };
 
@@ -1101,7 +1151,6 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
         
         if (diffTime < 0) return '0 hr 0 jm';
         
-        // Hitung Hari dan Jam
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
         const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
         
@@ -1119,6 +1168,7 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
                     <h2 className="font-bold text-emerald-800 flex items-center gap-2 text-sm">📖 Buku Register Ruangan (CM)</h2>
                     <p className="text-[9px] text-emerald-600">isi tanggal-jam masuk 2 angka, langsung saja tanpa /</p>
                 </div>
+                {/* DROPDOWN DIHAPUS, SISA TOMBOL CETAK SAJA */}
                 <button onClick={onPrint} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow hover:bg-emerald-700 transition flex items-center gap-2">
                     🖨️ Cetak Register
                 </button>
@@ -1147,12 +1197,36 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
                         <thead className="bg-gray-100 text-gray-700 text-[10px] uppercase font-bold border-y border-gray-300 sticky top-0 z-40 shadow-sm">
                             <tr>
                                 <th className="p-2 border-x border-gray-300 w-[35px] sticky left-0 bg-gray-200 z-50">No</th>
-                                <th className="p-2 border-x border-gray-300 w-[160px] sticky left-[35px] bg-gray-200 z-50 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Nama Pasien</th>
+                                
+                                {/* HEADER NAMA PASIEN (DIBUAT BISA DIKLIK) */}
+                                <th 
+                                    className="p-2 border-x border-gray-300 w-[160px] sticky left-[35px] bg-gray-200 z-50 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] cursor-pointer hover:bg-gray-300 transition-colors select-none title-attr" 
+                                    onClick={() => requestSort('name')}
+                                    title="Klik untuk mengurutkan A-Z / Z-A"
+                                >
+                                    <div className="flex justify-between items-center">
+                                        <span>Nama Pasien</span>
+                                        <span className="text-[10px]">{getSortIcon('name')}</span>
+                                    </div>
+                                </th>
+                                
                                 <th className="p-2 border-x border-gray-300 w-10 bg-gray-100">KMR</th>
                                 <th className="p-2 border-x border-gray-300 w-[75px] bg-gray-100">No. RM</th>
                                 <th className="p-2 border-x border-gray-300 min-w-[110px] bg-gray-100 text-left">Dokter</th>
                                 <th className="p-2 border-x border-gray-300 w-10 bg-gray-100">Kls</th>
-                                <th className="p-2 border-x border-gray-300 w-[135px] bg-gray-100">Tgl Masuk</th>
+                                
+                                {/* HEADER TANGGAL MASUK (DIBUAT BISA DIKLIK) */}
+                                <th 
+                                    className="p-2 border-x border-gray-300 w-[135px] bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors select-none"
+                                    onClick={() => requestSort('admissionDate')}
+                                    title="Klik untuk mengurutkan Paling Lama / Paling Baru"
+                                >
+                                    <div className="flex justify-between items-center">
+                                        <span>Tgl Masuk</span>
+                                        <span className="text-[10px]">{getSortIcon('admissionDate')}</span>
+                                    </div>
+                                </th>
+                                
                                 <th className="p-2 border-x border-gray-300 w-[75px] bg-gray-100">Hr</th>
                             </tr>
                         </thead>
@@ -2042,19 +2116,29 @@ const MedicalRecordApp = ({
   const [quickTtvTarget, setQuickTtvTarget] = useState(null);
   const [archiveSearch, setArchiveSearch] = useState('');
   
-  // State untuk Data Dinamis (Setelan)
+  // State untuk Data Dinamis (Setelan) - dengan localStorage backup
   const [dpjpProfiles, setDpjpProfiles] = useState(initialDpjpProfiles.map(p => ({...p, name: p.name})));
     // Master data lists (lab, radiologi, tindakan, terapi) -- dapat diubah lewat Setelan
-    const [masterLabs, setMasterLabs] = useState([]);
-    const [masterRads, setMasterRads] = useState([]);
-    const [masterProcedures, setMasterProcedures] = useState([]);
-    const [masterMedications, setMasterMedications] = useState([]);
+    // Load dari localStorage sebagai fallback jika Firebase lambat/error
+    const [masterLabs, setMasterLabs] = useState(() => {
+      try { return JSON.parse(localStorage.getItem('masterLabs')) || []; } catch { return []; }
+    });
+    const [masterRads, setMasterRads] = useState(() => {
+      try { return JSON.parse(localStorage.getItem('masterRads')) || []; } catch { return []; }
+    });
+    const [masterProcedures, setMasterProcedures] = useState(() => {
+      try { return JSON.parse(localStorage.getItem('masterProcedures')) || []; } catch { return []; }
+    });
+    const [masterMedications, setMasterMedications] = useState(() => {
+      try { return JSON.parse(localStorage.getItem('masterMedications')) || []; } catch { return []; }
+    });
     // Input fields for master data
     const [newMasterLab, setNewMasterLab] = useState('');
     const [newMasterRad, setNewMasterRad] = useState('');
     const [newMasterProcedure, setNewMasterProcedure] = useState('');
     const [newMasterMedication, setNewMasterMedication] = useState('');
-  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);      
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
+  const [settingsError, setSettingsError] = useState(null);      
 
     // Combined planning options (prefer master lists when available)
     const combinedPlanningOptions = useMemo(() => {
@@ -2198,45 +2282,112 @@ const MedicalRecordApp = ({
       return null;
   }, [db, appId]);
 
-  // 1. Load Settings (DPJP)
+  // 1. Load Settings (DPJP) - dengan retry dan localStorage fallback
   useEffect(() => {
       if (!userId) return; 
       const ref = getConfigRef();
       if (!ref) return;
+      
       setIsSettingsLoaded(false);
-      const unsubscribe = onSnapshot(ref, (snap) => {
-          if (snap.exists()) {
-              const data = snap.data();
-              if (data.dpjpProfiles && Array.isArray(data.dpjpProfiles)) {
-                  setDpjpProfiles(data.dpjpProfiles);
+      setSettingsError(null);
+      let retryCount = 0;
+      const maxRetries = 3;
+      let timeoutId = null;
+
+      const attemptLoad = () => {
+        try {
+          const unsubscribe = onSnapshot(ref, (snap) => {
+              if (snap.exists()) {
+                  const data = snap.data();
+                  if (data.dpjpProfiles && Array.isArray(data.dpjpProfiles)) {
+                      setDpjpProfiles(data.dpjpProfiles);
+                  }
+                  // load master lists if present dan simpan ke localStorage
+                  if (data.masterLabs && Array.isArray(data.masterLabs)) {
+                    setMasterLabs(data.masterLabs);
+                    localStorage.setItem('masterLabs', JSON.stringify(data.masterLabs));
+                  }
+                  if (data.masterRads && Array.isArray(data.masterRads)) {
+                    setMasterRads(data.masterRads);
+                    localStorage.setItem('masterRads', JSON.stringify(data.masterRads));
+                  }
+                  if (data.masterProcedures && Array.isArray(data.masterProcedures)) {
+                    setMasterProcedures(data.masterProcedures);
+                    localStorage.setItem('masterProcedures', JSON.stringify(data.masterProcedures));
+                  }
+                  if (data.masterMedications && Array.isArray(data.masterMedications)) {
+                    setMasterMedications(data.masterMedications);
+                    localStorage.setItem('masterMedications', JSON.stringify(data.masterMedications));
+                  }
+                  setIsSettingsLoaded(true);
+                  setSettingsError(null);
+                  retryCount = 0; // Reset jika berhasil
+              } else {
+                  // ⚠️ Dokumen tidak ada: initialize dengan DPJP default saja, master kosong
+                  setDoc(ref, { 
+                    dpjpProfiles: initialDpjpProfiles, 
+                    masterLabs: [], 
+                    masterRads: [], 
+                    masterProcedures: [], 
+                    masterMedications: [] 
+                  }).catch(err => console.error("Init settings error:", err));
+                  setIsSettingsLoaded(true);
+                  setSettingsError(null);
               }
-              // load master lists if present
-              if (data.masterLabs && Array.isArray(data.masterLabs)) setMasterLabs(data.masterLabs);
-              if (data.masterRads && Array.isArray(data.masterRads)) setMasterRads(data.masterRads);
-              if (data.masterProcedures && Array.isArray(data.masterProcedures)) setMasterProcedures(data.masterProcedures);
-              if (data.masterMedications && Array.isArray(data.masterMedications)) setMasterMedications(data.masterMedications);
-              setIsSettingsLoaded(true);
-          } else {
-              // initialize with existing DPJP and empty masters
-              setDoc(ref, { dpjpProfiles: initialDpjpProfiles, masterLabs: [], masterRads: [], masterProcedures: [], masterMedications: [] }).catch(err => console.error("Init settings error:", err));
-              setIsSettingsLoaded(true);
-          }
-      }, (err) => {
-          console.error("Settings Load Error:", err);
-          setIsSettingsLoaded(false);
-      });
-      return () => unsubscribe();
+          }, (err) => {
+              // ⚠️ ERROR: Jangan reset state! Gunakan localStorage sebagai fallback
+              console.warn("Firebase settings load error (retry " + (retryCount + 1) + "/" + maxRetries + "):", err.message);
+              setSettingsError(err.message);
+              
+              // Tunggu dan retry jika masih ada kesempatan
+              if (retryCount < maxRetries) {
+                  retryCount++;
+                  timeoutId = setTimeout(attemptLoad, 2000 * retryCount); // Exponential backoff: 2s, 4s, 6s
+              } else {
+                  // Setelah max retries, load dari localStorage dan anggap berhasil
+                  console.log("Max retries reached. Using localStorage fallback for master data.");
+                  setIsSettingsLoaded(true);
+              }
+          });
+          
+          return () => {
+            unsubscribe();
+            if (timeoutId) clearTimeout(timeoutId);
+          };
+        } catch (e) {
+          console.error("Settings listener setup error:", e);
+          setSettingsError(e.message);
+          setIsSettingsLoaded(true);
+        }
+      };
+
+      attemptLoad();
+      
+      return () => {
+        if (timeoutId) clearTimeout(timeoutId);
+      };
   }, [getConfigRef, userId]);
 
   const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles]);
 
-  // Generic save helper for settings (merges keys)
+  // Generic save helper for settings (merges keys) - dengan localStorage backup
   const saveSettings = async (partial) => {
       const ref = getConfigRef();
       if (!ref) return;
       try {
+          // Simpan ke localStorage dulu sebagai backup
+          if (partial.masterLabs) localStorage.setItem('masterLabs', JSON.stringify(partial.masterLabs));
+          if (partial.masterRads) localStorage.setItem('masterRads', JSON.stringify(partial.masterRads));
+          if (partial.masterProcedures) localStorage.setItem('masterProcedures', JSON.stringify(partial.masterProcedures));
+          if (partial.masterMedications) localStorage.setItem('masterMedications', JSON.stringify(partial.masterMedications));
+          
+          // Kemudian simpan ke Firebase
           await setDoc(ref, partial, { merge: true });
-      } catch(e) { alert("Gagal menyimpan setelan. Cek koneksi."); }
+          setSettingsError(null);
+      } catch(e) { 
+          console.error("Save settings error:", e.message);
+          alert("Gagal menyimpan setelan ke Firebase. Data sudah tersimpan lokal, akan sinkron saat koneksi baik."); 
+      }
   };
 
   const handleAddDpjp = async () => {
@@ -3262,7 +3413,27 @@ const processDischarge = async (type) => {
                     {/* --- VIEW 3: SETELAN (LEVEL 4 - UPDATE) --- */}
                     {view === 'settings' && (
                         <div className="bg-white p-6 rounded shadow h-full overflow-y-auto">
-                            <h2 className="font-bold text-xl mb-6 text-indigo-900 border-b pb-2 flex items-center gap-2">⚙️ Pusat Pengaturan</h2>
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="font-bold text-xl text-indigo-900 border-b pb-2 flex items-center gap-2">⚙️ Pusat Pengaturan</h2>
+                                {/* Status Indikator */}
+                                <div className="flex items-center gap-2">
+                                    {settingsError && (
+                                        <div className="text-[10px] px-2 py-1 rounded bg-yellow-100 text-yellow-700 font-bold flex items-center gap-1">
+                                            ⚠️ Menggunakan data lokal (koneksi bermasalah)
+                                        </div>
+                                    )}
+                                    {!isSettingsLoaded && (
+                                        <div className="text-[10px] px-2 py-1 rounded bg-blue-100 text-blue-700 font-bold flex items-center gap-1">
+                                            ⏳ Memuat data...
+                                        </div>
+                                    )}
+                                    {isSettingsLoaded && !settingsError && (
+                                        <div className="text-[10px] px-2 py-1 rounded bg-green-100 text-green-700 font-bold flex items-center gap-1">
+                                            ✓ Data sinkron dengan Firebase
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 {/* 1. PROFIL SAYA */}
                                 <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
