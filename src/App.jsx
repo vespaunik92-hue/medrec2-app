@@ -342,7 +342,7 @@ const RoomFilterDropdown = ({ allRooms, selectedRooms, onChange }) => {
                     
                     {/* Grid Kamar */}
                     <div className="grid grid-cols-4 gap-1 max-h-48 overflow-y-auto custom-scrollbar">
-                        {allRooms.map(room => (
+                        {[...allRooms].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(room => (
                             <button
                                 key={room}
                                 onClick={() => toggleRoom(room)}
@@ -355,6 +355,72 @@ const RoomFilterDropdown = ({ allRooms, selectedRooms, onChange }) => {
                                 {room}
                             </button>
                         ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- KOMPONEN BARU: FILTER DPJP MULTI-SELECT DENGAN SEARCH ---
+const DpjpFilterDropdown = ({ allOptions, selectedOptions, onChange }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const wrapperRef = useRef(null);
+
+    const toggleOption = (opt) => {
+        if (selectedOptions.includes(opt)) onChange(selectedOptions.filter(o => o !== opt));
+        else onChange([...selectedOptions, opt]);
+    };
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setIsOpen(false);
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [wrapperRef]);
+
+    const filteredList = allOptions.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    return (
+        <div className="relative w-full" ref={wrapperRef}>
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full bg-white border border-indigo-200 text-indigo-700 text-[10px] font-bold py-1.5 px-2 rounded flex justify-between items-center hover:bg-indigo-50 transition h-[32px] md:h-full"
+            >
+                <span className="truncate pr-2">
+                    {selectedOptions.length === 0 ? 'Semua Dokter (DPJP)' : `${selectedOptions.length} Dokter Dipilih`}
+                </span>
+                <span>{isOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {isOpen && (
+                <div className="absolute top-full left-0 w-full md:w-64 bg-white border border-gray-300 shadow-xl rounded-lg mt-1 z-[100] p-2">
+                    <div className="flex justify-between border-b pb-1 mb-2 items-center">
+                        <button onClick={() => onChange([])} className="text-[10px] font-bold text-red-600 hover:underline">Reset</button>
+                        <button onClick={() => setIsOpen(false)} className="text-[10px] text-gray-500 hover:underline">Tutup</button>
+                    </div>
+                    <input 
+                        type="text" 
+                        placeholder="Ketik cari dokter..." 
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        className="w-full p-1.5 border rounded text-[10px] mb-2 outline-none focus:ring-1 focus:ring-indigo-500 bg-gray-50"
+                    />
+                    <div className="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar">
+                        {filteredList.map(opt => (
+                            <label key={opt} className="flex items-center gap-2 p-1.5 hover:bg-indigo-50 rounded cursor-pointer border border-transparent hover:border-indigo-100 transition">
+                                <input 
+                                    type="checkbox" 
+                                    checked={selectedOptions.includes(opt)} 
+                                    onChange={() => toggleOption(opt)}
+                                    className="accent-indigo-600 cursor-pointer w-3 h-3"
+                                />
+                                <span className="text-[10px] text-gray-700 font-bold truncate">{opt}</span>
+                            </label>
+                        ))}
+                        {filteredList.length === 0 && <div className="text-[10px] text-gray-400 text-center py-2 italic">Tidak ditemukan</div>}
                     </div>
                 </div>
             )}
@@ -1165,8 +1231,8 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
             <div className="p-3 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center no-print flex-shrink-0">
                 <div>
-                    <h2 className="font-bold text-emerald-800 flex items-center gap-2 text-sm">📖 Buku Register Ruangan (CM)</h2>
-                    <p className="text-[9px] text-emerald-600">isi tanggal-jam masuk 2 angka, langsung saja tanpa /</p>
+                    <h2 className="font-bold text-emerald-800 flex items-center gap-2 text-sm">📖 Buku Register Ruangan (CM) | 
+                        <p className="text-[9px] text-emerald-600">isi tanggal-jam masuk 2 angka, untuk tahun 4 angka, langsung saja tanpa /</p></h2>                    
                 </div>
                 {/* DROPDOWN DIHAPUS, SISA TOMBOL CETAK SAJA */}
                 <button onClick={onPrint} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow hover:bg-emerald-700 transition flex items-center gap-2">
@@ -1527,6 +1593,27 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
     };
 
     const sortedRecords = useMemo(() => {
+        // 1. CEK SPESIAL: Apakah daftar saat ini HANYA berisi pasien dr. Delvi?
+        const isDelviOnly = records.length > 0 && records.every(r => r.dpjpName === 'dr. Delvi, Sp.PD');
+
+        if (isDelviOnly) {
+            // Urutan huruf U sesuai request (aku selipkan K12 di antara 11 dan 14 biar gak nyasar jika ada)
+            const uShapeBase = ['K6', 'K4', 'K2', 'K1', 'K3', 'K5', 'K7', 'K8', 'K9', 'K11', 'K12', 'K14', 'K15', 'K13', 'K10'];
+            
+            // Bikin otomatis jadi K6A, K6B, K4A, K4B, dst agar A dan B selalu berdampingan
+            const uShapeOrder = uShapeBase.flatMap(k => [`${k}A`, `${k}B`]);
+
+            return [...records].sort((a, b) => {
+                let indexA = uShapeOrder.indexOf(a.roomNumber);
+                let indexB = uShapeOrder.indexOf(b.roomNumber);
+                // Kalau tiba-tiba ada kamar di luar prediksi, lempar ke urutan paling bawah
+                if (indexA === -1) indexA = 999;
+                if (indexB === -1) indexB = 999;
+                return indexA - indexB;
+            });
+        }
+
+        // 2. Logic Lama: Filter berdasarkan pilihan Dropdown Kamar
         if (roomSortOrder && roomSortOrder.length > 0 && roomSortOrder.length < 24) {
             return [...records].sort((a, b) => {
                 const indexA = roomSortOrder.indexOf(a.roomNumber);
@@ -1534,6 +1621,8 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                 return indexA - indexB;
             });
         }
+
+        // 3. Logic Default: Berhitung Numerik (1A, 1B, 2A, 2B)
         return [...records].sort((a, b) => 
             a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' })
         );
@@ -2164,7 +2253,7 @@ const MedicalRecordApp = ({
   const [recordForDischarge, setRecordForDischarge] = useState(null);
   const [showLaporModal, setShowLaporModal] = useState(false);
 
-  const [dpjpFilter, setDpjpFilter] = useState(''); 
+  const [dpjpFilter, setDpjpFilter] = useState([]); 
   const [selectedRoomFilter, setSelectedRoomFilter] = useState(ROOM_LIST);
   
   const [showRaber1, setShowRaber1] = useState(false);
@@ -2260,13 +2349,14 @@ const MedicalRecordApp = ({
   // --- PENCARIAN & FILTER ---
   const filteredActiveRecords = useMemo(() => {
     return activeRecords.filter(rec => {
-        const matchesDpjp = !dpjpFilter || rec.dpjpName === dpjpFilter;
+        const matchesDpjp = dpjpFilter.length === 0 || dpjpFilter.includes(rec.dpjpName);
         const matchesRoom = selectedRoomFilter.length === ROOM_LIST.length || selectedRoomFilter.includes(rec.roomNumber);
         const term = searchTerm.toLowerCase();
         const matchesSearch = !searchTerm || 
             rec.name.toLowerCase().includes(term) || 
             (rec.analysis && rec.analysis.toLowerCase().includes(term)) ||
-            (rec.dpjpName && rec.dpjpName.toLowerCase().includes(term)); 
+            (rec.dpjpName && rec.dpjpName.toLowerCase().includes(term)) ||
+            (rec.rmNumber && rec.rmNumber.includes(term)); 
         return matchesDpjp && matchesRoom && matchesSearch;
     });
   }, [activeRecords, dpjpFilter, selectedRoomFilter, searchTerm]); 
@@ -3230,13 +3320,22 @@ const processDischarge = async (type) => {
                   }
               }
           }
-      });
-
-      // ... (SISA KODE STATS DI BAWAHNYA TETAP SAMA SEPERTI SEBELUMNYA) ...
+      });      
       records.forEach(r => {
           const m = r.createdAt.toLocaleString('id-ID', { month: 'short', year: 'numeric' });
-          if (!s.monthly[m]) s.monthly[m] = { active: 0, discharged: 0, lab: 0, rad: 0, tm: 0 };
-          r.isDischarged ? s.monthly[m].discharged++ : s.monthly[m].active++;
+          // 1. Tambahkan wadah untuk pulang, pindah, dan meninggal
+          if (!s.monthly[m]) s.monthly[m] = { active: 0, discharged: 0, pulang: 0, pindah: 0, meninggal: 0, lab: 0, rad: 0, tm: 0 };
+
+          // 2. Pisahkan hitungan berdasarkan jenis keluarnya (dischargeType)
+          if (r.isDischarged) {
+              s.monthly[m].discharged++; // Total keseluruhan keluar
+              if (r.dischargeType === 'pindah') s.monthly[m].pindah++;
+              else if (r.dischargeType === 'meninggal') s.monthly[m].meninggal++;
+              else s.monthly[m].pulang++; // Default jika kosong/pulang biasa
+          } else {
+              s.monthly[m].active++;
+          }
+
           if (r.planning) {
              const lines = r.planning.split('\n');
              lines.forEach(l => {
@@ -3257,8 +3356,51 @@ const processDischarge = async (type) => {
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full overflow-hidden">
         <div className="lg:col-span-6 flex flex-col h-[calc(100vh-120px)]">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
-                <div className="flex justify-between items-center px-3 py-2 border-b bg-gray-50 flex-shrink-0">
-                    <div className="flex items-center gap-2"><span className="text-lg">🗺️</span><div><h3 className="text-xs font-bold text-indigo-900 uppercase">Denah Kamar</h3><p className="text-[9px] text-gray-500">{dpjpFilter || selectedRoomFilter.length !== ROOM_LIST.length ? 'Filter Aktif' : 'Semua Kamar'}</p></div></div>
+                <div className="flex flex-col gap-2 px-3 py-2 border-b bg-gray-50 flex-shrink-0">
+                    {/* HEADER JUDUL */}
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <span className="text-lg">🗺️</span>
+                            <div>
+                                <h3 className="text-xs font-bold text-indigo-900 uppercase">Kamar</h3>
+                                <p className="text-[9px] text-gray-500">
+                                    {dpjpFilter.length > 0 || selectedRoomFilter.length !== ROOM_LIST.length || searchTerm ? 'Filter Aktif' : 'Semua'}
+                                </p>
+                            </div>
+                            {/* BARIS FILTER (Sama seperti di Daftar Pasien) */}
+                            <div className="flex flex-col md:flex-row gap-2">
+                                {/* Filter Kamar */}
+                                <div className="w-full md:w-1/3 relative z-[55]">
+                                    <RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
+                                </div>
+                                
+                                {/* Filter DPJP Multi-Select */}
+                                <div className="w-full md:w-1/3 relative z-[50]">
+                                    <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
+                                </div>
+                                
+                                {/* Search Bar (Nama / RM) */}
+                                <div className="relative flex-1">
+                                    <span className="absolute left-2 top-2 text-gray-400 text-[10px]">🔍</span>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Cari Nama/RM..." 
+                                        value={searchTerm} 
+                                        onChange={(e) => setSearchTerm(e.target.value)} 
+                                        className="w-full pl-6 pr-6 py-1.5 border border-indigo-200 rounded text-[10px] focus:ring-1 focus:ring-indigo-500 h-[32px] md:h-full bg-white outline-none" 
+                                    />
+                                    {searchTerm && (
+                                        <button 
+                                            onClick={() => setSearchTerm('')} 
+                                            className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>                    
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 bg-gray-50/50">
                     <RoomMap roomList={ROOM_LIST} activeRecords={filteredActiveRecords} onSelectRoom={handleSelectRoom} onEditRoom={handleEditRoom} roomFilter={selectedRoomFilter} waitingList={waitingList} />
@@ -3290,10 +3432,40 @@ const processDischarge = async (type) => {
             <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-3 text-xs uppercase">Pasien per DPJP</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{Object.entries(stats.dpjpCounts).sort((a,b)=>b[1]-a[1]).map(([n,c])=>(<div key={n} className="flex justify-between items-center text-[10px] p-2 bg-gray-50 rounded border hover:bg-indigo-50 group"><span className="truncate font-medium">{n}</span><div className="flex items-center gap-1"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{c}</span><button onClick={()=>handleReportDpjpCount(n,c)} className="text-[9px] bg-green-100 text-green-700 p-1 rounded-full opacity-80 group-hover:opacity-100">📱</button></div></div>))}</div>
             </div>
-            <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-2 text-xs uppercase flex justify-between"><span>🤝 Konsul</span><span className="bg-yellow-100 px-2 rounded-full">{Object.keys(stats.raberData).length} Dr</span></h3>
+            <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-2 text-xs uppercase flex justify-between"><span>🤝 Raber/Konsul</span><span className="bg-yellow-100 px-2 rounded-full">{Object.keys(stats.raberData).length} Dr</span></h3>
                 <div className="space-y-2">{Object.entries(stats.raberData).length===0?<div className="text-[10px] text-gray-400 text-center">Nihil.</div>:Object.entries(stats.raberData).map(([d,p])=>(<div key={d} className="text-[10px] bg-yellow-50 p-2 rounded border flex justify-between group"><div className="flex-1"><div className="font-bold text-indigo-800">{d}</div><div className="text-gray-600">({p.join(', ')})</div></div><button onClick={()=>handleReportRaber(d,p)} className="ml-2 bg-green-100 text-green-700 px-2 py-1 rounded opacity-80 group-hover:opacity-100">📱</button></div>))}</div>
             </div>
-            <div className="bg-white rounded overflow-hidden border"><div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase">📊 Rekap</div><table className="w-full text-[10px] text-left"><thead className="bg-gray-100 text-gray-500 font-bold border-b"><tr><th className="p-2">Bulan</th><th className="p-2 text-center">Aktif</th><th className="p-2 text-center">Plg</th><th className="p-2 text-center text-red-600">Lab</th><th className="p-2 text-center text-blue-600">Rad</th><th className="p-2 text-center text-green-600">TM</th></tr></thead><tbody>{Object.entries(stats.monthly).map(([m,d])=>(<tr key={m} className="border-b hover:bg-gray-50"><td className="p-2 font-bold text-indigo-900">{m}</td><td className="p-2 text-center">{d.active}</td><td className="p-2 text-center">{d.discharged}</td><td className="p-2 text-center font-bold">{d.lab}</td><td className="p-2 text-center font-bold">{d.rad}</td><td className="p-2 text-center font-bold">{d.tm}</td></tr>))}</tbody></table></div>
+            <div className="bg-white rounded overflow-hidden border">
+             <div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase">📊 Rekap</div>
+             <table className="w-full text-[10px] text-left">
+                 <thead className="bg-gray-100 text-gray-500 font-bold border-b">
+                     <tr>
+                         <th className="p-2">Bulan</th>
+                         <th className="p-2 text-center">Aktif</th>
+                         <th className="p-2 text-center" title="Pulang Biasa">Plg</th>
+                         <th className="p-2 text-center text-indigo-600" title="Pindah Ruangan">Pdh</th>
+                         <th className="p-2 text-center text-slate-800" title="Meninggal">Mng</th>
+                         <th className="p-2 text-center text-red-600">Lab</th>
+                         <th className="p-2 text-center text-blue-600">Rad</th>
+                         <th className="p-2 text-center text-green-600">TM</th>
+                     </tr>
+                 </thead>
+                 <tbody>
+                     {Object.entries(stats.monthly).map(([m,d])=>(
+                         <tr key={m} className="border-b hover:bg-gray-50">
+                             <td className="p-2 font-bold text-indigo-900">{m}</td>
+                             <td className="p-2 text-center">{d.active}</td>
+                             <td className="p-2 text-center font-bold">{d.pulang}</td>
+                             <td className="p-2 text-center font-bold text-indigo-600">{d.pindah}</td>
+                             <td className="p-2 text-center font-bold text-slate-800">{d.meninggal}</td>
+                             <td className="p-2 text-center font-bold text-red-600">{d.lab}</td>
+                             <td className="p-2 text-center font-bold text-blue-600">{d.rad}</td>
+                             <td className="p-2 text-center font-bold text-green-600">{d.tm}</td>
+                         </tr>
+                     ))}
+                 </tbody>
+             </table>
+         </div>
             <div className="h-10"></div>
         </div>
     </div>
@@ -3367,7 +3539,7 @@ const processDischarge = async (type) => {
         </div>
 
         <div className="relative flex flex-row max-w-7xl mx-auto lg:h-[calc(100vh-64px)] overflow-hidden">
-            <div className={`fixed top-16 left-0 bottom-0 w-full md:w-[400px] z-[60] bg-white transition-transform duration-300 ease-in-out shadow-2xl border-r ${showWaitingModal ? 'translate-x-0' : '-translate-x-full'}`}>
+            <div className={`fixed top-16 right-0 bottom-0 w-full md:w-[400px] z-[60] bg-white transition-transform duration-300 ease-in-out shadow-2xl border-l ${showWaitingModal ? 'translate-x-0' : 'translate-x-full'}`}>
                 <WaitingListInputPanel show={showWaitingModal} onClose={() => setShowWaitingModal(false)} onAdd={handleAddWaiting} availableRooms={ROOM_LIST} occupiedRooms={occupiedRooms} waitingList={waitingList} onUpdateRoom={updateWaitingListRoom} activeRecords={activeRecords}/>
             </div>
             <div className="w-full h-full flex flex-col overflow-hidden">
@@ -3378,24 +3550,22 @@ const processDischarge = async (type) => {
                             <div className="p-3 bg-white border-b shadow-sm sticky top-0 z-40 flex-shrink-0 space-y-2">
                                 <div className="flex justify-between items-center">
                                     <div className="flex items-center gap-2"><h2 className="font-bold text-lg text-indigo-800">📂 Daftar Pasien</h2><span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-bold">{filteredActiveRecords.length} Pasien</span></div>
+                                    <div className="flex flex-col md:flex-row gap-2">
+                                    <div className="w-full md:w-48 relative z-50"><RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} /></div>
+                                    <div className="w-full md:w-56 relative z-50">
+                                        <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
+                                    </div>
+                                    <div className="relative flex-1">
+                                        <span className="absolute left-2.5 top-2 text-gray-400 text-xs">🔍</span>
+                                        <input type="text" placeholder="Cari Nama / Diagnosa / Dokter / No. RM" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-8 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 h-[32px]" />
+                                        {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs">✕</button>}
+                                    </div>
+                                </div>
                                     <div className="flex space-x-1">
                                         <button onClick={handleExportExcel} className="text-[10px] px-3 py-1.5 bg-white border border-green-200 text-green-700 rounded-lg font-bold hover:bg-green-600 hover:text-white transition shadow-sm">Excel</button>
                                         <button onClick={() => setShowBulkPrint(true)} className="text-[10px] px-3 py-1.5 bg-white border border-indigo-200 text-indigo-700 rounded-lg font-bold hover:bg-indigo-600 hover:text-white transition shadow-sm">🖨️ Cetak Banyak</button>
                                     </div>
-                                </div>
-                                <div className="flex flex-col md:flex-row gap-2">
-                                    <div className="w-full md:w-48 relative z-50"><RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} /></div>
-                                    <div className="w-full md:w-48">
-                                        <select value={dpjpFilter} onChange={(e) => setDpjpFilter(e.target.value)} className="w-full p-1.5 border border-indigo-200 rounded-lg text-xs bg-white h-[32px]">
-                                            <option value="">Semua Dokter (DPJP)</option>{dpjpOptions.map((opt, idx) => <option key={idx} value={opt}>{opt}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="relative flex-1">
-                                        <span className="absolute left-2.5 top-2 text-gray-400 text-xs">🔍</span>
-                                        <input type="text" placeholder="Cari Nama / Diagnosa / Dokter..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-8 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 h-[32px]" />
-                                        {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs">✕</button>}
-                                    </div>
-                                </div>
+                                </div>                                
                             </div>
                             <div className="flex-1 overflow-hidden relative z-0">
                                 <PatientTable records={filteredActiveRecords} onEdit={handleEdit} onPrint={(r) => setSelectedRecordForPrint(r)} onShowLaporModal={setRecordForLapor} onDischarge={handleDischarge} onBulkPrint={() => setShowBulkPrint(true)} roomSortOrder={selectedRoomFilter} onPrintTTV={handlePrintTTV} onPrintSOAP={handlePrintSOAP} onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }} onBulkDischarge={handleBulkDischarge} updateRecord={updateRecord} onPrintBukuCM={handlePrintBukuCM} onPrintLabel={handlePrintLabel} />
@@ -3751,7 +3921,9 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
                                                             autoFocus
                                                         >
                                                             {/* Saya pakaikan logic warna pintar juga di dropdown edit ini! */}
-                                                            {availableRooms.map(r => {
+                                                            {[...availableRooms]
+                                                            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+                                                            .map(r => {
                                                                 const status = getRoomOptionStatus(r);
                                                                 return <option key={r} value={r}>{status.dot} {r}</option>
                                                             })}
@@ -4159,7 +4331,7 @@ const InputSidePanel = ({
         ];
 
         // 2. TES YANG HASILNYA KALIMAT PANJANG (DESCRIPTIVE)
-        const descriptiveTests = ['Sputum', 'TCM', 'Gram', 'Kultur', 'Ag', 'PCR', 'HIV', 'HBsAg', 'HCV'];
+        // 2. TES YANG HASILNYA KALIMAT PANJANG (DESCRIPTIVE)
 
         // 3. KAMUS GLOBAL
         const globalSources = [...(typeof LAB_CHECKS !== 'undefined' ? LAB_CHECKS : []), ...(typeof RADIOLOGY_CHECKS !== 'undefined' ? RADIOLOGY_CHECKS : [])];
@@ -4370,37 +4542,37 @@ const InputSidePanel = ({
                         {isEditing ? formData.name : 'Pasien Baru'}
                     </h2>
                     <p className="text-[9px] text-gray-500 font-bold">{formData.roomNumber || 'Pilih Kamar'}</p>
-                </div>
-                
+                </div>                
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {isEditing && (
-                        <>
-                            <button type="button" onClick={() => onPrintLabel(formData)} className="p-1.5 bg-purple-100 text-purple-700 border border-purple-200 rounded text-[10px] shadow-sm hover:bg-purple-200" title="Cetak Label Spuit (12 Pcs)">🏷️</button>
-                            <button type="button" onClick={onPrintCPO} className="p-1.5 bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] shadow-sm hover:bg-blue-200 ml-1" title="Cetak CPO (Obat)">💊</button>
-                            <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">📱</button>
-                            <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print (Ctrl+P)">🖨️</button>                            
-                            <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Keluar">🚪</button>                            
-                            
-                            {handleDeleteRecord && (
-                                <button type="button" onClick={() => handleDeleteRecord(currentRecordId, formData.name)} className="p-1.5 bg-red-600 text-white border border-red-700 rounded text-[10px] shadow-sm hover:bg-red-800 ml-1" title="Hapus Data Permanen">🗑️</button>
-                            )}
-                            <div className="h-5 w-[1px] bg-gray-300 mx-1"></div>
-                        </>
-                    )}
-                    
-                    <button 
-                        onClick={handleSubmit} 
-                        disabled={loading || !isFormReady} 
-                        className={`p-1.5 rounded text-white shadow-sm transition flex items-center justify-center ${loading || !isFormReady ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                        title="Simpan Data (Ctrl+S)"
-                    >
-                        {loading ? '...' : '💾'}
-                    </button>
+                {/* BAGIAN Tombol Edit (Hanya Muncul Jika isEditing true) */}
+                {isEditing && (
+                    <>
+                        <button type="button" onClick={() => onPrintLabel(formData)} className="p-1.5 bg-purple-100 text-purple-700 border border-purple-200 rounded text-[10px] shadow-sm hover:bg-purple-200" title="Cetak Label Spuit (12 Pcs)">🏷️</button>
+                        <button type="button" onClick={onPrintCPO} className="p-1.5 bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] shadow-sm hover:bg-blue-200" title="Cetak CPO (Obat)">💊</button>
+                        <button type="button" onClick={() => handleQuickAction('lapor')} className="p-1.5 bg-green-100 text-green-700 border border-green-200 rounded text-[10px] shadow-sm hover:bg-green-200" title="Draft Lapor">📱</button>
+                        <button type="button" onClick={() => handleQuickAction('print')} className="p-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] shadow-sm hover:bg-gray-200" title="Print (Ctrl+P)">🖨️</button>
+                        <button type="button" onClick={() => handleQuickAction('discharge')} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded text-[10px] shadow-sm hover:bg-red-100" title="Keluar">🚪</button>
+                        
+                        {handleDeleteRecord && (
+                            <button type="button" onClick={() => handleDeleteRecord(currentRecordId, formData.name)} className="p-1.5 bg-red-600 text-white border border-red-700 rounded text-[10px] shadow-sm hover:bg-red-800" title="Hapus Data Permanen">🗑️</button>
+                        )}
+                        <div className="h-5 w-[1px] bg-gray-300 mx-1"></div>
+                    </>
+                )}
 
-                    <button onClick={() => { setShowInputModal(false); resetForm(); }} className="p-1.5 bg-white text-gray-400 border border-gray-200 rounded hover:bg-red-50 hover:text-red-500 transition shadow-sm" title="Tutup (Esc)">
-                        ✕
-                    </button>
-                </div>
+                {/* Tombol Simpan & Tutup (Muncul Selalu) */}
+                <button 
+                    onClick={handleSubmit} 
+                    disabled={loading || !isFormReady} 
+                    className={`p-1.5 rounded text-white shadow-sm transition flex items-center justify-center ${loading || !isFormReady ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                    title="Simpan Data (Ctrl+S)"
+                >
+                    {loading ? '...' : '💾'}
+                </button>
+                <button onClick={() => { setShowInputModal(false); resetForm(); }} className="p-1.5 bg-white text-gray-400 border border-gray-200 rounded hover:bg-red-50 hover:text-red-500 transition shadow-sm" title="Tutup (Esc)">
+                    ✕
+                </button>
+            </div>
             </div>
             
             {/* B. AREA SCROLL FORM */}
