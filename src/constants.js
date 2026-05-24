@@ -30,7 +30,7 @@ export const DEFAULT_DPJP_DATA = [
     { name: 'dr. Jamal, Sp.KJ', waNumber: '6282116190858' },
     { name: 'dr. Virama, Sp.KJ', waNumber: '628121078143' },
     { name: 'dr. Sri Siswanti, Sp.Kk', waNumber: '6281227153161' },
-    { name: 'dr. Dian Maifara, Sp.BM', waNumber: '62811119879' },
+    { name: 'drg. Dian Maifara, Sp.BM', waNumber: '62811119879' },
     { name: 'dr. Ayuning, Sp.M', waNumber: '6281320657281' },
     { name: 'dr. Sudarmanto, Sp.M', waNumber: '6281287083336' },
     { name: 'dr. Erick Maulana Yusup, Sp.T.H.T.K.L', waNumber: '628112225992' },
@@ -42,7 +42,7 @@ export const DEFAULT_DPJP_DATA = [
 export const LAB_CHECKS = [
     'Darah Rutin (DR)', 'HJL', 'Masa Pendarahan (BT/CT)', 'CA125', 'PT/APTT/INR',
     'GDS', 'GDP-2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer', 'Retikulosit',
-    'Ureum/Creatinin', 'SGOT-SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
+    'Ureum-Creatinin', 'SGOT-SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
     'Elektrolit (Na/K/Cl)', 'Kalsium (Cal)', 'Analisa Gas Darah (AGD)', 'Lactate', 'igG-igM Cikungunya',
     'Hemokultur', 'Darah Tepi', 'LED', 'PCR Covid-19', 'Swab Antigen', 'Rapid Test Covid-19',
     'Sero Dengue (NS1)', 'Malaria (Tetesan Darah)', 'Widal Test', 'Fungsi Tiroid Lengkap',

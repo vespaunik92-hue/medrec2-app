@@ -107,38 +107,58 @@ const CustomInput = ({ label, name, type = 'text', required = false, value, onCh
   </div>
 );
 
-const CustomTextArea = ({ label, name, value, onChange, children, extraButtons, onPullData, pullLabel }) => (
-  <div className="mb-3 border p-2 rounded bg-white relative group hover:border-indigo-300 transition">
-    <div className="flex justify-between items-center mb-1">
-        <div className="flex items-center">
-            <label className="block text-[10px] font-bold text-gray-700 uppercase bg-gray-100 px-2 py-0.5 rounded mr-2">
-                {label}
-            </label>
-            {onPullData && (
-                <button 
-                    type="button" 
-                    onClick={onPullData}
-                    className="text-[9px] flex items-center text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition"
-                    title="Salin data dari catatan terakhir pasien ini"
-                >
-                    <span className="mr-1">↺</span> {pullLabel || 'Tarik Data'}
-                </button>
-            )}
+const CustomTextArea = ({ label, name, value, onChange, children, extraButtons, onPullData, pullLabel }) => {
+    const textareaRef = useRef(null);
+
+    // Fungsi otomatis hitung tinggi berdasarkan isi tulisan
+    const adjustHeight = () => {
+        const textarea = textareaRef.current;
+        if (textarea) {
+            textarea.style.height = 'auto'; // Reset tinggi dulu
+            textarea.style.height = textarea.scrollHeight + 'px'; // Setel sesuai tinggi aslinya
+        }
+    };
+
+    // KUNCI UTAMA: Jalankan fungsi setiap kali 'value' berubah 
+    // (Bisa pas loading data pasien masuk, pas ditarik, maupun pas diketik)
+    useEffect(() => {
+        adjustHeight();
+    }, [value]);
+
+    return (
+        <div className="mb-3 border p-2 rounded bg-white relative group hover:border-indigo-300 transition">
+            <div className="flex justify-between items-center mb-1">
+                <div className="flex items-center">
+                    <label className="block text-[10px] font-bold text-gray-700 uppercase bg-gray-100 px-2 py-0.5 rounded mr-2">
+                        {label}
+                    </label>
+                    {onPullData && (
+                        <button 
+                            type="button" 
+                            onClick={onPullData}
+                            className="text-[9px] flex items-center text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition"
+                            title="Salin data dari catatan terakhir pasien ini"
+                        >
+                            <span className="mr-1">↺</span> {pullLabel || 'Tarik Data'}
+                        </button>
+                    )}
+                </div>
+                <div className="flex space-x-1">
+                    {extraButtons}
+                </div>
+            </div>
+            <textarea
+                ref={textareaRef} // Hubungkan referensi kotak ke mesin pengukur tinggi
+                name={name}
+                value={value}
+                onChange={onChange}
+                className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition font-mono leading-tight min-h-[55px] resize-y overflow-hidden"
+                placeholder="Ketik di sini..."
+            />
+            {children}
         </div>
-        <div className="flex space-x-1">
-            {extraButtons}
-        </div>
-    </div>
-    <textarea
-      name={name}
-      value={value}
-      onChange={onChange}
-      rows="3"
-      className="w-full p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition resize-y font-mono leading-tight"
-    />
-    {children}
-  </div>
-);
+    );
+};
 
 // --- COMPONENT CUSTOM SELECT (UPDATE: KEYBOARD NAVIGATION & HIGHLIGHT) ---
 const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, required, className = '' }) => {
@@ -1440,7 +1460,7 @@ const renderPlanningCell = (text) => {
 
                 // B. LOGIKA KONSUL (BARU ✨) -> WARNA ORANYE (AMBER)
                 // Biar beda sama Rad (Biru) dan Lab (Merah)
-                if (lower.match(/\b(konsul|konsultasi|ts|rawat gabung|alih rawat)\b/)) {
+                if (lower.match(/\b(lapor|konsul|konsultasi|ts|rawat gabung|alih rawat)\b/)) {
                     return (
                         <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-amber-100 border-amber-400 text-amber-900">
                             👨‍⚕️ {line}
@@ -2206,7 +2226,15 @@ const MedicalRecordApp = ({
   const [archiveSearch, setArchiveSearch] = useState('');
   
   // State untuk Data Dinamis (Setelan) - dengan localStorage backup
-  const [dpjpProfiles, setDpjpProfiles] = useState(initialDpjpProfiles.map(p => ({...p, name: p.name})));
+    const [dpjpProfiles, setDpjpProfiles] = useState(() => {
+        try { 
+            // Coba ambil dari memori browser dulu (jika internet mati/diblokir)
+            const localData = JSON.parse(localStorage.getItem('backupDpjp'));
+            if (localData && localData.length > 0) return localData;
+        } catch (e) {}
+        // Jika benar-benar kosong, baru ambil dari constants.js
+        return initialDpjpProfiles.map(p => ({...p, name: p.name}));
+    });
     // Master data lists (lab, radiologi, tindakan, terapi) -- dapat diubah lewat Setelan
     // Load dari localStorage sebagai fallback jika Firebase lambat/error
     const [masterLabs, setMasterLabs] = useState(() => {
@@ -2390,8 +2418,23 @@ const MedicalRecordApp = ({
               if (snap.exists()) {
                   const data = snap.data();
                   if (data.dpjpProfiles && Array.isArray(data.dpjpProfiles)) {
-                      setDpjpProfiles(data.dpjpProfiles);
+                  // 1. AUTO-SYNC: Cek dokter baru di constants.js yang belum ada di Firebase
+                  const cloudNames = data.dpjpProfiles.map(p => p.name.toLowerCase());
+                  const missingFromCloud = initialDpjpProfiles.filter(p => !cloudNames.includes(p.name.toLowerCase()));
+
+                  let finalDpjp = data.dpjpProfiles;
+
+                  if (missingFromCloud.length > 0) {
+                      // Gabungkan dan urutkan
+                      finalDpjp = [...data.dpjpProfiles, ...missingFromCloud].sort((a, b) => a.name.localeCompare(b.name));
+                      // Tanam data baru ke Firebase tanpa menghapus yang lama
+                      setDoc(ref, { dpjpProfiles: finalDpjp }, { merge: true }).catch(err => console.error("Auto-sync DPJP failed:", err));
                   }
+
+                  // 2. SIMPAN STATE & LOKAL: Tampilkan di layar & simpan di memori anti-hilang
+                  setDpjpProfiles(finalDpjp);
+                  localStorage.setItem('backupDpjp', JSON.stringify(finalDpjp));
+                    }
                   // load master lists if present dan simpan ke localStorage
                   if (data.masterLabs && Array.isArray(data.masterLabs)) {
                     setMasterLabs(data.masterLabs);
@@ -2466,6 +2509,7 @@ const MedicalRecordApp = ({
       if (!ref) return;
       try {
           // Simpan ke localStorage dulu sebagai backup
+          if (partial.dpjpProfiles) localStorage.setItem('backupDpjp', JSON.stringify(partial.dpjpProfiles));
           if (partial.masterLabs) localStorage.setItem('masterLabs', JSON.stringify(partial.masterLabs));
           if (partial.masterRads) localStorage.setItem('masterRads', JSON.stringify(partial.masterRads));
           if (partial.masterProcedures) localStorage.setItem('masterProcedures', JSON.stringify(partial.masterProcedures));
@@ -3962,6 +4006,51 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
         </div>
     );
 };
+const PlanningQuickTag = ({ onSelect }) => {
+    const tags = [
+        // LAB (Merah)
+        { label: 'GDS', isi: 'Lab. R/ GDS', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'GDP-2JPP', isi: 'Lab. R/ GDP-2JPP', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'Ur-Cr', isi: 'Lab. R/ Ureum-Creatinin', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'Elektrolit', isi: 'Lab. R/ Elektrolit (Na/K/Cl)', warna: 'bg-red-100 text-red-700 border-red-200' },
+        
+        // RAD (Biru)
+        { label: 'Whole Abd', isi: 'Rad. R/ USG Whole Abdomen', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
+        { label: 'Upper Abd', isi: 'Rad. R/ USG Hepatobilier/Upper Abdomen', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
+        { label: 'Lower Abd', isi: 'Rad. R/ USG Lower/Ginjal Abdomen', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
+        
+        // TERAPI (Ungu)
+        { label: 'PRC', isi: 'Th. Trnfs  PRC, on ke , post ke , premed: ', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        { label: 'Nicardipin', isi: 'Th. Drip Perdipine/Nicardipine  mcg, Kec.  cc/j, Bb  kg', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        { label: 'Vascon', isi: 'Th. Drip vascon/Norepinephrine mcg, Kec.  cc/j, Bb  kg', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        { label: 'Panto', isi: 'Th. Drip pantoprazole 8 mg/j', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        
+        // TAMBAHAN (Hitam)
+        { label: 'BLPL', isi: 'Rencana BLPL', warna: 'bg-black text-white border-black' },
+
+        // KONSUL (Amber/Emas)
+        { label: 'Konsul', isi: 'Konsul TS ke dr. ', warna: 'bg-amber-100 text-amber-900 border-amber-400' }
+    ];
+
+    return (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+            {tags.map((tag, idx) => (
+                <button 
+                    key={idx} 
+                    type="button"
+                    onClick={() => onSelect(tag.isi)}
+                    // Jika BLPL, gunakan gaya simpel. Jika bukan, gunakan gaya standar tombol.
+                    className={tag.label === 'BLPL' 
+                        ? `px-2 py-1 rounded text-[11px] font-bold border shadow-sm transition hover:opacity-80 ${tag.warna}` 
+                        : `px-2 py-1 border rounded text-[9px] font-bold transition shadow-sm hover:opacity-80 ${tag.warna}`
+                    }
+                >
+                    {tag.label}
+                </button>
+            ))}
+        </div>
+    );
+};
 // --- INPUT SIDE PANEL (VERSI SUPER: SHORTCUTS + SMART LAB V10) ---
 const InputSidePanel = ({
     showInputModal, setShowInputModal, handleSubmit, formData, handleInputChange,
@@ -4845,18 +4934,30 @@ const InputSidePanel = ({
                         <CustomTextArea label="A (Analisa)" name="analysis" value={formData.analysis} onChange={handleInputChange} 
                             onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('analysis') : null} pullLabel="Salin A Lalu" />
                         
-                        <CustomTextArea label="P (Planning)" name="planning" value={formData.planning} onChange={handleInputChange}>
-                            <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-0">
-                                <TagSelector label="Smart Planning" placeholder="Ketik Lab, Rad, Obat..." options={ALL_PLANNING_OPTIONS.map(o => o.label)} category="SmartPlan"
-                                    onSelect={(cat, itemLabel) => {
-                                        const found = ALL_PLANNING_OPTIONS.find(o => o.label === itemLabel);
-                                        const type = found ? found.type : 'Rx';
-                                        let prefix = type === 'Lab' ? 'Lab. R/ ' : type === 'Rad' ? 'Rad. R/ ' : type === 'Med' ? 'TM. ' : 'Th. ';
-                                        appendText('planning', `${prefix}${itemLabel}`);
-                                    }} 
-                                />
-                            </div>
-                        </CustomTextArea>
+                        <CustomTextArea 
+                        label="P (Planning)" name="planning" value={formData.planning} onChange={handleInputChange}
+                        // PROPS HARUS DI SINI (DI DALAM TAG PEMBUKA)
+                        onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('planning') : null} 
+                        pullLabel="Tarik P"
+                    >
+                        {/* ISINYA (CHILDREN) TETAP DI SINI */}
+                        <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-0">
+                            <PlanningQuickTag onSelect={(text) => appendText('planning', text)} />
+
+                            <TagSelector 
+                                label="Smart Planning" 
+                                placeholder="Ketik Lab, Rad, Obat..." 
+                                options={ALL_PLANNING_OPTIONS.map(o => o.label)} 
+                                category="SmartPlan"
+                                onSelect={(cat, itemLabel) => {
+                                    const found = ALL_PLANNING_OPTIONS.find(o => o.label === itemLabel);
+                                    const type = found ? found.type : 'Rx';
+                                    let prefix = type === 'Lab' ? 'Lab. R/ ' : type === 'Rad' ? 'Rad. R/ ' : type === 'Med' ? 'TM. ' : 'Th. ';
+                                    appendText('planning', `${prefix}${itemLabel}`);
+                                }} 
+                            />
+                        </div>
+                    </CustomTextArea>
                     </div>
                 </div>
 
