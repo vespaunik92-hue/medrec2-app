@@ -2695,27 +2695,41 @@ const MedicalRecordApp = ({
       if (!isEditing && isRoomOccupied) return alert(`Kamar ${formData.roomNumber} sudah terisi.`);
 
       const now = Timestamp.now();
-      const data = { ...formData, updatedAt: now };
+      
+      // Konversi format tanggal masuk tepat sebelum ke database
+      const data = { 
+          ...formData, 
+          admissionDate: parseDateCM(formData.admissionDate), 
+          updatedAt: now 
+      };
       if (!isEditing) data.createdAt = now;
       const ref = getCollectionRef();
 
-      // --- LOGIKA SIMPAN & RIWAYAT ---
+      // --- LOGIKA SIMPAN & RIWAYAT DENGAN SIGNATURE ---
       if (isEditing && currentRecordId) {
-          // 1. Update Dokumen Utama
           updateDoc(doc(ref, currentRecordId), data).catch(err => console.error("Gagal update:", err));
           
-          // 2. TAMBAHKAN CATATAN KE RIWAYAT (Yang tadinya bolong di sini)
           if (db && appId) {
               const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${currentRecordId}/notes`);
-              addDoc(notesRef, { ...formData, createdAt: now, noteType: 'daily_update' })
-                .catch(err => console.error("Gagal tambah riwayat:", err));
+              addDoc(notesRef, { 
+                  ...formData, 
+                  admissionDate: parseDateCM(formData.admissionDate),
+                  createdAt: now, 
+                  noteType: 'daily_update',
+                  savedBy: currentUser?.name || 'System' // 1. REKAM NAMA DI SINI ✨
+              }).catch(err => console.error("Gagal tambah riwayat:", err));
           }
       } else {
-          // Kasus Pasien Baru
           addDoc(ref, data).then(newDoc => {
               if (db && appId) {
                   const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${newDoc.id}/notes`);
-                  addDoc(notesRef, { ...formData, createdAt: now, noteType: 'daily_update' });
+                  addDoc(notesRef, { 
+                      ...formData, 
+                      admissionDate: parseDateCM(formData.admissionDate),
+                      createdAt: now, 
+                      noteType: 'daily_update',
+                      savedBy: currentUser?.name || 'System' // 2. REKAM NAMA DI SINI ✨
+                  });
               }
           }).catch(err => console.error("Gagal tambah pasien:", err));
       }
@@ -2737,7 +2751,11 @@ const MedicalRecordApp = ({
 
         const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${quickTtvTarget.id}/notes`);
         await addDoc(notesRef, { 
-            ...quickTtvTarget, objective: finalObjective, noteType: 'ttv_update', createdAt: Timestamp.now() 
+            ...quickTtvTarget, 
+            objective: finalObjective, 
+            noteType: 'ttv_update', 
+            createdAt: Timestamp.now(),
+            savedBy: currentUser?.name || 'System' // 3. REKAM JUGA SAAT INPUT TTV CEPAT ✨
         });
         setQuickTtvTarget(null); setShowTtvModal(false); 
     } catch (e) { alert("Gagal menyimpan TTV."); } finally { setLoading(false); }
@@ -3528,12 +3546,12 @@ const processDischarge = async (type) => {
         {/* HEADER V5 (MENU UNIVERSAL) */}
         <div className="bg-white shadow-sm px-4 h-14 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
             
-            {/* 1. KIRI: LOGO (flex-none supaya tidak kegeser) */}
+            {/* 1. KIRI: LOGO (flex-none supaya ukuran paten) */}
             <div onClick={() => setView('dashboard')} className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none py-1 flex-none">
                 <img src="/logo3.png" alt="SIMPAN Header" className="h-28 object-contain" />
             </div>
             
-            {/* 2. TENGAH: PESAN WELCOME (1 Baris lurus & Presisi di Tengah) */}
+            {/* 2. TENGAH: PESAN WELCOME (1 Baris Lurus & Presisi di Tengah) */}
             <div className="flex-1 flex justify-center px-4">
                 <div className="hidden md:flex bg-indigo-50 px-4 py-1.5 rounded-full border border-indigo-100 shadow-sm">
                     <span className="text-[11px] font-bold text-indigo-900 whitespace-nowrap">
@@ -3542,8 +3560,9 @@ const processDischarge = async (type) => {
                 </div>
             </div>
             
-            {/* 3. KANAN: TOMBOL AKSI (Komponen <DigitalClock /> sudah dihapus dari sini) */}
+            {/* 3. KANAN: SEKERANJANG TOMBOL AKSI & MENU DROPDOWN */}
             <div className="flex items-center gap-2 flex-none">
+                
                 <button 
                     onClick={() => setShowLaporModal(true)} 
                     className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-1.5 rounded-lg text-[10px] font-bold border border-indigo-200 transition shadow-sm"
@@ -3562,8 +3581,22 @@ const processDischarge = async (type) => {
                     <div className="absolute top-full right-0 pt-2 w-48 z-[90] hidden group-hover:block animate-in fade-in zoom-in-95 origin-top-right">
                         <div className="bg-white rounded-lg shadow-xl border border-gray-100 py-1">
                             
-                            <div className="px-2 py-1">
-                                <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded w-fit block">
+                            {/* ✨ SEKSI TENTANG APLIKASI & LINK TRAKTEER NYELIP DI SINI ✨ */}
+                            <div className="px-3 py-1.5 text-[10px] text-gray-500 border-b border-gray-100 mb-1 bg-indigo-50/40">
+                                <p className="font-bold text-indigo-900">SIMPAN </p>
+                                <p className="text-[9px]">Nursing System Handover </p>
+                                <a 
+                                    href="https://trakteer.id/481nugroho" 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="block mt-1.5 text-[10px] text-indigo-600 font-extrabold hover:underline"
+                                >
+                                    ☕ Traktir Kopi?
+                                </a>
+                            </div>
+
+                            <div className="px-4 py-1 border-b border-gray-50 mb-1">
+                                <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded w-fit block uppercase">
                                     👤 {currentUser ? currentUser.name : 'Guest'}
                                 </span>
                             </div>
@@ -3634,7 +3667,7 @@ const processDischarge = async (type) => {
                                 {/* 3. Tombol Aksi Kanan */}
                                 <div className="flex space-x-1">
                                     <button onClick={handleExportExcel} className="text-[10px] px-3 py-1.5 bg-white border border-green-200 text-green-700 rounded-lg font-bold hover:bg-green-600 hover:text-white transition shadow-sm">Excel</button>
-                                    <button onClick={() => setShowBulkPrint(true)} className="text-[10px] px-3 py-1.5 bg-white border border-indigo-200 text-indigo-700 rounded-lg font-bold hover:bg-indigo-600 hover:text-white transition shadow-sm">🖨️ Cetak Banyak</button>
+                                    <button onClick={() => setShowBulkPrint(true)} className="text-[10px] px-3 py-1.5 bg-white border border-indigo-200 text-indigo-700 rounded-lg font-bold hover:bg-indigo-600 hover:text-white transition shadow-sm">🖨️ Cetak OA Banyakan</button>
                                 </div>
                                 
                             </div>                               
@@ -4043,11 +4076,14 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
 const PlanningQuickTag = ({ onSelect }) => {
     const tags = [
         // LAB (Merah)
-        { label: 'DR', isi: 'Darah Rutin (DR)', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'DR', isi: 'Lab. R/ Darah Rutin (DR)', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'GDS', isi: 'Lab. R/ GDS', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'GDP-2JPP', isi: 'Lab. R/ GDP-2JPP', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'Ur-Cr', isi: 'Lab. R/ Ureum-Creatinin', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'Elektrolit', isi: 'Lab. R/ Elektrolit (Na/K/Cl)', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'TCM', isi: 'Lab. R/ TCM TB', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'Sputum', isi: 'Lab. R/ Sputum', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'Urin', isi: 'Lab. R/ Urin', warna: 'bg-red-100 text-red-700 border-red-200' },
         
         // RAD (Biru)
         { label: 'Whole Abd', isi: 'Rad. R/ USG Whole Abdomen', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -4750,14 +4786,17 @@ const InputSidePanel = ({
                                     </select>
                                 </div>
 
-                                {/* KOLOM 4: TGL MASUK */}
+                                {/* KOLOM 4: TGL MASUK (FIXED: LANGSUNG MASUK MEMORI) */}
                                 <div className="w-[40%] relative">
                                     <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1">Tgl Masuk</label>
                                     <input 
                                         type="text" 
-                                        defaultValue={formatDateCM(formData.admissionDate)}
-                                        onChange={handleDateMasking}
-                                        onBlur={(e) => handleInputChange({ target: { name: 'admissionDate', value: parseDateCM(e.target.value) } })}
+                                        // Controlled value: Jika berisi format database (-) ubah ke tampilan biasa, jika sedang diketik biarkan apa adanya
+                                        value={formData.admissionDate ? (formData.admissionDate.includes('-') ? formatDateCM(formData.admissionDate) : formData.admissionDate) : ''}
+                                        onChange={(e) => {
+                                            handleDateMasking(e); // Jalankan auto-format garis miring
+                                            handleInputChange({ target: { name: 'admissionDate', value: e.target.value } }); // Langsung rekam ke memori
+                                        }}
                                         className="w-full p-2 text-xs border border-gray-300 rounded shadow-sm focus:ring-1 focus:ring-indigo-500 font-mono bg-white outline-none h-[34px]" 
                                         placeholder="dd/mm/yyyy, hh:mm" 
                                     />
@@ -5018,6 +5057,13 @@ const InputSidePanel = ({
                                                         ? log.updatedAt.toLocaleString('id-ID', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':')
                                                         : 'Baru saja'}
                                             </span>
+                                            {/* --- LIVE BADGE SIGNATURE (NAMA AKUN) --- */}
+                                            {log.savedBy && (
+                                                <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50/80 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-tight">
+                                                    👤 {log.savedBy.split(' ')[0]}
+                                                </span>
+                                            )}
+                                            {/* ---------------------------------------- */}
                                         </div>
                                         <button type="button" onClick={() => setRecordForLapor(log)} className="px-2 py-0.5 bg-green-100 text-green-700 border border-green-200 rounded text-[9px] font-bold hover:bg-green-200 flex items-center transition">📱 WA</button>
                                     </div>
@@ -5187,13 +5233,20 @@ const InputSidePanel = ({
 };
 
 const App = () => {
-  // 1. State System (VERSI BERSIH)
+  // 1. State System (VERSI BERSIH & MENGUNCI MEMORI)
   const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null); // Tetap dipakai untuk kompatibilitas MedicalRecordApp
+  const [userId, setUserId] = useState(() => localStorage.getItem('simpan_uid') || null); // Tarik dari memori lokal
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   
   // 2. State Login Lokal & Mode
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+      try {
+          // Cari apakah di komputer ini sudah pernah login sebelumnya
+          return JSON.parse(localStorage.getItem('simpan_user')) || null;
+      } catch (e) {
+          return null;
+      }
+  });
   const [loginForm, setLoginForm] = useState({ id: '', pass: '' });
   const [appMode, setAppMode] = useState('MEDIS');
   const [allUsers, setAllUsers] = useState([]); 
@@ -5267,7 +5320,10 @@ const App = () => {
                 console.log("Login Berhasil via Firestore:", userData.name);
                 setCurrentUser(userData);
                 setAppMode('MEDIS');
-                setUserId(userData.id); 
+                setUserId(userData.id);
+                // ✨ SUNTIKKAN INI: Kunci sesi di komputer RS agar tidak auto-logout
+                localStorage.setItem('simpan_user', JSON.stringify(userData));
+                localStorage.setItem('simpan_uid', userData.id); 
             } else {
                 alert('Password salah!');
             }
@@ -5285,6 +5341,9 @@ const App = () => {
       setUserId(null);
       setLoginForm({ id: '', pass: '' });
       setAppMode('MEDIS');
+      // ✨ SUNTIKKAN INI: Hapus kunci sesi hanya saat klik logout sengaja
+      localStorage.removeItem('simpan_user');
+      localStorage.removeItem('simpan_uid');
   };
 
   const getCashflowRole = () => {
@@ -5344,7 +5403,7 @@ const App = () => {
                   </form>
                   
                   <div className="text-center mt-4">
-                      <p className="text-[10px] text-slate-400">&copy; 2026 SIMPAN</p>
+                      <p className="text-[10px] text-slate-400">&copy; 2026 SIMPAN by Abi Nugroho</p>
                   </div>
               </div>
           </div>
@@ -5428,7 +5487,5 @@ const App = () => {
       </div>
   );
 };
-
-// Percobaan fix PWA branding 2
 
 export default App;
