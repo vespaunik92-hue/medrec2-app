@@ -344,9 +344,9 @@ const RoomFilterDropdown = ({ allRooms, selectedRooms, onChange }) => {
             {/* Tombol Pemicu */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full bg-white border border-indigo-200 text-indigo-700 text-[10px] font-bold py-1.5 px-2 rounded flex justify-between items-center hover:bg-indigo-50 transition"
+                className="w-full bg-white border border-indigo-200 text-indigo-700 text-[10px] font-bold py-1.5 px-2 rounded flex justify-between items-center hover:bg-indigo-50 transition h-[32px] md:h-full"
             >
-                <span>{selectedRooms.length === allRooms.length ? 'Semua Kamar Tampil' : `${selectedRooms.length} Kamar Dipilih`}</span>
+                <span className="truncate pr-2">{selectedRooms.length === allRooms.length ? 'Semua Kamar Tampil' : `${selectedRooms.length} Kamar Dipilih`}</span>
                 <span>{isOpen ? '▲' : '▼'}</span>
             </button>
 
@@ -3398,11 +3398,15 @@ const processDischarge = async (type) => {
   // --- RENDER DASHBOARD ---
   const renderDashboard = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full overflow-hidden">
+        
+        {/* KOLOM KIRI (DENAH KAMAR & FILTER) */}
         <div className="lg:col-span-6 flex flex-col h-[calc(100vh-120px)]">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
                 <div className="flex flex-col gap-2 px-3 py-2 border-b bg-gray-50 flex-shrink-0">
-                    {/* HEADER JUDUL */}
-                    <div className="flex justify-between items-center">
+                    
+                    {/* HEADER JUDUL & FILTER (SUDAH DIPERBAIKI UNTUK HP) */}
+                    <div className="flex justify-between items-center flex-wrap gap-y-2">
+                        
                         <div className="flex items-center gap-2">
                             <span className="text-lg">🗺️</span>
                             <div>
@@ -3411,41 +3415,44 @@ const processDischarge = async (type) => {
                                     {dpjpFilter.length > 0 || selectedRoomFilter.length !== ROOM_LIST.length || searchTerm ? 'Filter Aktif' : 'Semua'}
                                 </p>
                             </div>
-                            {/* BARIS FILTER (Sama seperti di Daftar Pasien) */}
-                            <div className="flex flex-col md:flex-row gap-2">
-                                {/* Filter Kamar */}
-                                <div className="w-full md:w-1/3 relative z-[55]">
-                                    <RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
-                                </div>
-                                
-                                {/* Filter DPJP Multi-Select */}
-                                <div className="w-full md:w-1/3 relative z-[50]">
-                                    <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
-                                </div>
-                                
-                                {/* Search Bar (Nama / RM) */}
-                                <div className="relative flex-1">
-                                    <span className="absolute left-2 top-2 text-gray-400 text-[10px]">🔍</span>
-                                    <input 
-                                        type="text" 
-                                        placeholder="Cari Nama/RM..." 
-                                        value={searchTerm} 
-                                        onChange={(e) => setSearchTerm(e.target.value)} 
-                                        className="w-full pl-6 pr-6 py-1.5 border border-indigo-200 rounded text-[10px] focus:ring-1 focus:ring-indigo-500 h-[32px] md:h-full bg-white outline-none" 
-                                    />
-                                    {searchTerm && (
-                                        <button 
-                                            onClick={() => setSearchTerm('')} 
-                                            className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs"
-                                        >
-                                            ✕
-                                        </button>
-                                    )}
-                                </div>
+                        </div>
+
+                        {/* BARIS FILTER (Sekarang pakai flex-row agar berjejer 1 baris) */}
+                        <div className="flex flex-row gap-1.5 items-center w-full md:w-auto flex-1 md:ml-2">
+                            
+                            {/* Filter Kamar */}
+                            <div className="w-[85px] md:w-40 relative z-[55]">
+                                <RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
+                            </div>
+                            
+                            {/* Filter DPJP Multi-Select */}
+                            <div className="w-[100px] md:w-48 relative z-[50]">
+                                <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
+                            </div>
+                            
+                            {/* Search Bar (Nama / RM) */}
+                            <div className="relative flex-1">
+                                <span className="absolute left-2.5 top-2 text-gray-400 text-[10px]">🔍</span>
+                                <input 
+                                    type="text" 
+                                    placeholder="Cari Nama/RM..." 
+                                    value={searchTerm} 
+                                    onChange={(e) => setSearchTerm(e.target.value)} 
+                                    className="w-full pl-8 pr-6 py-1.5 border border-indigo-200 rounded-lg text-[10px] focus:ring-1 focus:ring-indigo-500 h-[32px] outline-none" 
+                                />
+                                {searchTerm && (
+                                    <button 
+                                        onClick={() => setSearchTerm('')} 
+                                        className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>                    
                 </div>
+                
                 <div className="flex-1 overflow-y-auto p-2 bg-gray-50/50">
                     <RoomMap roomList={ROOM_LIST} activeRecords={filteredActiveRecords} onSelectRoom={handleSelectRoom} onEditRoom={handleEditRoom} roomFilter={selectedRoomFilter} waitingList={waitingList} />
                 </div>
@@ -3521,15 +3528,22 @@ const processDischarge = async (type) => {
         {/* HEADER V5 (MENU UNIVERSAL) */}
         <div className="bg-white shadow-sm px-4 h-14 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
             
-            {/* KIRI: LOGO */}
-            <div onClick={() => setView('dashboard')} className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none py-1">
+            {/* 1. KIRI: LOGO (flex-none supaya tidak kegeser) */}
+            <div onClick={() => setView('dashboard')} className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none py-1 flex-none">
                 <img src="/logo3.png" alt="SIMPAN Header" className="h-28 object-contain" />
             </div>
             
-            {/* KANAN: JAM, LAPOR, MENU, BARU */}
-            <div className="flex items-center gap-2">
-                <div className="hidden lg:block border-r pr-3 mr-1"><DigitalClock /></div>
-                
+            {/* 2. TENGAH: PESAN WELCOME (1 Baris lurus & Presisi di Tengah) */}
+            <div className="flex-1 flex justify-center px-4">
+                <div className="hidden md:flex bg-indigo-50 px-4 py-1.5 rounded-full border border-indigo-100 shadow-sm">
+                    <span className="text-[11px] font-bold text-indigo-900 whitespace-nowrap">
+                        Halo {currentUser?.name} 👋, Selamat datang di Ruang Melati Aplikasi SIMPAN
+                    </span>
+                </div>
+            </div>
+            
+            {/* 3. KANAN: TOMBOL AKSI (Komponen <DigitalClock /> sudah dihapus dari sini) */}
+            <div className="flex items-center gap-2 flex-none">
                 <button 
                     onClick={() => setShowLaporModal(true)} 
                     className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-1.5 rounded-lg text-[10px] font-bold border border-indigo-200 transition shadow-sm"
@@ -3590,32 +3604,47 @@ const processDischarge = async (type) => {
                 <div className="p-4 h-full overflow-y-auto custom-scrollbar">
                     {view === 'dashboard' && renderDashboard()}
                     {view === 'patient-list' && (
-                        <div className="h-full flex flex-col bg-gray-50">
-                            <div className="p-3 bg-white border-b shadow-sm sticky top-0 z-40 flex-shrink-0 space-y-2">
-                                <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-2"><h2 className="font-bold text-lg text-indigo-800">📂 Daftar Pasien</h2><span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-bold">{filteredActiveRecords.length} Pasien</span></div>
-                                    <div className="flex flex-col md:flex-row gap-2">
-                                    <div className="w-full md:w-48 relative z-50"><RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} /></div>
-                                    <div className="w-full md:w-56 relative z-50">
+                    <div className="h-full flex flex-col bg-gray-50">
+                        <div className="p-3 bg-white border-b shadow-sm sticky top-0 z-40 flex-shrink-0 space-y-2">
+                            
+                            {/* Ditambahkan flex-wrap agar kalau layarnya sempit (HP), elemennya turun ke bawah dengan rapi */}
+                            <div className="flex justify-between items-center flex-wrap gap-y-2">
+                                
+                                {/* 1. Judul & Jumlah Pasien */}
+                                <div className="flex items-center gap-2">
+                                    <h2 className="font-bold text-lg text-indigo-800">📂 Daftar Pasien</h2>
+                                    <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-bold">{filteredActiveRecords.length} Pasien</span>
+                                </div>
+
+                                {/* 2. BAGIAN FILTER (Sudah dimodifikasi agar selalu 1 baris di HP) */}
+                                <div className="flex flex-row gap-1.5 items-center w-full md:w-auto flex-1 md:mx-2">
+                                    <div className="w-[85px] md:w-40 relative z-50">
+                                        <RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
+                                    </div>
+                                    <div className="w-[100px] md:w-48 relative z-50">
                                         <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
                                     </div>
                                     <div className="relative flex-1">
                                         <span className="absolute left-2.5 top-2 text-gray-400 text-xs">🔍</span>
-                                        <input type="text" placeholder="Cari Nama / Diagnosa / Dokter / No. RM" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-8 pr-8 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 h-[32px]" />
+                                        <input type="text" placeholder="Cari..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-8 pr-6 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 h-[32px] outline-none" />
                                         {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs">✕</button>}
                                     </div>
                                 </div>
-                                    <div className="flex space-x-1">
-                                        <button onClick={handleExportExcel} className="text-[10px] px-3 py-1.5 bg-white border border-green-200 text-green-700 rounded-lg font-bold hover:bg-green-600 hover:text-white transition shadow-sm">Excel</button>
-                                        <button onClick={() => setShowBulkPrint(true)} className="text-[10px] px-3 py-1.5 bg-white border border-indigo-200 text-indigo-700 rounded-lg font-bold hover:bg-indigo-600 hover:text-white transition shadow-sm">🖨️ Cetak Banyak</button>
-                                    </div>
-                                </div>                                
-                            </div>
-                            <div className="flex-1 overflow-hidden relative z-0">
-                                <PatientTable records={filteredActiveRecords} onEdit={handleEdit} onPrint={(r) => setSelectedRecordForPrint(r)} onShowLaporModal={setRecordForLapor} onDischarge={handleDischarge} onBulkPrint={() => setShowBulkPrint(true)} roomSortOrder={selectedRoomFilter} onPrintTTV={handlePrintTTV} onPrintSOAP={handlePrintSOAP} onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }} onBulkDischarge={handleBulkDischarge} updateRecord={updateRecord} onPrintBukuCM={handlePrintBukuCM} onPrintLabel={handlePrintLabel} />
-                            </div>
+
+                                {/* 3. Tombol Aksi Kanan */}
+                                <div className="flex space-x-1">
+                                    <button onClick={handleExportExcel} className="text-[10px] px-3 py-1.5 bg-white border border-green-200 text-green-700 rounded-lg font-bold hover:bg-green-600 hover:text-white transition shadow-sm">Excel</button>
+                                    <button onClick={() => setShowBulkPrint(true)} className="text-[10px] px-3 py-1.5 bg-white border border-indigo-200 text-indigo-700 rounded-lg font-bold hover:bg-indigo-600 hover:text-white transition shadow-sm">🖨️ Cetak Banyak</button>
+                                </div>
+                                
+                            </div>                               
                         </div>
-                    )}
+                        
+                        <div className="flex-1 overflow-hidden relative z-0">
+                            <PatientTable records={filteredActiveRecords} onEdit={handleEdit} onPrint={(r) => setSelectedRecordForPrint(r)} onShowLaporModal={setRecordForLapor} onDischarge={handleDischarge} onBulkPrint={() => setShowBulkPrint(true)} roomSortOrder={selectedRoomFilter} onPrintTTV={handlePrintTTV} onPrintSOAP={handlePrintSOAP} onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }} onBulkDischarge={handleBulkDischarge} updateRecord={updateRecord} onPrintBukuCM={handlePrintBukuCM} onPrintLabel={handlePrintLabel} />
+                        </div>
+                    </div>
+                )}
 
                     {/* --- VIEW 4: ARSIP PASIEN (KOMPONEN BARU) --- */}
                     {view === 'archived-list' && (
@@ -3801,6 +3830,11 @@ const processDischarge = async (type) => {
         {confirmDetails.isOpen && <ConfirmationModal title={confirmDetails.title} message={confirmDetails.message} onConfirm={confirmDetails.action} onCancel={closeConfirm} />}
         {recordForDischarge && <DischargeModal patientName={recordForDischarge.name} onCancel={() => setRecordForDischarge(null)} onPindah={() => processDischarge('pindah')} onPulang={() => processDischarge('pulang')} onMeninggal={() => processDischarge('meninggal')} />}
         {showLaporModal && <LaporModal onCancel={() => setShowLaporModal(false)}onLaporShift={handleLaporShift} onLaporCS={handleLaporCS}/>}
+    
+    {/* --- JAM MELAYANG TRANSPARAN (GLASSMORPHISM) DI KANAN BAWAH --- */}
+        <div className="fixed bottom-4 right-4 bg-white/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 shadow-lg z-[50] select-none opacity-50">
+            <DigitalClock />
+        </div>
     </div>
   );
 };
@@ -4009,6 +4043,7 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
 const PlanningQuickTag = ({ onSelect }) => {
     const tags = [
         // LAB (Merah)
+        { label: 'DR', isi: 'Darah Rutin (DR)', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'GDS', isi: 'Lab. R/ GDS', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'GDP-2JPP', isi: 'Lab. R/ GDP-2JPP', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'Ur-Cr', isi: 'Lab. R/ Ureum-Creatinin', warna: 'bg-red-100 text-red-700 border-red-200' },
@@ -4020,7 +4055,7 @@ const PlanningQuickTag = ({ onSelect }) => {
         { label: 'Lower Abd', isi: 'Rad. R/ USG Lower/Ginjal Abdomen', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
         
         // TERAPI (Ungu)
-        { label: 'PRC', isi: 'Th. Trnfs  PRC, on ke , post ke , premed: ', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        { label: 'PRC', isi: 'Th. Trnfs  PRC, on ke , post ke , premed: , Postmed: ', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Nicardipin', isi: 'Th. Drip Perdipine/Nicardipine  mcg, Kec.  cc/j, Bb  kg', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Vascon', isi: 'Th. Drip vascon/Norepinephrine mcg, Kec.  cc/j, Bb  kg', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Panto', isi: 'Th. Drip pantoprazole 8 mg/j', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
