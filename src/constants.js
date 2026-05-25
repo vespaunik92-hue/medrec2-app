@@ -1,8 +1,36 @@
-// --- DATA STATIS ---
+// ==========================================
+// KODE LAMA MELATI (BIARKAN SEPERTI ASLINYA)
+// ==========================================
 
 export const LEFT_ROOMS = ['K1A', 'K1B', 'K3A', 'K3B', 'K5A', 'K5B', 'K7A', 'K8A', 'K9A', 'K11A', 'K12A', 'K14A'];
 export const RIGHT_ROOMS = ['K2A', 'K2B', 'K4A', 'K4B', 'K6A', 'K6B', 'K10A', 'K10B', 'K13A', 'K13B', 'K15A', 'K15B'];
 export const ROOM_LIST = [...LEFT_ROOMS, ...RIGHT_ROOMS];
+
+// ==========================================
+// ✨ TAMBAHAN BARU: DENAH DAHLIA
+// ==========================================
+export const DAHLIA_LEFT_ROOMS = ['10', '9', '8', '7', '6'];
+export const DAHLIA_RIGHT_ROOMS = ['5', '4', '3', '2', '1'];
+export const DAHLIA_ROOM_LIST = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+
+// ==========================================
+// ✨ TAMBAHAN BARU: MASTER KONFIGURASI BANGSAL
+// ==========================================
+// Objek ini yang nanti jadi "otak" pergantian ruangan di Tahap 2
+export const WARD_CONFIG = {
+    'MELATI': {
+        name: 'Melati',
+        leftRooms: LEFT_ROOMS,      // Mengambil denah Melati lama
+        rightRooms: RIGHT_ROOMS,    // Mengambil denah Melati lama
+        roomList: ROOM_LIST         // Mengambil daftar kamar Melati lama
+    },
+    'DAHLIA': {
+        name: 'Dahlia',
+        leftRooms: DAHLIA_LEFT_ROOMS,
+        rightRooms: DAHLIA_RIGHT_ROOMS,
+        roomList: DAHLIA_ROOM_LIST
+    }
+};
 
 export const DEFAULT_DPJP_DATA = [
     { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },

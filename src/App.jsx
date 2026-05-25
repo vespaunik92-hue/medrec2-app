@@ -23,7 +23,7 @@ import GudangArsip from './components/GudangArsip';
 import { 
     LEFT_ROOMS, RIGHT_ROOMS, ROOM_LIST, 
     DEFAULT_DPJP_DATA, LAB_CHECKS, RADIOLOGY_CHECKS, 
-    PROCEDURES, MEDICATIONS 
+    PROCEDURES, MEDICATIONS, WARD_CONFIG 
 } from './constants';
 import { LogOut, Wallet, FileText, ChevronLeft } from 'lucide-react';
 
@@ -1028,7 +1028,7 @@ const BulkPrintView = ({ records, onClose }) => {
 };
 
 // --- COMPONENT: DENAH KAMAR (RESPONSIVE: MOBILE, TABLET, LAPTOP) ---
-const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList }) => {
+const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList }) => {
     const sortedRoomList = useMemo(() => {
         return [...roomList].sort((a, b) =>
             a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
@@ -1117,16 +1117,16 @@ const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter
 
                 {/* DESKTOP/TABLET: tetap gunakan pembagian kiri/lorong/kanan */}
                 <div className="hidden md:flex w-full gap-2 md:gap-3 bg-white p-1.5 rounded-xl shadow-inner border border-gray-100 justify-center">
-                    <div className="grid grid-cols-2 gap-1.5 w-full">
-                        {LEFT_ROOMS.map(renderRoom)}
+                    <div className="grid grid-cols-1 gap-1.5 w-full">
+                        {(leftRooms || LEFT_ROOMS).map(renderRoom)}
                     </div>
 
                     <div className="hidden md:flex flex-col justify-center items-center w-6 bg-gray-100 rounded-full border border-gray-200 shadow-inner relative flex-shrink-0">
                         <div className="absolute top-10 text-gray-300 text-[9px] font-bold tracking-[0.3em]" style={{ writingMode: 'vertical-rl' }}>LORONG</div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-1.5 w-full">
-                        {RIGHT_ROOMS.map(renderRoom)}
+                    <div className="grid grid-cols-1 gap-1.5 w-full">
+                        {(rightRooms || RIGHT_ROOMS).map(renderRoom)}
                     </div>
                 </div>
             </div>
@@ -1134,7 +1134,7 @@ const RoomMap = ({ roomList, activeRecords, onSelectRoom, onEditRoom, roomFilter
     );
 };
 
-const BukuCMTable = ({ records, updateRecord, onPrint }) => {
+const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST }) => {
     // 1. STATE UNTUK SORTING (Gaya Excel)
     const [sortConfig, setSortConfig] = useState({ key: 'default', direction: 'asc' });
 
@@ -1154,7 +1154,7 @@ const BukuCMTable = ({ records, updateRecord, onPrint }) => {
 
     // 3. LOGIKA PENGURUTAN DATA
     const sortedRooms = useMemo(() => {
-        const baseRooms = [...ROOM_LIST].sort((a, b) => 
+        const baseRooms = [...roomList].sort((a, b) => 
             a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
         );
 
@@ -1587,7 +1587,7 @@ const hitungHariCM = (tanggalMasuk) => {
 };
 
 // --- PATIENT TABLE FINAL (DENGAN BUKU CM INLINE DI MODE TTV) ---
-const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onPrintSOAP, onQuickTtv, onBulkDischarge, updateRecord, onPrintBukuCM, onPrintLabel }) => {
+const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge, roomSortOrder, onPrintTTV, onPrintSOAP, onQuickTtv, onBulkDischarge, updateRecord, onPrintBukuCM, onPrintLabel, roomList=ROOM_LIST }) => {
     
     const [viewMode, setViewMode] = useState('soap');
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -1765,7 +1765,7 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
 
             {viewMode === 'buku-cm' ? (
                 <div className="flex-1 bg-gray-50 overflow-hidden"> {/* Ganti overflow-y-auto jadi overflow-hidden */}
-                    <BukuCMTable records={sortedRecords} updateRecord={updateRecord} onPrint={onPrintBukuCM} />
+                    <BukuCMTable roomList={roomList} records={sortedRecords} updateRecord={updateRecord} onPrint={onPrintBukuCM} />
                 </div>
             ) : (
                 <div id="ttv-table-area" className="overflow-auto flex-1 custom-scrollbar">
@@ -1861,7 +1861,7 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                 ))
                             ) : (
                                 // --- MODE TTV (24 Kamar Kosong & Terisi) ---
-                                [...ROOM_LIST].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map((room, index) => {
+                                [...roomList].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map((room, index) => {
                                     const rec = records.find(r => r.roomNumber === room && !r.isDischarged);
                                     return (
                                         <tr key={room} className={`transition-colors border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${rec ? 'hover:bg-indigo-50/50 cursor-pointer' : ''}`} onClick={() => rec ? onEdit(rec) : null}>
@@ -2207,12 +2207,15 @@ const DigitalClock = () => {
 // --- LOGIC UTAMA (MEDICAL RECORD APP - LEVEL 4 COMPLETED) ---
 const MedicalRecordApp = ({ 
     db, userId, appId, isOnline, onLogout, 
-    currentUser, setAppMode, cashflowRole 
+    currentUser, setAppMode, cashflowRole, onSwitchWard 
 }) => {
-  // --- STATE LEVEL 4: MANAJEMEN USER (BARU) ---
+    // ✨ SUNTIKAN TAHAP 3: MASTER KEY BANGSAL
+  const currentWardConfig = WARD_CONFIG[currentUser?.ward || 'MELATI'] || WARD_CONFIG['MELATI'];
+
+    // --- STATE LEVEL 4: MANAJEMEN USER (BARU) ---
   const [allUsers, setAllUsers] = useState([]); // Daftar user (Admin Only)
   const [profileForm, setProfileForm] = useState({ name: '', pass: '' }); // Form Profil Sendiri
-  const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member' }); // Form Admin
+  const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' }); // ✨ Ditambah default ward
 
   // --- STATE LAMA (TETAP ADA) ---
   const [records, setRecords] = useState([]);
@@ -2282,7 +2285,7 @@ const MedicalRecordApp = ({
   const [showLaporModal, setShowLaporModal] = useState(false);
 
   const [dpjpFilter, setDpjpFilter] = useState([]); 
-  const [selectedRoomFilter, setSelectedRoomFilter] = useState(ROOM_LIST);
+  const [selectedRoomFilter, setSelectedRoomFilter] = useState(currentWardConfig.roomList);
   
   const [showRaber1, setShowRaber1] = useState(false);
   const [showRaber2, setShowRaber2] = useState(false);
@@ -2332,23 +2335,29 @@ const MedicalRecordApp = ({
       } catch (e) { alert("Gagal update: " + e.message); }
   };
 
-  // 4. Action: Admin Simpan User
   const handleAdminSaveUser = async () => {
       if (!adminUserForm.id || !adminUserForm.name || !adminUserForm.pass) return alert("Semua kolom wajib diisi!");
       const targetId = adminUserForm.id.toLowerCase().trim().replace(/\s+/g, '_');
       try {
-          // Cek ID manual di state allUsers untuk menentukan mode (Add/Edit)
           const exists = allUsers.find(u => u.id === targetId);
           if (!exists) {
-             await setDoc(doc(db, 'users', targetId), { ...adminUserForm, id: targetId, createdAt: Timestamp.now() });
+             await setDoc(doc(db, 'users', targetId), { 
+                 ...adminUserForm, 
+                 id: targetId, 
+                 ward: adminUserForm.ward || 'MELATI', // ✨ Kunci otomatis ruangan saat register
+                 createdAt: Timestamp.now() 
+             });
              alert(`User baru "${adminUserForm.name}" ditambahkan!`);
           } else {
              await updateDoc(doc(db, 'users', targetId), { 
-                 name: adminUserForm.name, pass: adminUserForm.pass, role: adminUserForm.role 
+                 name: adminUserForm.name, 
+                 pass: adminUserForm.pass, 
+                 role: adminUserForm.role,
+                 ward: adminUserForm.ward || 'MELATI' // ✨ Izinkan update mutasi ruangan di sini
              });
              alert(`User "${adminUserForm.name}" diperbarui.`);
           }
-          setAdminUserForm({ id: '', name: '', pass: '', role: 'member' });
+          setAdminUserForm({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' });
       } catch (e) { alert("Error: " + e.message); }
   };
 
@@ -2623,13 +2632,16 @@ const MedicalRecordApp = ({
       });
       setRecords(data);
               
-              // Pisahkan pasien yang masih dirawat dan yang sudah pulang (Arsip)
-              const active = data.filter(r => !r.isDischarged);
-              const archived = data.filter(r => r.isDischarged);
-              
-              setActiveRecords(active);
-              setArchivedRecords(archived); // <-- Simpan ke gudang arsip
-              setOccupiedRooms(active.map(r => r.roomNumber));
+              // ✨ TAHAP 3: FILTER DATA HANYA UNTUK BANGSAL USER SAAT INI
+                const myWardData = data.filter(r => (r.ward || 'MELATI') === (currentUser?.ward || 'MELATI'));
+                
+                // Pisahkan pasien aktif & arsip dari data bangsal terpilih
+                const active = myWardData.filter(r => !r.isDischarged);
+                const archived = myWardData.filter(r => r.isDischarged);
+                
+                setActiveRecords(active);
+                setArchivedRecords(archived); 
+                setOccupiedRooms(active.map(r => r.roomNumber));
     }, (err) => console.error("Firestore Error:", err));
     return () => unsubscribe();
   }, [getCollectionRef, userId]);
@@ -2694,45 +2706,7 @@ const MedicalRecordApp = ({
       
       if (!isEditing && isRoomOccupied) return alert(`Kamar ${formData.roomNumber} sudah terisi.`);
 
-      const now = Timestamp.now();
-      
-      // Konversi format tanggal masuk tepat sebelum ke database
-      const data = { 
-          ...formData, 
-          admissionDate: parseDateCM(formData.admissionDate), 
-          updatedAt: now 
-      };
-      if (!isEditing) data.createdAt = now;
-      const ref = getCollectionRef();
-
-      // --- LOGIKA SIMPAN & RIWAYAT DENGAN SIGNATURE ---
-      if (isEditing && currentRecordId) {
-          updateDoc(doc(ref, currentRecordId), data).catch(err => console.error("Gagal update:", err));
-          
-          if (db && appId) {
-              const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${currentRecordId}/notes`);
-              addDoc(notesRef, { 
-                  ...formData, 
-                  admissionDate: parseDateCM(formData.admissionDate),
-                  createdAt: now, 
-                  noteType: 'daily_update',
-                  savedBy: currentUser?.name || 'System' // 1. REKAM NAMA DI SINI ✨
-              }).catch(err => console.error("Gagal tambah riwayat:", err));
-          }
-      } else {
-          addDoc(ref, data).then(newDoc => {
-              if (db && appId) {
-                  const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${newDoc.id}/notes`);
-                  addDoc(notesRef, { 
-                      ...formData, 
-                      admissionDate: parseDateCM(formData.admissionDate),
-                      createdAt: now, 
-                      noteType: 'daily_update',
-                      savedBy: currentUser?.name || 'System' // 2. REKAM NAMA DI SINI ✨
-                  });
-              }
-          }).catch(err => console.error("Gagal tambah pasien:", err));
-      }
+      const now = Timestamp.now()
 
       resetForm();
       setShowInputModal(false);
@@ -2755,7 +2729,8 @@ const MedicalRecordApp = ({
             objective: finalObjective, 
             noteType: 'ttv_update', 
             createdAt: Timestamp.now(),
-            savedBy: currentUser?.name || 'System' // 3. REKAM JUGA SAAT INPUT TTV CEPAT ✨
+            savedBy: currentUser?.name || 'System',
+            ward: currentUser?.ward || 'MELATI' // ✨ TAHAP 2: STEMPEL TTV BANGSAL
         });
         setQuickTtvTarget(null); setShowTtvModal(false); 
     } catch (e) { alert("Gagal menyimpan TTV."); } finally { setLoading(false); }
@@ -3355,23 +3330,41 @@ const processDischarge = async (type) => {
       link.click();
   };
 
-  // --- STATS CALCULATION ---
+  // --- STATS CALCULATION (VERSI MULTI-BANGSAL DINAMIS) ---
   const stats = useMemo(() => {
-      const s = { total: records.length, active: activeRecords.length, discharged: records.filter(r => r.isDischarged).length, monthly: {}, dpjpCounts: {}, raberData: {}, emptyCount: 0, emptyMale: 0, emptyFemale: 0 };
-      const occupied = activeRecords.map(r => r.roomNumber);
+      const currentWard = currentUser?.ward || 'MELATI';
+      const currentWardConfig = WARD_CONFIG[currentWard] || WARD_CONFIG['MELATI'];
       
-      ROOM_LIST.forEach(room => {
+      // Saring data mentah database agar hanya menghitung bangsal yang sedang aktif dibuka
+      const wardRecords = records.filter(r => (r.ward || 'MELATI') === currentWard);
+      const wardActiveRecords = activeRecords.filter(r => (r.ward || 'MELATI') === currentWard);
+
+      const s = { 
+          total: wardRecords.length, 
+          active: wardActiveRecords.length, 
+          discharged: wardRecords.filter(r => r.isDischarged).length, 
+          monthly: {}, 
+          dpjpCounts: {}, 
+          raberData: {}, 
+          emptyCount: 0, 
+          emptyMale: 0, 
+          emptyFemale: 0 
+      };
+      
+      const occupied = wardActiveRecords.map(r => r.roomNumber);
+      
+      // Hitung bed kosong berdasarkan kapasitas kamar bangsal aktif
+      currentWardConfig.roomList.forEach(room => {
           if (!occupied.includes(room)) {
-              // UPDATE LOGIC UNTUK FORMAT K1A / K1B
               const match = room.match(/^(K\d+)([AB])$/);
               if (!match) {
-                  s.emptyCount++; // Kalau format aneh, anggap kosong biasa
+                  s.emptyCount++;
               } else {
-                  const roomCode = match[1]; // K1
-                  const bedCode = match[2];  // A atau B
+                  const roomCode = match[1];
+                  const bedCode = match[2];
                   const neighborBed = bedCode === 'A' ? 'B' : 'A';
                   const neighborRoom = `${roomCode}${neighborBed}`;
-                  const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
+                  const neighborRec = wardActiveRecords.find(r => r.roomNumber === neighborRoom);
 
                   if (!neighborRec) {
                       s.emptyCount++;
@@ -3383,17 +3376,17 @@ const processDischarge = async (type) => {
               }
           }
       });      
-      records.forEach(r => {
+
+      // Kalkulasi rekap grafik bulanan khusus bangsal aktif
+      wardRecords.forEach(r => {
           const m = r.createdAt.toLocaleString('id-ID', { month: 'short', year: 'numeric' });
-          // 1. Tambahkan wadah untuk pulang, pindah, dan meninggal
           if (!s.monthly[m]) s.monthly[m] = { active: 0, discharged: 0, pulang: 0, pindah: 0, meninggal: 0, lab: 0, rad: 0, tm: 0 };
 
-          // 2. Pisahkan hitungan berdasarkan jenis keluarnya (dischargeType)
           if (r.isDischarged) {
-              s.monthly[m].discharged++; // Total keseluruhan keluar
+              s.monthly[m].discharged++;
               if (r.dischargeType === 'pindah') s.monthly[m].pindah++;
               else if (r.dischargeType === 'meninggal') s.monthly[m].meninggal++;
-              else s.monthly[m].pulang++; // Default jika kosong/pulang biasa
+              else s.monthly[m].pulang++;
           } else {
               s.monthly[m].active++;
           }
@@ -3402,16 +3395,25 @@ const processDischarge = async (type) => {
              const lines = r.planning.split('\n');
              lines.forEach(l => {
                  const t = l.trim().toLowerCase();
-                 if (t.startsWith('lab.')) s.monthly[m].lab++; else if (t.startsWith('rad.')) s.monthly[m].rad++; else if (t.startsWith('tm.')) s.monthly[m].tm++;
+                 if (t.startsWith('lab.')) s.monthly[m].lab++; 
+                 else if (t.startsWith('rad.')) s.monthly[m].rad++; 
+                 else if (t.startsWith('tm.')) s.monthly[m].tm++;
              });
           }
       });
-      activeRecords.forEach(rec => {
+
+      // Hitung jumlah beban pasien per dokter spesialis di bangsal aktif
+      wardActiveRecords.forEach(rec => {
           s.dpjpCounts[rec.dpjpName] = (s.dpjpCounts[rec.dpjpName] || 0) + 1;
-          [rec.raberName, rec.raber2Name].forEach(dr => { if(dr) { if(!s.raberData[dr]) s.raberData[dr]=[]; s.raberData[dr].push(rec.name); } });
+          [rec.raberName, rec.raber2Name].forEach(dr => { 
+              if(dr) { 
+                  if(!s.raberData[dr]) s.raberData[dr]=[]; 
+                  s.raberData[dr].push(rec.name); 
+              } 
+          });
       });
       return s;
-  }, [records, activeRecords]);
+  }, [records, activeRecords, currentUser]);
 
   // --- RENDER DASHBOARD ---
   const renderDashboard = () => (
@@ -3440,7 +3442,7 @@ const processDischarge = async (type) => {
                             
                             {/* Filter Kamar */}
                             <div className="w-[85px] md:w-40 relative z-[55]">
-                                <RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
+                                <RoomFilterDropdown allRooms={currentWardConfig.roomList} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
                             </div>
                             
                             {/* Filter DPJP Multi-Select */}
@@ -3472,7 +3474,16 @@ const processDischarge = async (type) => {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-2 bg-gray-50/50">
-                    <RoomMap roomList={ROOM_LIST} activeRecords={filteredActiveRecords} onSelectRoom={handleSelectRoom} onEditRoom={handleEditRoom} roomFilter={selectedRoomFilter} waitingList={waitingList} />
+                    <RoomMap 
+                        roomList={currentWardConfig.roomList} 
+                        leftRooms={currentWardConfig.leftRooms} 
+                        rightRooms={currentWardConfig.rightRooms} 
+                        activeRecords={filteredActiveRecords} 
+                        onSelectRoom={handleSelectRoom} 
+                        onEditRoom={handleEditRoom} 
+                        roomFilter={selectedRoomFilter} 
+                        waitingList={waitingList} 
+                    />
                 </div>
             </div>
         </div>
@@ -3555,7 +3566,7 @@ const processDischarge = async (type) => {
             <div className="flex-1 flex justify-center px-4">
                 <div className="hidden md:flex bg-indigo-50 px-4 py-1.5 rounded-full border border-indigo-100 shadow-sm">
                     <span className="text-[11px] font-bold text-indigo-900 whitespace-nowrap">
-                        Halo {currentUser?.name} 👋, Selamat datang di Ruang Melati Aplikasi SIMPAN
+                        Halo {currentUser?.name} 👋, Selamat datang di Ruang {currentWardConfig.name} Aplikasi SIMPAN
                     </span>
                 </div>
             </div>
@@ -3616,6 +3627,30 @@ const processDischarge = async (type) => {
                                 </>
                             )}
 
+                            {/* ✨ TAHAP 4: MENU SUPERADMIN (HANYA MUNCUL UNTUK DEVELOPER) */}
+                            {(currentUser?.role === 'SUPERADMIN' || currentUser?.name?.toLowerCase().includes('abi')) && (
+                                <>
+                                    <div className="border-t border-gray-100 my-1"></div>
+                                    <div className="px-3 py-1 bg-purple-50">
+                                        <span className="text-[9px] font-bold text-purple-700 uppercase tracking-wider">👑 God Mode (Admin)</span>
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={() => onSwitchWard('MELATI')} 
+                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Melati' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                    >
+                                        🏥 Pantau Melati
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => onSwitchWard('DAHLIA')} 
+                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Dahlia' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                    >
+                                        🏥 Pantau Dahlia
+                                    </button>
+                                </>
+                            )}
+
                             <div className="border-t border-gray-100 my-1"></div>
                             
                             <button onClick={onLogout} className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-bold flex items-center">🚪 Keluar</button>
@@ -3652,7 +3687,7 @@ const processDischarge = async (type) => {
                                 {/* 2. BAGIAN FILTER (Sudah dimodifikasi agar selalu 1 baris di HP) */}
                                 <div className="flex flex-row gap-1.5 items-center w-full md:w-auto flex-1 md:mx-2">
                                     <div className="w-[85px] md:w-40 relative z-50">
-                                        <RoomFilterDropdown allRooms={ROOM_LIST} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
+                                        <RoomFilterDropdown allRooms={currentWardConfig.roomList} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
                                     </div>
                                     <div className="w-[100px] md:w-48 relative z-50">
                                         <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
@@ -3674,7 +3709,7 @@ const processDischarge = async (type) => {
                         </div>
                         
                         <div className="flex-1 overflow-hidden relative z-0">
-                            <PatientTable records={filteredActiveRecords} onEdit={handleEdit} onPrint={(r) => setSelectedRecordForPrint(r)} onShowLaporModal={setRecordForLapor} onDischarge={handleDischarge} onBulkPrint={() => setShowBulkPrint(true)} roomSortOrder={selectedRoomFilter} onPrintTTV={handlePrintTTV} onPrintSOAP={handlePrintSOAP} onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }} onBulkDischarge={handleBulkDischarge} updateRecord={updateRecord} onPrintBukuCM={handlePrintBukuCM} onPrintLabel={handlePrintLabel} />
+                            <PatientTable roomList={currentWardConfig.roomList} records={filteredActiveRecords} onEdit={handleEdit} onPrint={(r) => setSelectedRecordForPrint(r)} onShowLaporModal={setRecordForLapor} onDischarge={handleDischarge} onBulkPrint={() => setShowBulkPrint(true)} roomSortOrder={selectedRoomFilter} onPrintTTV={handlePrintTTV} onPrintSOAP={handlePrintSOAP} onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }} onBulkDischarge={handleBulkDischarge} updateRecord={updateRecord} onPrintBukuCM={handlePrintBukuCM} onPrintLabel={handlePrintLabel} />
                         </div>
                     </div>
                 )}
@@ -3723,30 +3758,81 @@ const processDischarge = async (type) => {
                                 </div>
                                 {/* 2. ADMIN PANEL */}
                                 {currentUser.role === 'admin' && (
-                                    <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-200">
-                                        <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">🛡️ Admin: Manajemen User</h3>
-                                        <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm mb-4">
-                                            <h4 className="text-xs font-bold text-indigo-800 mb-2 uppercase">Tambah / Reset User</h4>
-                                            <div className="grid grid-cols-2 gap-2 mb-2">
-                                                <input type="text" placeholder="ID (Username)" value={adminUserForm.id} onChange={e => setAdminUserForm({...adminUserForm, id: e.target.value})} className="p-2 border rounded text-xs" />
-                                                <input type="text" placeholder="Nama Lengkap" value={adminUserForm.name} onChange={e => setAdminUserForm({...adminUserForm, name: e.target.value})} className="p-2 border rounded text-xs" />
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2 mb-2">
-                                                <input type="text" placeholder="Password" value={adminUserForm.pass} onChange={e => setAdminUserForm({...adminUserForm, pass: e.target.value})} className="p-2 border rounded text-xs font-mono" />
-                                                <select value={adminUserForm.role} onChange={e => setAdminUserForm({...adminUserForm, role: e.target.value})} className="p-2 border rounded text-xs bg-white">
-                                                    <option value="member">Member</option><option value="admin">Admin</option><option value="finance_jm">Keuangan (JM)</option><option value="finance_kas">Keuangan (KAS)</option><option value="finance_doc">Keuangan (Dokter)</option>
-                                                </select>
-                                            </div>
-                                            <button onClick={handleAdminSaveUser} className="w-full bg-indigo-600 text-white py-1.5 rounded text-xs font-bold hover:bg-indigo-700">Simpan / Update User</button>
+                                <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-200">
+                                    <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">🛡️ Admin: Manajemen User</h3>
+                                    
+                                    {/* --- FORM INPUT USER (SEKARANG SUDAH 3 KOLOM) --- */}
+                                    <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm mb-4">
+                                        <h4 className="text-xs font-bold text-indigo-800 mb-2 uppercase">Tambah / Reset User</h4>
+                                        <div className="grid grid-cols-2 gap-2 mb-2">
+                                            <input type="text" placeholder="ID (Username)" value={adminUserForm.id} onChange={e => setAdminUserForm({...adminUserForm, id: e.target.value})} className="p-2 border rounded text-xs" />
+                                            <input type="text" placeholder="Nama Lengkap" value={adminUserForm.name} onChange={e => setAdminUserForm({...adminUserForm, name: e.target.value})} className="p-2 border rounded text-xs" />
                                         </div>
-                                        <div className="overflow-hidden rounded border border-indigo-200">
-                                            <table className="w-full text-left text-xs bg-white"><thead className="bg-indigo-100 text-indigo-800"><tr><th className="p-2">ID</th><th className="p-2">Nama</th><th className="p-2">Role</th><th className="p-2">Pass</th><th className="p-2 text-center">Aksi</th></tr></thead>
-                                            <tbody className="divide-y divide-indigo-50">{allUsers.map(u => (
-                                                <tr key={u.id} className="hover:bg-indigo-50"><td className="p-2 font-mono text-slate-500">{u.id}</td><td className="p-2 font-bold">{u.name}</td><td className="p-2"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role==='admin'?'bg-purple-100 text-purple-700':u.role==='member'?'bg-slate-100 text-slate-600':'bg-green-100 text-green-700'}`}>{u.role}</span></td><td className="p-2 font-mono text-slate-500">{u.pass}</td><td className="p-2 text-center flex justify-center gap-1"><button onClick={()=>setAdminUserForm(u)} className="bg-yellow-100 text-yellow-700 p-1 rounded">✏️</button>{u.id!==currentUser.id&&(<button onClick={()=>handleAdminDeleteUser(u.id)} className="bg-red-100 text-red-700 p-1 rounded">🗑️</button>)}</td></tr>
-                                            ))}</tbody></table>
+                                        
+                                        {/* Diubah menjadi grid-cols-3 untuk menampung Pilihan Ruangan */}
+                                        <div className="grid grid-cols-3 gap-2 mb-2">
+                                            <input type="text" placeholder="Password" value={adminUserForm.pass} onChange={e => setAdminUserForm({...adminUserForm, pass: e.target.value})} className="p-2 border rounded text-xs font-mono" />
+                                            
+                                            <select value={adminUserForm.role} onChange={e => setAdminUserForm({...adminUserForm, role: e.target.value})} className="p-2 border rounded text-xs bg-white outline-none">
+                                                <option value="member">Member</option>
+                                                <option value="admin">Admin</option>
+                                                <option value="finance_jm">Keuangan (JM)</option>
+                                                <option value="finance_kas">Keuangan (KAS)</option>
+                                                <option value="finance_doc">Keuangan (Dokter)</option>
+                                            </select>
+
+                                            {/* Dropdown Master Mutasi Ruangan Staf */}
+                                            <select value={adminUserForm.ward || 'MELATI'} onChange={e => setAdminUserForm({...adminUserForm, ward: e.target.value})} className="p-2 border rounded text-xs bg-white font-bold text-indigo-700 outline-none border-indigo-200">
+                                                <option value="MELATI">🏥 Ruang Melati</option>
+                                                <option value="DAHLIA">🏥 Ruang Dahlia</option>
+                                            </select>
                                         </div>
+                                        
+                                        <button onClick={handleAdminSaveUser} className="w-full bg-indigo-600 text-white py-1.5 rounded text-xs font-bold hover:bg-indigo-700">Simpan / Update User</button>
                                     </div>
-                                )}
+
+                                    {/* --- TABEL DAFTAR USER (SUDAH DITAMBAH KOLOM RUANGAN) --- */}
+                                    <div className="overflow-hidden rounded border border-indigo-200">
+                                        <table className="w-full text-left text-xs bg-white">
+                                            <thead className="bg-indigo-100 text-indigo-800">
+                                                <tr>
+                                                    <th className="p-2">ID</th>
+                                                    <th className="p-2">Nama</th>
+                                                    <th className="p-2">Role</th>
+                                                    <th className="p-2">Ruangan</th> {/* Header Baru */}
+                                                    <th className="p-2">Pass</th>
+                                                    <th className="p-2 text-center">Aksi</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-indigo-50">
+                                                {allUsers.map(u => (
+                                                    <tr key={u.id} className="hover:bg-indigo-50">
+                                                        <td className="p-2 font-mono text-slate-500">{u.id}</td>
+                                                        <td className="p-2 font-bold">{u.name}</td>
+                                                        <td className="p-2">
+                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role==='admin'?'bg-purple-100 text-purple-700':u.role==='member'?'bg-slate-100 text-slate-600':'bg-green-100 text-green-700'}`}>{u.role}</span>
+                                                        </td>
+                                                        
+                                                        {/* Cell Data Indikator Ruangan Bangsal */}
+                                                        <td className="p-2 font-extrabold text-indigo-600 text-[10px] tracking-wide">
+                                                            📂 {u.ward || 'MELATI'}
+                                                        </td>
+
+                                                        <td className="p-2 font-mono text-slate-500">{u.pass}</td>
+                                                        <td className="p-2 text-center flex justify-center gap-1">
+                                                            {/* Otomatis mengisi data form + default ward saat tombol pensil/edit diklik */}
+                                                            <button onClick={()=>setAdminUserForm({ ward: 'MELATI', ...u })} className="bg-yellow-100 text-yellow-700 p-1 rounded">✏️</button>
+                                                            {u.id !== currentUser.id && (
+                                                                <button onClick={()=>handleAdminDeleteUser(u.id)} className="bg-red-100 text-red-700 p-1 rounded">🗑️</button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                             </div>
                             <div className="mt-8 pt-6 border-t border-slate-200">
                                 <h3 className="font-bold text-gray-700 mb-2">Daftar DPJP & Nomor WA (Master Data)</h3>
@@ -3835,7 +3921,7 @@ const processDischarge = async (type) => {
                     isEditing={isEditing} 
                     currentRecordId={currentRecordId} 
                     occupiedRooms={occupiedRooms} 
-                    availableRooms={ROOM_LIST.filter(r => !occupiedRooms.includes(r) || (isEditing && r === formData.roomNumber)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))} 
+                    availableRooms={currentWardConfig.roomList.filter(r => !occupiedRooms.includes(r) || (isEditing && r === formData.roomNumber)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))} 
                     dpjpOptions={dpjpProfiles.map(p => p.name).sort()} 
                     dpjpProfiles={dpjpProfiles} 
                     showRaber1={showRaber1} setShowRaber1={setShowRaber1} 
@@ -5315,15 +5401,24 @@ const App = () => {
             const userData = userSnap.data();
             
             // 2. Cek Password (password dari input VS password dari database)
+            // 2. Cek Password (password dari input VS password dari database)
             if (userData.pass === loginForm.pass) {
                 // SUKSES!
                 console.log("Login Berhasil via Firestore:", userData.name);
-                setCurrentUser(userData);
+                
+                // ✨ TAHAP 2: BERIKAN CAP BANGSAL DEFAULT JIKA BELUM ADA
+                const userWithWard = {
+                    ...userData,
+                    ward: userData.ward || 'MELATI' // Kalau di database kosong, otomatis jadi MELATI
+                };
+
+                setCurrentUser(userWithWard);
                 setAppMode('MEDIS');
-                setUserId(userData.id);
-                // ✨ SUNTIKKAN INI: Kunci sesi di komputer RS agar tidak auto-logout
-                localStorage.setItem('simpan_user', JSON.stringify(userData));
-                localStorage.setItem('simpan_uid', userData.id); 
+                setUserId(userWithWard.id); 
+                
+                // Kunci sesi di memori lokal (fitur anti-logout kemarin)
+                localStorage.setItem('simpan_user', JSON.stringify(userWithWard));
+                localStorage.setItem('simpan_uid', userWithWard.id);
             } else {
                 alert('Password salah!');
             }
@@ -5336,6 +5431,15 @@ const App = () => {
     }
   };
 
+  // ✨ TAHAP 4: FUNGSI SUPERADMIN UNTUK PINDAH RUANGAN
+  const handleSwitchWard = (targetWard) => {
+      const updatedUser = { ...currentUser, ward: targetWard };
+      setCurrentUser(updatedUser);
+      
+      // Update juga brankas di browser agar tidak hilang saat di-refresh
+      localStorage.setItem('simpan_user', JSON.stringify(updatedUser));
+      alert(`Beralih ke pantauan Ruang ${targetWard}`);
+  };
   const handleInternalLogout = () => {
       setCurrentUser(null);
       setUserId(null);
@@ -5429,6 +5533,7 @@ const App = () => {
                   appMode={appMode}
                   setAppMode={setAppMode}
                   cashflowRole={getCashflowRole()}
+                  onSwitchWard={handleSwitchWard}
               />
           ) : (
               // --- MODE KEUANGAN: HEADER SINGLE (CLEAN LOOK) ---
