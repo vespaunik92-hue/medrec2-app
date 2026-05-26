@@ -1029,11 +1029,20 @@ const BulkPrintView = ({ records, onClose }) => {
 
 // --- COMPONENT: DENAH KAMAR (RESPONSIVE: MOBILE, TABLET, LAPTOP) ---
 const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList }) => {
-    const sortedRoomList = useMemo(() => {
-        return [...roomList].sort((a, b) =>
-            a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
-        );
-    }, [roomList]);
+    
+    // ✨ LOGIKA BARU MOBILE: Selang-seling Kiri & Kanan agar Kolom Kiri = Sisi Kiri, Kolom Kanan = Sisi Kanan
+    const mobileRoomList = useMemo(() => {
+        const left = leftRooms || LEFT_ROOMS;
+        const right = rightRooms || RIGHT_ROOMS;
+        const combined = [];
+        const maxLength = Math.max(left.length, right.length);
+        
+        for (let i = 0; i < maxLength; i++) {
+            if (i < left.length) combined.push(left[i]);
+            if (i < right.length) combined.push(right[i]);
+        }
+        return combined;
+    }, [leftRooms, rightRooms]);
 
     const renderRoom = (roomNumber) => {
         const record = activeRecords.find(r => r.roomNumber === roomNumber);
@@ -1050,7 +1059,8 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
         if (!record && !booked && match) {
             const roomCode = match[1];
             const neighborBed = match[2] === 'A' ? 'B' : 'A';
-            const neighborRecord = activeRecords.find(r => r.roomNumber === `${roomCode}${neighborBed}`);
+            const neighborRoom = `${roomCode}${neighborBed}`;
+            const neighborRecord = activeRecords.find(r => r.roomNumber === neighborRoom);
             if (neighborRecord) {
                 if (neighborRecord.gender === 'L') {
                     statusText = 'Sisa Lk';
@@ -1110,14 +1120,16 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
     return (
         <div className="flex justify-center w-full px-1 py-1">
             <div className="w-full max-w-5xl">
-                {/* MOBILE: tampilkan semua kamar berurutan dalam satu grid 2 kolom */}
+                {/* MOBILE: Menggunakan susunan mobileRoomList yang sudah dianyam kiri-kanan ✨ */}
                 <div className="grid grid-cols-2 gap-1.5 mb-2 md:hidden bg-white p-1.5 rounded-xl shadow-inner border border-gray-100">
-                    {sortedRoomList.map(renderRoom)}
+                    {mobileRoomList.map(renderRoom)}
                 </div>
 
-                {/* DESKTOP/TABLET: tetap gunakan pembagian kiri/lorong/kanan */}
+                {/* DESKTOP/TABLET: Menggunakan data bangsal dinamis bawaan config ✨ */}
                 <div className="hidden md:flex w-full gap-2 md:gap-3 bg-white p-1.5 rounded-xl shadow-inner border border-gray-100 justify-center">
-                    <div className="grid grid-cols-1 gap-1.5 w-full">
+                    
+                    {/* SISI KIRI: Dinamis (Melati 2 Kolom, Dahlia 1 Kolom) ✨ */}
+                    <div className={`grid ${(leftRooms || LEFT_ROOMS).length <= 5 ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 w-full`}>
                         {(leftRooms || LEFT_ROOMS).map(renderRoom)}
                     </div>
 
@@ -1125,7 +1137,8 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                         <div className="absolute top-10 text-gray-300 text-[9px] font-bold tracking-[0.3em]" style={{ writingMode: 'vertical-rl' }}>LORONG</div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-1.5 w-full">
+                    {/* SISI KANAN: Dinamis (Melati 2 Kolom, Dahlia 1 Kolom) ✨ */}
+                    <div className={`grid ${(rightRooms || RIGHT_ROOMS).length <= 5 ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 w-full`}>
                         {(rightRooms || RIGHT_ROOMS).map(renderRoom)}
                     </div>
                 </div>
@@ -1992,7 +2005,7 @@ const getDoctorGreeting = (drName) => {
 };
 
 // --- GENERATOR LAPORAN DINAS (FINAL: EMOJI UNICODE & FILTER DPJP) ---
-const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles) => {
+const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, wardName = 'Melati') => {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
@@ -2142,7 +2155,7 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles) 
 *Laporan Dinas ${shift}*
 Tanggal : ${dateStr}
 
-${snow}${rs} *Ruang Melati* ${rs}${snow}
+${snow}${rs} *Ruang ${wardName}* ${rs}${snow}
 
 Kapasitas bed          : ${totalBed}
 Jumlah pasien          : ${activeCount}
@@ -2706,7 +2719,47 @@ const MedicalRecordApp = ({
       
       if (!isEditing && isRoomOccupied) return alert(`Kamar ${formData.roomNumber} sudah terisi.`);
 
-      const now = Timestamp.now()
+      const now = Timestamp.now();
+      
+      // ✨ KODE YANG KEMARIN HILANG DIKEMBALIKAN ✨
+      const data = { 
+          ...formData, 
+          admissionDate: parseDateCM(formData.admissionDate), 
+          updatedAt: now,
+          ward: currentUser?.ward || 'MELATI' // Stempel Bangsal
+      };
+      if (!isEditing) data.createdAt = now;
+      const ref = getCollectionRef();
+
+      if (isEditing && currentRecordId) {
+          updateDoc(doc(ref, currentRecordId), data).catch(err => console.error("Gagal update:", err));
+          
+          if (db && appId) {
+              const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${currentRecordId}/notes`);
+              addDoc(notesRef, { 
+                  ...formData, 
+                  admissionDate: parseDateCM(formData.admissionDate),
+                  createdAt: now, 
+                  noteType: 'daily_update',
+                  savedBy: currentUser?.name || 'System',
+                  ward: currentUser?.ward || 'MELATI'
+              }).catch(err => console.error("Gagal tambah riwayat:", err));
+          }
+      } else {
+          addDoc(ref, data).then(newDoc => {
+              if (db && appId) {
+                  const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${newDoc.id}/notes`);
+                  addDoc(notesRef, { 
+                      ...formData, 
+                      admissionDate: parseDateCM(formData.admissionDate),
+                      createdAt: now, 
+                      noteType: 'daily_update',
+                      savedBy: currentUser?.name || 'System',
+                      ward: currentUser?.ward || 'MELATI'
+                  });
+              }
+          }).catch(err => console.error("Gagal tambah pasien:", err));
+      }
 
       resetForm();
       setShowInputModal(false);
@@ -2830,7 +2883,7 @@ const MedicalRecordApp = ({
 // --- FUNGSI KLIK LAPOR SHIFT ---
     const handleLaporShift = () => {
         try {
-            const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles); 
+            const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles, currentWardConfig.name); 
             window.open(`https://wa.me/?text=${waLink}`, '_blank'); 
         } catch (err) {
             alert("Gagal memproses laporan: " + err.message);
@@ -2893,7 +2946,7 @@ const processDischarge = async (type) => {
       const phone = normalizePhone(profile?.waNumber);
       if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
       const salam = getDoctorGreeting(drName);
-      const text = `${salam} dokter, izin melaporkan jumlah pasien dokter di Melati ada ${count} pasien ya. terimakasih`;
+      const text = `${salam} dokter, izin melaporkan jumlah pasien dokter di Ruang ${currentWardConfig.name} ada ${count} pasien ya. terimakasih`;
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -2902,7 +2955,7 @@ const processDischarge = async (type) => {
       const phone = normalizePhone(profile?.waNumber);
       if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
       const salam = getDoctorGreeting(drName);
-      const text = `${salam} dokter, izin mengingatkan ada pasien Raber ya di Melati a.n ${patientNames.join(', ')}. terimakasih`;
+      const text = `${salam} dokter, izin mengingatkan ada pasien Raber ya di Ruang ${currentWardConfig.name} a.n ${patientNames.join(', ')}. terimakasih`;
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -2956,7 +3009,7 @@ const processDischarge = async (type) => {
       const { labs, rads, tms, others } = parsePlanning(rec.planning);
       const planningText = [...others.filter(Boolean), labs.length > 0 ? `Lab: ${labs.join(', ')}` : null, rads.length > 0 ? `Rad: ${rads.join(', ')}` : null, tms.length > 0 ? `Tndkn: ${tms.join(', ')}` : null].filter(Boolean).join('\n');
       const dpjpInfo = type === 'Forward' ? `\nDPJP: ${rec.dpjpName || '-'}` : '';
-      const text = `Dokter dari Ruang Melati Izin Lapor Pasien \n*a.n ${rec.name}* ${dpjpInfo}\n\n*S:*\n${rec.subjective || '-'}\n\n*O:*\n${rec.objective || '-'}\n\n*A:*\n${rec.analysis || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis,\nTerimakasih`;
+      const text = `Dokter dari Ruang ${currentWardConfig.name} Izin Lapor Pasien \n*a.n ${rec.name}* ${dpjpInfo}\n\n*S:*\n${rec.subjective || '-'}\n\n*O:*\n${rec.objective || '-'}\n\n*A:*\n${rec.analysis || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis,\nTerimakasih`;
 
       try {
           // 1. Salin Teks Laporan
@@ -3182,7 +3235,7 @@ const processDischarge = async (type) => {
             h3 { text-align: center; margin: 5px 0 2px 0; font-size: 14pt; text-transform: uppercase; color: #1e3a8a; } 
             .date-print { text-align: center; font-size: 8pt; margin-bottom: 10px; color: #555; }
         </style></head><body>
-        <h3>Laporan Operan SOAP - Ruang Melati</h3>
+        <h3>Laporan Operan SOAP - Ruang ${currentWardConfig.name}</h3>
         <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
         ${content}
         </body></html>
@@ -3233,7 +3286,7 @@ const processDischarge = async (type) => {
             ${pages.map((pageMeds, pageIndex) => `
                 <div class="page-container">
                     <img src="/cpo-overlay.png" class="scan-background" alt="Mal CPO">
-                    <div class="header-ruangan"><div>MELATI</div><div style="font-size: 12pt; margin-top: 2mm;">${cleanRoom}</div></div>
+                    <div class="header-ruangan"><div>${currentWardConfig.name.toUpperCase()}</div><div style="font-size: 12pt; margin-top: 2mm;">${cleanRoom}</div></div>
                     <div class="header-dpjp">${record.dpjpName || '-'}</div>
                     <div class="patient-box">${record.name.substring(0,25)}</div>
                     ${pageMeds.map((obat, idx) => {                        
@@ -3277,7 +3330,7 @@ const processDischarge = async (type) => {
             .no-print { display: none !important; }
             h3 { text-align: center; margin-bottom: 10px; font-size: 14pt; color: #065f46; }
         </style></head><body>
-        <h3>BUKU REGISTER RUANGAN (CM) - Melati</h3>
+        <h3>BUKU REGISTER RUANGAN (CM) - ${currentWardConfig.name}</h3>
         ${content.innerHTML}
         </body></html>
     `;
@@ -4544,6 +4597,7 @@ const InputSidePanel = ({
             { key: 'Kalsium', reg: /(?:Kalsium|Calsium|\bCa\b)/i },
             { key: 'GDS', reg: /(?:Gula Darah Sewaktu|GDS|Glukosa Sewaktu|Kadar Gula)/i },
             { key: 'GDP', reg: /(?:Gula Darah Puasa|GDP|Glukosa Puasa)/i },
+            { key: '2JPP', reg: /(?:Gula Darah 2 Jam PP|GDP-2JPP|Glukosa 2 Jam PP)/i },
             { key: 'Ur', reg: /(?:Ureum|Ur|Urea)/i },
             { key: 'Cr', reg: /(?:Kreatinin|Creatinin|\bCr\b)/i },
             { key: 'Alb', reg: /(?:Albumin|Alb)/i },
@@ -4574,11 +4628,9 @@ const InputSidePanel = ({
             { key: 'Gram', reg: /Gram|Pewarnaan/i }, 
             { key: 'CD4', reg: /CD4/i },
             { key: 'Kultur', reg: /Kultur|Culture/i },
+            { key: 'MDT/SaDT', reg: /(?:MDT|SaDT|Morfologi Darah Tepi|Apusan Darah|Gambaran Darah Tepi)/i },
         ];
-
-        // 2. TES YANG HASILNYA KALIMAT PANJANG (DESCRIPTIVE)
-        // 2. TES YANG HASILNYA KALIMAT PANJANG (DESCRIPTIVE)
-
+        
         // 3. KAMUS GLOBAL
         const globalSources = [...(typeof LAB_CHECKS !== 'undefined' ? LAB_CHECKS : []), ...(typeof RADIOLOGY_CHECKS !== 'undefined' ? RADIOLOGY_CHECKS : [])];
         const dynamicDictionary = globalSources.flatMap(item => {
@@ -4637,6 +4689,7 @@ const InputSidePanel = ({
             }
 
             // --- FUNGSI PENCARI NILAI (V10: DESCRIPTIVE FULL TEXT) ---
+            const descriptiveTests = ['Gram', 'Sputum', 'Kultur', 'TCM', 'Ag', 'PCR', 'HBeAg', 'HBsAg', 'HIV', 'LED', 'CRP', 'Procal', 'Ferritin', 'CD4', 'MDT'];
             const findValue = (text, keyName) => {
                 // KASUS 1: TES DESKRIPTIF (Gram, Sputum, dll)
                 if (keyName && descriptiveTests.some(dt => keyName.includes(dt))) {
@@ -4704,13 +4757,15 @@ const InputSidePanel = ({
         const allLogs = [...historyLogs].reverse(); 
         allLogs.push(currentData); 
 
-        const trends = { 'Hb': [], 'Leu': [], 'Plt': [], 'Ht': [], 'GDS': [], 'Na': [], 'K': [], 'Cl': [], 'Alb': [], 'Cr': [], 'Ur': [] };
+        const trends = { 'Hb': [], 'Leu': [], 'Plt': [], 'Ht': [], 'GDS': [], 'GDP': [], '2JPP': [], 'Na': [], 'K': [], 'Cl': [], 'Alb': [], 'Cr': [], 'Ur': [] };
         const patterns = {
             'Hb': /(?:Hb|Hemoglobin)[\s:.-]*(\d+(?:\.\d+)?)/i,
             'Leu': /(?:Leu|Leukosit)[\s:.-]*(\d{1,3}(?:\.?\d{3})*)/i,
             'Plt': /(?:Plt|Trombosit|Trombo)[\s:.-]*(\d{1,3}(?:\.?\d{3})*)/i,
             'Ht': /(?:Ht|Hematokrit)[\s:.-]*(\d+(?:\.\d+)?)/i,
             'GDS': /(?:GDS|Gula Darah)[\s:.-]*(\d{2,3})/i,
+            'GDP': /(?:GDP|Glukosa Puasa)[\s:.-]*(\d{2,3})/i,
+            '2JPP': /(?:2JPP|Glukosa 2 Jam PP)[\s:.-]*(\d{2,3})/i,
             'Na': /(?:Na|Natrium)[\s:.-]*(\d{2,3})/i,
             'K': /(?:K|Kalium)[\s:.-]*(\d+(?:\.\d+)?)/i,
             'Cl': /(?:Cl|Clorida)[\s:.-]*(\d{2,3})/i,
