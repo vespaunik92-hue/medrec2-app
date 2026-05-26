@@ -2005,12 +2005,13 @@ const getDoctorGreeting = (drName) => {
 };
 
 // --- GENERATOR LAPORAN DINAS (FINAL: EMOJI UNICODE & FILTER DPJP) ---
-const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, wardName = 'Melati') => {
+const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, wardName = 'Melati', roomList=[]) => {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     const currentTime = currentHour + (currentMinute / 60);
 
+    
     // 1. LOGIKA SHIFT (Batas Lapor 08.00)
     let shift = '';
     let reportDate = new Date(now);
@@ -2045,7 +2046,7 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     const man = '\uD83D\uDC68';       // 👨
 
     // 3. STATISTIK DASAR
-    const totalBed = 24;
+    const totalBed = roomList.length || 24;
     const activeCount = activeRecords.length;
     
     // 4. HITUNG KAMAR KOSONG & GENDER
@@ -2883,7 +2884,7 @@ const MedicalRecordApp = ({
 // --- FUNGSI KLIK LAPOR SHIFT ---
     const handleLaporShift = () => {
         try {
-            const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles, currentWardConfig.name); 
+            const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles, currentWardConfig.name, currentWardConfig.roomList); 
             window.open(`https://wa.me/?text=${waLink}`, '_blank'); 
         } catch (err) {
             alert("Gagal memproses laporan: " + err.message);
@@ -2892,27 +2893,27 @@ const MedicalRecordApp = ({
         setShowLaporModal(false);
     };
 
-    // --- FUNGSI KLIK LAPOR CS (OTOMATIS DETEKSI KAMAR) ---
     const handleLaporCS = () => {
-        // Cari kasur mana saja yang kosong
+        // ✨ FIX MULTI-BANGSAL: Cari kasur kosong berdasarkan bangsal aktif
         const occupiedRooms = activeRecords.map(r => r.roomNumber);
-        const emptyBeds = ROOM_LIST.filter(room => !occupiedRooms.includes(room));
+        const emptyBeds = currentWardConfig.roomList.filter(room => !occupiedRooms.includes(room));
         
-        // Ekstrak angka, buang duplikat, lalu URUTKAN dari terkecil ke terbesar
+        // Ekstrak angka kamar, buang duplikat, lalu URUTKAN dari terkecil ke terbesar
         const emptyRoomNumbers = [...new Set(emptyBeds.map(room => {
             const match = room.match(/\d+/); // Ambil angkanya saja
             return match ? match[0] : '';
-        }))]
-        .filter(Boolean)
-        .sort((a, b) => parseInt(a) - parseInt(b)); // <-- INI KUNCI URUTANNYA
+        }))].filter(Boolean).sort((a, b) => parseInt(a) - parseInt(b));
 
-        // Gabungkan jadi teks
-        const roomString = emptyRoomNumbers.length > 0 ? emptyRoomNumbers.join(', ') : '(semua penuh)';
-        const text = `Assalamualaikum, a punten minta dibersihin Kamar ${roomString}`;
+        if (emptyRoomNumbers.length === 0) {
+            alert("Semua kamar terisi, tidak ada kamar yang kosong untuk dibersihkan.");
+            return;
+        }
+
+        // Teks laporan otomatis menyesuaikan nama bangsal aktif
+        const teksCS = `Assalamualaikum a. Mohon bantuannya untuk merapikan/membersihkan Kamar yang sudah kosong di *Ruang ${currentWardConfig.name}*:\n\n*Kamar:* ${emptyRoomNumbers.map(n => 'K.' + n).join(', ')}\n\nTerima kasih Banyak.`;
         
-        // Buka WA
-        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-        setShowLaporModal(false);
+        const waLink = `https://api.whatsapp.com/send?text=${encodeURIComponent(teksCS)}`;
+        window.open(waLink, '_blank');
     };
 
 const processDischarge = async (type) => {
