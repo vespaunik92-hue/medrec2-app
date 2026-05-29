@@ -2004,154 +2004,126 @@ const getDoctorGreeting = (drName) => {
     }
 };
 
-// --- GENERATOR LAPORAN DINAS (FINAL: EMOJI UNICODE & FILTER DPJP) ---
-const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, wardName = 'Melati', roomList=[]) => {
+// ✨ FUNGSI LAPORAN SHIFT: SEKARANG 100% DINAMIS MULTI-BANGSAL
+const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, wardName = 'Melati', roomList = []) => {
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const currentTime = currentHour + (currentMinute / 60);
-
+    const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
     
-    // 1. LOGIKA SHIFT (Batas Lapor 08.00)
-    let shift = '';
-    let reportDate = new Date(now);
-    let shiftStart = new Date(now);
-    let shiftEnd = new Date(now);
+    // Penentuan Kategori Shift Dinas
+    const hours = now.getHours();
+    let shift = 'Pagi';
+    if (hours >= 14 && hours < 21) shift = 'Siang';
+    else if (hours >= 21 || hours < 7) shift = 'Malam';
 
-    if (currentTime >= 8.0 && currentTime < 15.5) {
-        shift = 'Pagi';
-        shiftStart.setHours(7, 30, 0, 0); shiftEnd.setHours(14, 0, 0, 0);
-    } 
-    else if (currentTime >= 15.5 && currentTime < 22.5) {
-        shift = 'Sore';
-        shiftStart.setHours(14, 0, 0, 0); shiftEnd.setHours(21, 0, 0, 0);
-    } 
-    else {
-        shift = 'Malam';
-        if (currentTime >= 22.5) {
-            shiftStart.setHours(21, 0, 0, 0); shiftEnd.setDate(shiftEnd.getDate() + 1); shiftEnd.setHours(7, 30, 0, 0);
-        } else {
-            reportDate.setDate(reportDate.getDate() - 1);
-            shiftStart.setDate(shiftStart.getDate() - 1); shiftStart.setHours(21, 0, 0, 0);
-            shiftEnd.setHours(7, 30, 0, 0);
-        }
-    }
-    const dateStr = reportDate.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const snow = '❄️'; const rs = '🏥'; const woman = '👩🏼'; const man = '👨';
 
-    // 2. EMOJI "HARDCODED" (UNICODE ESCAPE) - DIJAMIN AMAN
-    // Ini adalah kode asli emoji, browser tidak akan salah baca
-    const snow = '\u2744\uFE0F';      // ❄️
-    const rs = '\uD83C\uDFE5';        // 🏥
-    const woman = '\uD83D\uDC69';     // 👩
-    const man = '\uD83D\uDC68';       // 👨
+    // ✨ FIX MULTI-BANGSAL: Pakai roomList aktif (Dahlia/Melati), jika kosong baru pakai ROOM_LIST lama
+    const currentRooms = roomList && roomList.length > 0 ? roomList : ROOM_LIST;
+    const totalBed = currentRooms.length;
 
-    // 3. STATISTIK DASAR
-    const totalBed = roomList.length || 24;
+    // ✨ FIX ISOLASI: Kamar isolasi hanya diaktifkan jika berada di RUANG MELATI
+    const isoRooms = wardName.toLowerCase().includes('melati') ? ['K14A', 'K15A', 'K15B'] : [];
+
     const activeCount = activeRecords.length;
-    
-    // 4. HITUNG KAMAR KOSONG & GENDER
-    let emptyCount = 0; let emptyMale = 0; let emptyFemale = 0; 
-    let emptyIso = 0; let emptyIsoMale = 0; let emptyIsoFemale = 0;
     const occupiedRooms = activeRecords.map(r => r.roomNumber);
-    
-    // PERHATIAN: Sesuaikan array isoRooms ini dengan nama kamar isolasimu yang baru
-    const isoRooms = ['K14A', 'K15A', 'K15B']; 
-    const allRooms = ROOM_LIST;
 
-    allRooms.forEach(room => {
+    let emptyCount = 0; let emptyMale = 0; let emptyFemale = 0;
+    let emptyIso = 0; let emptyIsoMale = 0; let emptyIsoFemale = 0;
+
+    // ✨ HITUNG BEBAN BED KOSONG SECARA PRESISI
+    currentRooms.forEach(room => {
         if (!occupiedRooms.includes(room)) {
-            // Cek apakah punya tetangga
-            const bedCode = room.slice(-1); // A atau B
-            const roomCode = room.slice(0, -1); // K1, K15, dll
-            
-            let isSisaBed = false;
-            let neighborGender = null;
+            const isIso = isoRooms.includes(room);
+            const match = room.match(/^(K\d+)([AB])$/);
 
-            if (bedCode === 'A' || bedCode === 'B') {
-                const neighborBed = bedCode === 'A' ? 'B' : 'A';
-                const neighborRoom = `${roomCode}${neighborBed}`;
-                
-                // Cek apakah tetangga ada di daftar seluruh kamar & terisi?
-                if (allRooms.includes(neighborRoom)) {
+            if (isIso) {
+                if (!match) {
+                    emptyIso++;
+                } else {
+                    const roomCode = match[1];
+                    const bedCode = match[2];
+                    const neighborBed = bedCode === 'A' ? 'B' : 'A';
+                    const neighborRoom = `${roomCode}${neighborBed}`;
                     const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
-                    if (neighborRec) {
-                        isSisaBed = true; // Tandai bahwa ini cuma "Sisa Bed", bukan Kamar Kosong
-                        neighborGender = neighborRec.gender;
+
+                    if (!neighborRec) {
+                        emptyIso++;
+                    } else if (neighborRec.gender === 'L') {
+                        emptyIsoMale++;
+                    } else {
+                        emptyIsoFemale++;
+                    }
+                }
+            } else {
+                // Kamar Tanpa Suffix A/B (Sifat Kamar Tunggal milik Ruang Dahlia '1', '2', dst)
+                if (!match) {
+                    emptyCount++;
+                } else {
+                    // Kamar Dengan Suffix A/B (Sifat Kamar Berpasangan milik Ruang Melati 'K1A', 'K1B')
+                    const roomCode = match[1];
+                    const bedCode = match[2];
+                    const neighborBed = bedCode === 'A' ? 'B' : 'A';
+                    const neighborRoom = `${roomCode}${neighborBed}`;
+                    const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
+
+                    if (!neighborRec) {
+                        emptyCount++;
+                    } else if (neighborRec.gender === 'L') {
+                        emptyMale++;
+                    } else {
+                        emptyFemale++;
                     }
                 }
             }
-
-            // Alokasikan ke Isolasi atau Umum dengan presisi tinggi
-            if (isoRooms.includes(room)) {
-                if (isSisaBed) {
-                    if (neighborGender === 'L') emptyIsoMale++;
-                    else if (neighborGender === 'P') emptyIsoFemale++;
-                } else {
-                    emptyIso++; // Hanya bertambah kalau tetangganya juga kosong
-                }
-            } else {
-                if (isSisaBed) {
-                    if (neighborGender === 'L') emptyMale++;
-                    else if (neighborGender === 'P') emptyFemale++;
-                } else {
-                    emptyCount++; // Hanya bertambah kalau tetangganya juga kosong
-                }
-            }
         }
     });
 
-    // 5. STATISTIK PERGERAKAN
-    const newPatientCount = activeRecords.filter(r => { if(!r.createdAt) return false; const t = r.createdAt.seconds ? new Date(r.createdAt.seconds * 1000) : r.createdAt; return t >= shiftStart && t <= shiftEnd; }).length;
-    
-    // Ambil data pasien yang keluar pada shift ini
-    const dischargedRecords = records.filter(r => { 
-        if(!r.isDischarged || !r.updatedAt) return false; 
-        const t = r.updatedAt.seconds ? new Date(r.updatedAt.seconds * 1000) : r.updatedAt; 
-        return t >= shiftStart && t <= shiftEnd; 
+    // --- HITUNG INDIKATOR MUTASI PASIEN HARI INI ---
+    const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
+    const todayRecords = records.filter(r => r.updatedAt && r.updatedAt.toDate() >= startOfToday);
+
+    const pulangCount = todayRecords.filter(r => r.isDischarged && r.dischargeType === 'pulang').length;
+    const blplCount = activeRecords.filter(r => r.statusBolehPulang).length;
+    const pindahCount = todayRecords.filter(r => r.isDischarged && r.dischargeType === 'pindah').length;
+    const meninggalCount = todayRecords.filter(r => r.isDischarged && r.dischargeType === 'meninggal').length;
+    const newPatientCount = activeRecords.filter(r => r.createdAt && r.createdAt.toDate() >= startOfToday).length;
+
+    // --- HITUNG STATISTIK BEBAN DPJP ---
+    const dpjpCounts = {};
+    activeRecords.forEach(r => {
+        if (r.dpjpName) dpjpCounts[r.dpjpName] = (dpjpCounts[r.dpjpName] || 0) + 1;
     });
-
-    // PISAHKAN HITUNGAN BERDASARKAN LABEL
-    const pulangCount = dischargedRecords.filter(r => r.dischargeType === 'pulang' || !r.dischargeType).length;
-    const pindahCount = dischargedRecords.filter(r => r.dischargeType === 'pindah').length;
-    const meninggalCount = dischargedRecords.filter(r => r.dischargeType === 'meninggal').length;
-    
-    // PERBAIKAN BLPL: Menggunakan Regex \b agar kata yang mirip tidak ikut terhitung
-    const blplCount = activeRecords.filter(r => {
-        if (!r.planning) return false;
-        const p = r.planning.toLowerCase();
-        // \b memastikan kata tersebut berdiri sendiri. "aps" tidak akan match dengan "capsul"
-        return /\b(blpl|pulang|aps)\b/.test(p);
-    }).length;
-
-    // --- 6. FILTER DPJP (YANG 0 PASIEN HILANG) ---
-    const activeDpjpList = dpjpProfiles
-        .map(dr => {
-            const count = activeRecords.filter(r => r.dpjpName === dr.name).length;
-            return { name: dr.name, count };
-        })
-        .filter(item => item.count > 0)
-        .sort((a, b) => b.count - a.count);
-
-    const dpjpStats = activeDpjpList.length > 0 
-        ? activeDpjpList.map(d => `${d.name.padEnd(20, ' ')} : ${d.count}`).join('\n')
+    const dpjpStats = Object.keys(dpjpCounts).length > 0
+        ? Object.entries(dpjpCounts).map(([name, count]) => `- ${name} : ${count} pasien`).join('\n')
         : '-';
 
-    // 7. RABER & LAINNYA
-    const raberGroups = {};
+    // --- HITUNG STATISTIK RAWAT BERSAMA (RABER) ---
+    const raberMap = {};
     activeRecords.forEach(r => {
-        const add = (dr, patient) => { if(!dr) return; if(!raberGroups[dr]) raberGroups[dr] = []; raberGroups[dr].push(patient); };
-        add(r.raberName, r.name); add(r.raber2Name, r.name);
+        [r.raberName, r.raber2Name].forEach(dr => {
+            if (dr) {
+                if (!raberMap[dr]) raberMap[dr] = [];
+                raberMap[dr].push(r.name);
+            }
+        });
     });
-    const raberText = Object.keys(raberGroups).map(dr => `${dr} (${raberGroups[dr].join(', ')})`).join('\n');
-    
-    const dhfPatients = activeRecords.filter(r => { const txt = (r.analysis + r.planning + r.diagnosis || '').toLowerCase(); return txt.includes('dhf') || txt.includes('dengue') || txt.includes('dbd'); }).map(r => r.name).join(', ');
-    
-    const pesananText = waitingList.map(w => {
-        const diag = w.diagnosis || '-'; const asal = w.originRoom || 'IGD'; const kls = w.insuranceClass || '-';
-        return `${w.plannedRoom}: ${w.name} / ${diag} / ${asal} / ${kls}`;
-    }).join('\n') || '-';
+    const raberText = Object.keys(raberMap).length > 0
+        ? Object.entries(raberMap).map(([dr, pts]) => `- ${dr} : ${pts.length} px (${pts.join(', ')})`).join('\n')
+        : '-';
 
-    // --- TEMPLATE TEKS WA ---
+    // --- REKAP PASIEN KASUS DHF ---
+    const dhfList = activeRecords.filter(r => r.diagnosa?.toUpperCase().includes('DHF') || r.diagnosa?.toUpperCase().includes('DENGUE'));
+    const dhfPatients = dhfList.length > 0
+        ? dhfList.map(r => `- K.${r.roomNumber} a.n ${r.name} (${r.dpjpName})`).join('\n')
+        : '-';
+
+    // --- REKAP PESANAN KASUR (WAITING LIST) ---
+    const constPesanan = waitingList ? waitingList.filter(w => !w.isDischarged) : [];
+    const pesananText = constPesanan.length > 0
+        ? constPesanan.map(w => `- K.${w.plannedRoom || '?'} a.n ${w.name} (rencana masuk)`).join('\n')
+        : '-';
+
+    // --- TEMPLATE TEKS FORMAT UTUH WHATSAPP ---
     const text = `Assalamu'alaikum wr.wb.
 *Laporan Dinas ${shift}*
 Tanggal : ${dateStr}
@@ -2275,15 +2247,22 @@ const MedicalRecordApp = ({
   const [settingsError, setSettingsError] = useState(null);      
 
     // Combined planning options (prefer master lists when available)
+    // Combined planning options (prefer master lists when available)
     const combinedPlanningOptions = useMemo(() => {
             const labs = Array.from(new Set([...(LAB_CHECKS || []), ...masterLabs])).map(i => ({ label: i, type: 'Lab' }));
             const rads = Array.from(new Set([...(RADIOLOGY_CHECKS || []), ...masterRads])).map(i => ({ label: i, type: 'Rad' }));
             const prots = Array.from(new Set([...(PROCEDURES || []), ...masterProcedures])).map(i => ({ label: i, type: 'Med' }));
             const meds = Array.from(new Set([...(MEDICATIONS || []), ...masterMedications])).map(i => ({ label: i, type: 'Rx' }));
-            return [...labs, ...rads, ...prots, ...meds].sort((a, b) => a.label.localeCompare(b.label));
-    }, [masterLabs, masterRads, masterProcedures, masterMedications]);
-  const [historyLogs, setHistoryLogs] = useState([]); 
+            
+            // ✨ SUNTIKAN BARU: Daftarkan Item Bertipe 'Protocol'
+            const protocols = [
+                { label: 'Protokol Sliding Scale (SC)', type: 'Protocol', isi: 'Th. Sliding Scale (SC tiap 4 jam):\n< 150 : 0 Unit\n150 - 200 : 4 Unit\n200 - 250 : 8 Unit\n250 - 300 : 12 Unit\n300 - 350 : 16 Unit\n350 - 400 : 20 Unit\n> 400 : 24 Unit' },
+                { label: 'Protokol GDS (dr. Dian)', type: 'Protocol', isi: 'Th. Cek GDS per 2 jam:\n- Jika GDS > 200 ganti D5% 20 tpm\n- Jika dgn D5% 20 tpm GDS > 200, ganti dgn NaCl 0.9% 20 tpm' }
+            ];
 
+            return [...labs, ...rads, ...prots, ...meds, ...protocols].sort((a, b) => a.label.localeCompare(b.label));
+    }, [masterLabs, masterRads, masterProcedures, masterMedications]);
+  const [historyLogs, setHistoryLogs] = useState([]);
   const [view, setView] = useState('dashboard'); 
   const [loading, setLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -2646,16 +2625,18 @@ const MedicalRecordApp = ({
       });
       setRecords(data);
               
-              // ✨ TAHAP 3: FILTER DATA HANYA UNTUK BANGSAL USER SAAT INI
-                const myWardData = data.filter(r => (r.ward || 'MELATI') === (currentUser?.ward || 'MELATI'));
-                
-                // Pisahkan pasien aktif & arsip dari data bangsal terpilih
-                const active = myWardData.filter(r => !r.isDischarged);
-                const archived = myWardData.filter(r => r.isDischarged);
-                
-                setActiveRecords(active);
-                setArchivedRecords(archived); 
-                setOccupiedRooms(active.map(r => r.roomNumber));
+              // ✨ FIX: MENDETEKSI NAMA RUANGAN (BANGSAL) TERLEBIH DAHULU
+        const currentWard = currentUser?.ward || 'MELATI';
+        
+        // 1. PASIEN AKTIF: TERISOLASI PER BANGSAL (Ini mencegah Dahlia menimpa Melati)
+        const active = data.filter(r => !r.isDischarged && (r.ward || 'MELATI') === currentWard);
+        
+        // 2. GUDANG ARSIP: BERSAMA 1 RS (Semua pasien digabung di sini)
+        const archived = data.filter(r => r.isDischarged);
+        
+        setActiveRecords(active);
+        setArchivedRecords(archived); 
+        setOccupiedRooms(active.map(r => r.roomNumber));
     }, (err) => console.error("Firestore Error:", err));
     return () => unsubscribe();
   }, [getCollectionRef, userId]);
@@ -4235,6 +4216,8 @@ const PlanningQuickTag = ({ onSelect }) => {
         { label: 'Nicardipin', isi: 'Th. Drip Perdipine/Nicardipine  mcg, Kec.  cc/j, Bb  kg', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Vascon', isi: 'Th. Drip vascon/Norepinephrine mcg, Kec.  cc/j, Bb  kg', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Panto', isi: 'Th. Drip pantoprazole 8 mg/j', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        { label: 'Sliding Scale', isi: 'Th. Sliding Scale (SC tiap 4 jam):\n< 150 : 0 Unit\n150 - 200 : 4 Unit\n200 - 250 : 8 Unit\n250 - 300 : 12 Unit\n300 - 350 : 16 Unit\n350 - 400 : 20 Unit\n> 400 : 24 Unit', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        { label: 'Protokol GDS', isi: 'Th. Cek GDS per 2 jam:\n- Jika GDS > 200 ganti D5% 20 tpm\n- Jika dgn D5% 20 tpm GDS > 200, ganti dgn NaCl 0.9% 20 tpm', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         
         // TAMBAHAN (Hitam)
         { label: 'BLPL', isi: 'Rencana BLPL', warna: 'bg-black text-white border-black' },
@@ -4285,54 +4268,37 @@ const InputSidePanel = ({
     const [hideSuggestion, setHideSuggestion] = useState(false);
     useEffect(() => { setHideSuggestion(false); }, [formData?.name]);
     const archivedMatches = useMemo(() => {
-    // Pakai pengaman tambahan (?.) untuk menghindari error saat formData belum siap
-    const currentName = formData?.name || '';
-    const currentRm = formData?.rmNumber || '';
-    // Cek apakah ada ketikan di Nama ATAU di RM
-    const hasName = currentName.length >= 3;
-    const hasRm = currentRm.length >= 2;
-    
-    if (!hasName && !hasRm) return [];
-    
-    // 1. FILTER DASAR (Pencarian Nama atau RM dengan Pengaman Anti-Crash)
-    let matches = archivedRecords.filter(r => {
-        if (!r) return false;
+        const currentName = formData?.name || '';
+        const currentRm = formData?.rmNumber || '';
+        const hasName = currentName.length >= 3;
+        const hasRm = currentRm.length >= 2;
         
-        // PENGAMAN: Cek pastikan r.name adalah teks, kalau bukan jadikan kosong ('')
-        const safeName = typeof r.name === 'string' ? r.name.toLowerCase() : '';
-        const matchName = hasName && safeName.includes(currentName.toLowerCase());
+        if (!hasName && !hasRm) return [];
         
-        const matchRm = hasRm && r.rmNumber && r.rmNumber.includes(currentRm);
-        
-        return matchName || matchRm;
-    });
+        let matches = archivedRecords.filter(r => {
+            if (!r) return false;
+            const safeName = typeof r.name === 'string' ? r.name.toLowerCase() : '';
+            const matchName = hasName && safeName.includes(currentName.toLowerCase());
+            const matchRm = hasRm && r.rmNumber && r.rmNumber.includes(currentRm);
+            return matchName || matchRm;
+        });
 
-    // 2. JURUS UX: Sembunyikan saran JIKA nama di form SUDAH SAMA PERSIS dengan di database
-    const isAlreadySelected = matches.some(r => {
-        const safeName = typeof r.name === 'string' ? r.name.toLowerCase() : '';
-        return safeName === currentName.toLowerCase() && currentName.length > 0;
-    });
-    if (isAlreadySelected) return [];
+        matches.sort((a, b) => {
+            const dateA = a.admissionDate ? new Date(a.admissionDate) : new Date(0);
+            const dateB = b.admissionDate ? new Date(b.admissionDate) : new Date(0);
+            return dateB - dateA;
+        });
 
-    // 3. JURUS PASIEN LAMA (Asep Mumuh): Urutkan dari tanggal rawat paling baru
-    matches.sort((a, b) => {
-        const dateA = a.admissionDate ? new Date(a.admissionDate) : new Date(0);
-        const dateB = b.admissionDate ? new Date(b.admissionDate) : new Date(0);
-        return dateB - dateA;
-    });
+        const uniqueMatches = matches.filter((item, index, self) =>
+            index === self.findIndex((t) => {
+                const isSameRM = t.rmNumber && item.rmNumber && t.rmNumber === item.rmNumber;
+                const isSameName = typeof t.name === 'string' && typeof item.name === 'string' && t.name.toLowerCase() === item.name.toLowerCase();
+                return isSameRM || isSameName;
+            })
+        );
 
-    // 4. BUANG GANDA: Sisakan 1 data terbaru jika ada RM atau Nama yang sama
-    const uniqueMatches = matches.filter((item, index, self) =>
-        index === self.findIndex((t) => {
-            const isSameRM = t.rmNumber && item.rmNumber && t.rmNumber === item.rmNumber;
-            const isSameName = typeof t.name === 'string' && typeof item.name === 'string' && t.name.toLowerCase() === item.name.toLowerCase();
-            return isSameRM || isSameName;
-        })
-    );
-
-    return uniqueMatches.slice(0, 5); // Tampilkan max 5 saran
-
-}, [formData?.name, formData?.rmNumber, archivedRecords]);
+        return uniqueMatches.slice(0, 5);
+    }, [formData?.name, formData?.rmNumber, archivedRecords]);
 
 // 👇 TARUH FUNGSI AUTO-FORMAT TANGGAL DI SINI 👇
     const handleDateMasking = (e) => {
@@ -4966,7 +4932,7 @@ const InputSidePanel = ({
                                     />
                                     
                                     {/* SUGGESTION LIST PASIEN LAMA */}
-                                    {archivedMatches && archivedMatches.length > 0 && formData.name.length > 0 && !archivedMatches.some(old => old.name === formData.name) && !hideSuggestion && (
+                                    {archivedMatches && archivedMatches.length > 0 && (formData.name.length > 0 || formData.rmNumber.length > 0) && !hideSuggestion && (
                                         <div className="absolute z-50 w-full bg-white border-2 border-indigo-500 shadow-2xl rounded-md mt-[-8px] max-h-48 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
                                             
                                             {/* HEADER DITAMBAH STICKY & TOMBOL ABAIKAN */}
@@ -4994,6 +4960,7 @@ const InputSidePanel = ({
                                                         handleInputChange({ target: { name: 'name', value: old.name } });
                                                         handleInputChange({ target: { name: 'rmNumber', value: old.rmNumber || '' } });
                                                         handleInputChange({ target: { name: 'gender', value: old.gender || '' } });
+                                                        setHideSuggestion(true);
                                                         alert(`Biodata ${old.name} ditarik. Silakan tentukan DPJP hari ini.`);
                                                     }}
                                                     className="p-2 hover:bg-indigo-50 cursor-pointer border-b last:border-0 transition-colors"
@@ -5119,9 +5086,43 @@ const InputSidePanel = ({
                             </div>
                         )}
 
-                        <CustomTextArea label="S (Subjektif)" name="subjective" value={formData.subjective} onChange={handleInputChange} 
-                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('subjective') : null} pullLabel="Salin S Lalu" />
+                        {/* --- URUTAN BARU: A - P - O - S --- */}
+
+                        <CustomTextArea label="A (Analisa)" name="analysis" value={formData.analysis} onChange={handleInputChange} 
+                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('analysis') : null} pullLabel="Salin A Lalu" />
                         
+                        <CustomTextArea 
+                            label="P (Planning)" name="planning" value={formData.planning} onChange={handleInputChange}
+                            // PROPS HARUS DI SINI (DI DALAM TAG PEMBUKA)
+                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('planning') : null} 
+                            pullLabel="Tarik P"
+                        >
+                            {/* ISINYA (CHILDREN) TETAP DI SINI */}
+                            <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-0">
+                                <PlanningQuickTag onSelect={(text) => appendText('planning', text)} />
+
+                                <TagSelector 
+                                    label="Smart Planning" 
+                                    placeholder="Ketik Lab, Rad, Obat, Protokol..." 
+                                    options={ALL_PLANNING_OPTIONS.map(o => o.label)} 
+                                    category="SmartPlan"
+                                    onSelect={(cat, itemLabel) => {
+                                        const found = ALL_PLANNING_OPTIONS.find(o => o.label === itemLabel);
+                                        
+                                        // ✨ LOGIKA BARU: Jika tipenya Protocol, cetak isinya full!
+                                        if (found && found.type === 'Protocol') {
+                                            appendText('planning', found.isi);
+                                        } else {
+                                            // Logika lama (Obat/Lab biasa)
+                                            const type = found ? found.type : 'Rx';
+                                            let prefix = type === 'Lab' ? 'Lab. R/ ' : type === 'Rad' ? 'Rad. R/ ' : type === 'Med' ? 'TM. ' : 'Th. ';
+                                            appendText('planning', `${prefix}${itemLabel}`);
+                                        }
+                                    }} 
+                                />
+                            </div>
+                        </CustomTextArea>
+
                         <CustomTextArea label="O (Objektif)" name="objective" value={formData.objective} onChange={handleInputChange} 
                             onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('objective') : null} pullLabel="Salin O Lalu"
                             extraButtons={
@@ -5147,33 +5148,8 @@ const InputSidePanel = ({
                             )}
                         </CustomTextArea>
 
-                        <CustomTextArea label="A (Analisa)" name="analysis" value={formData.analysis} onChange={handleInputChange} 
-                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('analysis') : null} pullLabel="Salin A Lalu" />
-                        
-                        <CustomTextArea 
-                        label="P (Planning)" name="planning" value={formData.planning} onChange={handleInputChange}
-                        // PROPS HARUS DI SINI (DI DALAM TAG PEMBUKA)
-                        onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('planning') : null} 
-                        pullLabel="Tarik P"
-                    >
-                        {/* ISINYA (CHILDREN) TETAP DI SINI */}
-                        <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-0">
-                            <PlanningQuickTag onSelect={(text) => appendText('planning', text)} />
-
-                            <TagSelector 
-                                label="Smart Planning" 
-                                placeholder="Ketik Lab, Rad, Obat..." 
-                                options={ALL_PLANNING_OPTIONS.map(o => o.label)} 
-                                category="SmartPlan"
-                                onSelect={(cat, itemLabel) => {
-                                    const found = ALL_PLANNING_OPTIONS.find(o => o.label === itemLabel);
-                                    const type = found ? found.type : 'Rx';
-                                    let prefix = type === 'Lab' ? 'Lab. R/ ' : type === 'Rad' ? 'Rad. R/ ' : type === 'Med' ? 'TM. ' : 'Th. ';
-                                    appendText('planning', `${prefix}${itemLabel}`);
-                                }} 
-                            />
-                        </div>
-                    </CustomTextArea>
+                        <CustomTextArea label="S (Subjektif)" name="subjective" value={formData.subjective} onChange={handleInputChange} 
+                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('subjective') : null} pullLabel="Salin S Lalu" />
                     </div>
                 </div>
 
@@ -5289,8 +5265,7 @@ const InputSidePanel = ({
                             <input 
                                 type="file" 
                                 accept="image/*" 
-                                multiple 
-                                capture="environment" 
+                                multiple  
                                 onChange={handleMultiImageUpload}
                                 className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 mb-2"
                             />
@@ -5345,8 +5320,7 @@ const InputSidePanel = ({
                             <input 
                                 type="file" 
                                 accept="image/*" 
-                                multiple 
-                                capture="environment" 
+                                multiple  
                                 onChange={handleMultiImageUpload}
                                 className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 mb-2"
                             />

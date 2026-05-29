@@ -98,6 +98,7 @@ const GudangArsip = ({ dataPasien, loading, db, onRestore }) => {
               </th>
               <th className="p-3 sticky left-12 z-50 bg-blue-600 w-24 border-b border-r text-center">No. RM</th>
               <th className="p-3 sticky left-[144px] z-50 bg-blue-600 w-56 border-b border-r">Nama Pasien</th>
+              <th className="p-3 border-b min-w-[100px] text-center text-yellow-200">Ruangan</th>
               <th className="p-3 border-b min-w-[80px] text-center">No. Kmr</th>
               <th className="p-3 border-b min-w-[100px] text-center">Tgl Masuk</th>
               <th className="p-3 border-b min-w-[100px] text-center text-blue-200">Tgl Pindah</th>
@@ -119,6 +120,7 @@ const GudangArsip = ({ dataPasien, loading, db, onRestore }) => {
                   </td>
                   <td className="p-3 sticky left-12 z-20 bg-white group-hover:bg-blue-50 border-b border-r font-mono text-center text-xs">{p.rmNumber || '-'}</td>
                   <td className="p-3 sticky left-[144px] z-20 bg-white group-hover:bg-blue-50 border-b border-r font-bold uppercase text-xs">{p.name || '-'}</td>
+                  <td className="p-3 border-b text-center font-bold text-indigo-700 text-xs">📂 {p.ward || 'MELATI'}</td>
                   <td className="p-3 border-b text-center font-bold text-gray-600">{p.lastRoom || p.roomNumber || '-'}</td>
                   <td className="p-3 border-b text-center text-xs">{tglMasuk}</td>
                   
@@ -133,7 +135,7 @@ const GudangArsip = ({ dataPasien, loading, db, onRestore }) => {
                         className="text-indigo-600 font-bold text-xs border border-indigo-500 px-3 py-1.5 rounded shadow-sm hover:bg-indigo-600 hover:text-white transition-colors"
                         title="Kembalikan ke Daftar Pasien Aktif"
                      >
-                        ↩️ Balikkan
+                        ↩️
                      </button>
                   </td>
                 </tr>
@@ -142,7 +144,7 @@ const GudangArsip = ({ dataPasien, loading, db, onRestore }) => {
 
             {filteredPasien.length === 0 && (
               <tr>
-                <td colSpan="9" className="p-10 text-center text-gray-500 italic">
+                <td colSpan="10" className="p-10 text-center text-gray-500 italic">
                   {searchTerm ? 'Pencarian tidak ditemukan.' : 'Belum ada data di arsip.'}
                 </td>
               </tr>
