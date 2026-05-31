@@ -23,7 +23,7 @@ import GudangArsip from './components/GudangArsip';
 import { 
     LEFT_ROOMS, RIGHT_ROOMS, ROOM_LIST, 
     DEFAULT_DPJP_DATA, LAB_CHECKS, RADIOLOGY_CHECKS, 
-    PROCEDURES, MEDICATIONS, WARD_CONFIG 
+    PROCEDURES, MEDICATIONS, WARD_CONFIG, LAB_NORMAL_RANGES 
 } from './constants';
 import { LogOut, Wallet, FileText, ChevronLeft } from 'lucide-react';
 
@@ -63,7 +63,8 @@ const cetakPWA = (htmlContent, title = 'Cetak') => {
     }, 800);
 };
 
-const handlePrintWindow = (elementId, title) => {
+// --- FUNGSI HELPER UNTUK PRINT DI HP/TABLET (ANTI-CRASH) ---
+const handlePrintWindow = (elementId, title, paperSize = 'A5') => {
     const content = document.getElementById(elementId);
     if (!content) return;
 
@@ -75,8 +76,14 @@ const handlePrintWindow = (elementId, title) => {
             <title>${title}</title>
             <script src="https://cdn.tailwindcss.com"></script>
             <style>
-                body { background-color: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 11pt; }
-                @media print { @page { size: A5 portrait; margin: 0.5cm; } body { margin: 0; } .no-print { display: none !important; } .print-break { page-break-after: always; } #print-container { width: 100%; max-width: 148mm; } }
+                body { background-color: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: ${paperSize === 'A4' ? '12pt' : '11pt'}; }
+                @media print { 
+                    @page { size: ${paperSize} portrait; margin: 0.5cm; } 
+                    body { margin: 0; } 
+                    .no-print { display: none !important; } 
+                    .print-break { page-break-after: always; } 
+                    #print-container { width: 100%; max-width: ${paperSize === 'A4' ? '210mm' : '148mm'}; margin: 0 auto; } 
+                }
             </style>
         </head>
         <body>
@@ -84,7 +91,7 @@ const handlePrintWindow = (elementId, title) => {
         </body>
         </html>
     `;
-    cetakPWA(html, title); // <--- INI YANG BERUBAH
+    cetakPWA(html, title);
 };
 
 // --- COMPONENTS UI (DEFINED GLOBALLY) ---
@@ -938,7 +945,9 @@ const PrintLayout = ({ record }) => {
                                 <div>GCS : ___</div>
                             </div>
                         </div>
-                        <div className="whitespace-pre-wrap font-sans pl-1">{record.objective || '-'}</div>
+                        <div className="font-sans pl-1 mt-1">
+                        <FormattedObjective text={record.objective} />
+                    </div>
                     </div>
 
                     {/* BAGIAN S (SUBJEKTIF) - Jika Ada */}
@@ -958,8 +967,11 @@ const PrintLayout = ({ record }) => {
 };
 
 const PrintView = ({ record, closePrint }) => {
-  const onPrint = () => {
-      handlePrintWindow('printable-area', `Cetak APOS - ${record.name}`);
+  const onPrintA5 = () => {
+      handlePrintWindow('printable-area', `Cetak APOS - ${record.name}`, 'A5');
+  };
+  const onPrintA4 = () => {
+      handlePrintWindow('printable-area', `Cetak APOS - ${record.name}`, 'A4');
   };
 
   return (
@@ -967,19 +979,21 @@ const PrintView = ({ record, closePrint }) => {
       {/* Header Controls */}
       <div className="p-4 bg-gray-100 flex justify-between items-center no-print sticky top-0 border-b shadow-sm">
         <h1 className="font-bold text-gray-700">Preview Cetak (APOS)</h1>
-        <div className="space-x-2">
-            <button 
-                onClick={onPrint} 
-                className="px-6 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 flex items-center inline-flex"
-            >
-                <span className="mr-2">🖨️</span> Cetak Sekarang (A5)
+        <div className="flex gap-2">
+            <button onClick={onPrintA5} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 flex items-center transition">
+                🖨️ Cetak A5
             </button>
-            <button onClick={closePrint} className="px-4 py-2 bg-red-500 text-white rounded text-sm font-bold">Tutup</button>
+            <button onClick={onPrintA4} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 flex items-center transition" title="Pilih A4 jika ingin print 2-per-lembar">
+                🖨️ Cetak A4
+            </button>
+            <button onClick={closePrint} className="px-4 py-2 bg-red-500 text-white rounded text-sm font-bold hover:bg-red-600 transition">Tutup</button>
         </div>
       </div>
 
-      <div id="printable-area" className="p-4">
-          <PrintLayout record={record} />
+      <div id="printable-area" className="p-4 flex justify-center">
+          <div className="w-full max-w-4xl">
+              <PrintLayout record={record} />
+          </div>
       </div>
     </div>
   );
@@ -993,8 +1007,11 @@ const BulkPrintView = ({ records, onClose }) => {
         );
     }, [records]);
 
-    const onPrint = () => {
-        handlePrintWindow('bulk-printable-area', 'Cetak Banyak - APOS');
+    const onPrintA5 = () => {
+        handlePrintWindow('bulk-printable-area', 'Cetak Banyak - APOS', 'A5');
+    };
+    const onPrintA4 = () => {
+        handlePrintWindow('bulk-printable-area', 'Cetak Banyak - APOS', 'A4');
     };
 
     return (
@@ -1005,9 +1022,12 @@ const BulkPrintView = ({ records, onClose }) => {
                     <h1 className="font-bold text-indigo-900">Cetak Banyak ({sortedToPrint.length} Pasien)</h1>
                     <p className="text-[10px] text-gray-500 italic">*Urutan otomatis berdasarkan nomor kamar</p>
                 </div>
-                <div className="space-x-2">
-                    <button onClick={onPrint} className="px-6 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 flex items-center inline-flex transition">
-                        <span className="mr-2">🖨️</span> Cetak A5
+                <div className="flex gap-2">
+                    <button onClick={onPrintA5} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 flex items-center transition">
+                        🖨️ Cetak A5
+                    </button>
+                    <button onClick={onPrintA4} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 flex items-center transition" title="Gunakan setting printer '2 Pages per Sheet' jika ingin A5 di kertas A4">
+                        🖨️ Cetak A4
                     </button>
                     <button onClick={onClose} className="px-4 py-2 bg-gray-500 text-white rounded text-sm font-bold hover:bg-gray-600 transition">Tutup</button>
                 </div>
@@ -2116,8 +2136,8 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
         });
     });
     const raberText = Object.keys(raberMap).length > 0
-        ? Object.entries(raberMap).map(([dr, pts]) => `- ${dr} : ${pts.length} px (${pts.join(', ')})`).join('\n')
-        : '-';
+    ? Object.entries(raberMap).map(([dr, pts]) => `- ${dr} : ${pts.length} pasien (${pts.join(', ')})`).join('\n')
+    : '-';
 
     // --- REKAP PASIEN KASUS DHF ---
     const dhfList = activeRecords.filter(r => r.diagnosa?.toUpperCase().includes('DHF') || r.diagnosa?.toUpperCase().includes('DENGUE'));
@@ -5380,28 +5400,7 @@ const InputSidePanel = ({
     );
 };
 
-// ✨ 1. KAMUS NILAI NORMAL LAB (Bisa kamu edit kapan saja sesuai referensi RS)
-export const LAB_NORMAL_RANGES = {
-    'Hb': { min: 11.7, max: 15.5 },       
-    'Leu': { min: 4000, max: 11000 },     
-    'Trmbsit': { min: 150000, max: 440000 },
-    'Ht': { min: 35, max: 47 },           
-    'GDS': { min: 70, max: 200 },         
-    'GDP': { min: 70, max: 100 },
-    '2JPP': { min: 70, max: 140 },
-    'Ur': { min: 15, max: 43 },
-    'Cr': { min: 0.6, max: 1.2 },
-    'SGOT': { min: 0, max: 35 },
-    'SGPT': { min: 0, max: 45 },
-    'Alb': { min: 3.5, max: 5.2 },
-    'Na': { min: 135, max: 145 },
-    'K': { min: 3.5, max: 5.0 },
-    'Cl': { min: 98, max: 107 },
-    'Bil.Tot': { min: 0.1, max: 1.2 },
-    'LED': { min: 0, max: 20 }
-};
-
-// ✨ 2. MESIN PEMBACA & PEWARNA OTOMATIS (FIX BUG SPASI/ENTER)
+// ✨ 2. MESIN PEMBACA & PEWARNA OTOMATIS (V2: DETEKSI ANGKA + TEKS KLINIS)
 const FormattedObjective = ({ text }) => {
     if (!text) return <span>-</span>;
     
@@ -5411,21 +5410,15 @@ const FormattedObjective = ({ text }) => {
         <div className="whitespace-pre-wrap">
             {lines.map((line, idx) => {
                 let abnormalType = null; 
+                const lowerLine = line.trim().toLowerCase();
                 
-                // Scan baris ini ke semua kamus lab
+                // --- STEP 1: DETEKSI ANGKA DARI KAMUS ---
                 for (const [key, range] of Object.entries(LAB_NORMAL_RANGES)) {
-                    if (line.trim().toLowerCase().startsWith(key.toLowerCase() + ' ')) {
-                        
+                    if (lowerLine.startsWith(key.toLowerCase() + ' ')) {
                         const match = line.match(/[\d.,]+/);
                         if (match) {
                             let valStr = match[0];
-                            let val;
-                            
-                            if (range.max > 1000) {
-                                val = parseFloat(valStr.replace(/\./g, '').replace(/,/g, ''));
-                            } else {
-                                val = parseFloat(valStr.replace(',', '.'));
-                            }
+                            let val = range.max > 1000 ? parseFloat(valStr.replace(/\./g, '').replace(/,/g, '')) : parseFloat(valStr.replace(',', '.'));
 
                             if (!isNaN(val)) {
                                 if (val > range.max) abnormalType = 'high';
@@ -5436,6 +5429,20 @@ const FormattedObjective = ({ text }) => {
                     }
                 }
 
+                // --- STEP 2: DETEKSI TEKS (Uji Kualitatif spt TCM, Swab, Kultur) ---
+                if (!abnormalType) {
+                    // Cek kata-kata bahaya & kata aman
+                    const isDanger = /(positif|reaktif|detected|ditemukan|resistan)/i.test(lowerLine);
+                    const isSafe = /(negatif|non[- ]?reaktif|not detected|tidak ditemukan)/i.test(lowerLine);
+                    
+                    // Logika Pintar: Jika ada kata bahaya DAN tidak disangkal oleh kata aman
+                    // (Contoh: "Not Detected" punya kata 'detected', tapi karena ada kata 'not', maka dia masuk isSafe)
+                    if (isDanger && !isSafe) {
+                        abnormalType = 'text-bad';
+                    }
+                }
+
+                // --- STEP 3: EKSEKUSI PEWARNAAN ---
                 let spanClass = "";
                 let arrow = "";
                 
@@ -5445,9 +5452,12 @@ const FormattedObjective = ({ text }) => {
                 } else if (abnormalType === 'low') {
                     spanClass = "text-blue-600 font-bold bg-blue-50 px-1 rounded inline-block shadow-sm"; 
                     arrow = " ⬇️";
+                } else if (abnormalType === 'text-bad') {
+                    spanClass = "text-red-600 font-bold bg-red-50 px-1 rounded inline-block shadow-sm"; 
+                    arrow = " ⚠️"; // Panah diganti ikon warning untuk teks
                 }
 
-                // ✨ FIX UTAMA: <br /> diletakkan DI LUAR span pembungkus warna
+                // Cetak barisnya (<br /> aman di luar kotak warna)
                 return (
                     <span key={idx}>
                         <span className={spanClass}>
@@ -5648,9 +5658,21 @@ const App = () => {
                           <span>🚀</span> Masuk
                       </button>                      
                   </form>
+
+                  {/* ✨ LINK APRESIASI ELEGAN & AMAN (TIDAK MENCOLOK) */}
+                  <div className="text-center mt-4 animate-in fade-in duration-500">
+                      <a 
+                          href="https://trakteer.id/481nugroho" 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="text-[11px] text-slate-400 hover:text-indigo-600 font-medium transition-colors inline-flex items-center gap-1 border-b border-dashed border-transparent hover:border-indigo-400 pb-0.5"
+                      >
+                          ✨ Traktir Kopi?
+                      </a>
+                  </div>
                   
                   <div className="text-center mt-4">
-                      <p className="text-[10px] text-slate-400">&copy; 2026 SIMPAN by Abi Nugroho</p>
+                      <p className="text-[10px] text-slate-400">&copy; 2026 SIMPAN</p>
                   </div>
               </div>
           </div>

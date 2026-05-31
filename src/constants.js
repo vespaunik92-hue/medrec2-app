@@ -108,6 +108,69 @@ export const WARD_CONFIG = {
     }
 };
 
+// ✨ 1. KAMUS NILAI NORMAL LAB (Sudah disesuaikan standar RS)
+export const LAB_NORMAL_RANGES = {
+    // --- HEMATOLOGI (Darah Rutin & Pembekuan) ---
+    'Hb': { min: 12, max: 16 },       
+    'Leu': { min: 4.5, max: 11 },         // 4.500 - 11.000 (Disingkat)
+    'Trmbsit': { min: 150, max: 450 },    // 150.000 - 450.000 (Disingkat)
+    'Ht': { min: 37, max: 47 }, 
+    'Eritrosit': { min: 4.7, max: 6.1 },  // Tambahan jaga-jaga
+    'Retikulosit': { min: 0.5, max: 1.5 },
+    'LED': { min: 0, max: 20 },
+    'BT': { min: 1, max: 6 },     
+    'CT': { min: 5, max: 15 },    
+    'PT': { min: 10, max: 13 },
+    'APTT': { min: 25, max: 35 },
+    'INR': { min: 0.8, max: 1.2 },
+
+    // --- KIMIA KLINIK (Gula, Ginjal, Hati) ---
+    'GDS': { min: 70, max: 140 },         
+    'GDP': { min: 70, max: 126 },
+    '2JPP': { min: 70, max: 140 },
+    'HbA1c': { min: 4.0, max: 5.7 },
+    'Ur': { min: 10, max: 50 },           
+    'Cr': { min: 0.5, max: 1.1 },         
+    'SGOT': { min: 0, max: 37 },
+    'SGPT': { min: 0, max: 40 },
+    'Alb': { min: 3.5, max: 5.0 },        
+    'Globulin': { min: 2.0, max: 3.5 },
+    'Bil.Tot': { min: 0.1, max: 1.2 },    
+    'Bil.Dir': { min: 0.0, max: 0.3 },    
+    'Asam Urat': { min: 3.5, max: 7.2 },
+
+    // --- ELEKTROLIT & GAS DARAH (AGD) ---
+    'Na': { min: 135, max: 145 },
+    'K': { min: 3.5, max: 5.5 },
+    'Cl': { min: 96, max: 106 },
+    'Kalsium': { min: 8.5, max: 10.5 },   
+    'Lactate': { min: 0.5, max: 2.2 },
+    'pH': { min: 7.35, max: 7.45 },
+    'pCO2': { min: 35, max: 45 },
+    'pO2': { min: 80, max: 100 },
+    'HCO3': { min: 22, max: 26 },
+
+    // --- PANEL LIPID ---
+    'Kolesterol': { min: 0, max: 200 },
+    'LDL': { min: 0, max: 100 },
+    'HDL': { min: 40, max: 100 }, 
+    'Trigliserida': { min: 0, max: 150 },
+
+    // --- JANTUNG, INFEKSI, & MARKER SPESIFIK ---
+    'Procalcitonin': { min: 0.0, max: 0.15 },
+    'Ferritin': { min: 10, max: 300 },
+    'D-Dimer': { min: 0, max: 500 },
+    'CRP': { min: 0, max: 5 },            
+    'Troponin I': { min: 0.0, max: 0.04 },
+    'Troponin T': { min: 0.0, max: 0.01 },
+    'CK-MB': { min: 0, max: 25 },
+    'ProBNP': { min: 0, max: 125 },
+    'TSH': { min: 0.4, max: 4.0 },
+    'FT4': { min: 0.9, max: 2.3 },
+    'CA125': { min: 0, max: 35 },
+    'CD4': { min: 500, max: 1500 }
+};
+
 export const DEFAULT_DPJP_DATA = [
     { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },
     { name: 'dr. Susilo, Sp.PD', waNumber: '6282119395835' },
