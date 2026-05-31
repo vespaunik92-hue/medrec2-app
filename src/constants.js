@@ -13,6 +13,59 @@ export const DAHLIA_LEFT_ROOMS = ['10', '9', '8', '7', '6'];
 export const DAHLIA_RIGHT_ROOMS = ['5', '4', '3', '2', '1'];
 export const DAHLIA_ROOM_LIST = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
+// --- KONFIGURASI RUANG TERATAI (22 BED) ---
+export const TERATAI_ROOMS = [
+    'K1A', 'K1B', 
+    'K2A', 'K2B', 'K2C', 'K2D', 
+    'K3A', 'K3B', 'K3C', 'K3D', 
+    'K4A', 'K4B', 
+    'K5A', 'K5B', 'K5C', 'K5D', 
+    'K6A', 'K6B', 'K6C', 'K6D', 
+    'K7A', 'K7B' // (Isolasi)
+];
+
+// Kita bagi dua untuk tampilan lorong (Kiri 12 bed, Kanan 10 bed)
+export const TERATAI_LEFT_ROOMS = [
+    'K4A', 'K4B', 'K3C', 'K3D', 'K3A', 'K3B', 'K2C', 'K2D', 'K2A', 'K2B', 'K1A', 'K1B'
+];
+export const TERATAI_RIGHT_ROOMS = [
+    'K5C', 'K5D', 'K5A', 'K5B', 'K6C', 'K6D', 'K6A', 'K6B', 'K7A', 'K7B'
+];
+
+// --- KONFIGURASI RUANG ANYELIR (26 BED) ---
+export const ANYELIR_ROOMS = [
+    'K1A', 'K1B', 'K1C', 'K1D', 
+    'K2A', 'K2B', 'K2C', 'K2D', 
+    'K3A', 'K3B', 'K3C', 'K3D', 
+    'K4A', 'K4B', 'K4C', 'K4D', 
+    'K5A', 'K5B', 'K5C', 'K5D', 
+    'K6A', 'K6B', 'K6C', 'K6D', 
+    'ISO-A', 'ISO-B' // (Isolasi)
+];
+
+// Dibagi menjadi dua sisi lorong agar seimbang di layar laptop (Kiri 16 Bed, Kanan 10 Bed)
+export const ANYELIR_LEFT_ROOMS = [
+    'K1A', 'K1B', 'K1C', 'K1D', 'K2A', 'K2B', 'K2C', 'K2D', 'K3A', 'K3B', 'K3C', 'K3D', 'K4A', 'K4B', 'K4C', 'K4D'
+];
+export const ANYELIR_RIGHT_ROOMS = [
+    'ISO-A', 'ISO-B', 'K6C', 'K6D', 'K6A', 'K6B', 'K5C', 'K5D', 'K5A', 'K5B'
+];
+
+// --- KONFIGURASI RUANG ANGGREK (22 BED) ---
+export const ANGGREK_ROOMS = [
+    'K1A', 'K1B', 'K2A', 'K2B', 'K3A', 'K3B', 'K4A', 'K4B', 'K5A', 'K5B',
+    'K6A', 'K6B', 'K7A', 'K7B', 'K8A', 'K8B', 'K9A', 'K9B', 'K10A', 'K10B',
+    'ISO-A', 'ISO-B' // (Isolasi)
+];
+
+// Dibagi menjadi dua sisi lorong (Kiri 12 Bed, Kanan 10 Bed)
+export const ANGGREK_LEFT_ROOMS = [
+    'ISO-A', 'ISO-B', 'K10A', 'K10B', 'K9A', 'K9B', 'K8A', 'K8B', 'K7A', 'K7B', 'K6A', 'K6B'
+];
+export const ANGGREK_RIGHT_ROOMS = [
+    'K1A', 'K1B', 'K2A', 'K2B', 'K3A', 'K3B', 'K4A', 'K4B', 'K5A', 'K5B'
+];
+
 // ==========================================
 // ✨ TAMBAHAN BARU: MASTER KONFIGURASI BANGSAL
 // ==========================================
@@ -29,6 +82,29 @@ export const WARD_CONFIG = {
         leftRooms: DAHLIA_LEFT_ROOMS,
         rightRooms: DAHLIA_RIGHT_ROOMS,
         roomList: DAHLIA_ROOM_LIST
+    },
+    // ✨ TAMBAHAN BARU
+    'TERATAI': {
+        name: 'Teratai',
+        roomList: TERATAI_ROOMS,
+        leftRooms: TERATAI_LEFT_ROOMS,
+        rightRooms: TERATAI_RIGHT_ROOMS
+    },
+
+    // ✨ TAMBAHAN BARU: ANYELIR
+    'ANYELIR': {
+        name: 'Anyelir',
+        roomList: ANYELIR_ROOMS,
+        leftRooms: ANYELIR_LEFT_ROOMS,
+        rightRooms: ANYELIR_RIGHT_ROOMS
+    },
+
+    // ✨ TAMBAHAN BARU: ANGGREK
+    'ANGGREK': {
+        name: 'Anggrek',
+        roomList: ANGGREK_ROOMS,
+        leftRooms: ANGGREK_LEFT_ROOMS,
+        rightRooms: ANGGREK_RIGHT_ROOMS
     }
 };
 
@@ -65,6 +141,9 @@ export const DEFAULT_DPJP_DATA = [
     { name: 'drg. Septania Hermanti', waNumber: '6281802290090' },
     { name: 'drg. Raden Aan Harjany', waNumber: '628122055933' },
     { name: 'dr. Dian Herdiansyah, Sp.KFR', waNumber: '62817211317' },
+    { name: 'dr. Dede Lia Marlia, Sp. A', waNumber: '628121280535'},
+    { name: 'dr. Tommy Nugrahadi, Sp.A', waNumber: '6282115159220' },
+    { name: 'dr. Yogi Agustian, Sp.A', waNumber: '6281320033339' },
 ];
 
 export const LAB_CHECKS = [
@@ -82,11 +161,11 @@ export const LAB_CHECKS = [
 
 export const RADIOLOGY_CHECKS = [
     'Thorax', 'Thorax Lateral', 'BNO Polos', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
-    'USG Whole Abdomen', 'USG Hepatobilier/Upper Abdomen', 'USG Lower/Ginjal Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Kandung Empedu', 'USG Jantung', 'USG Vaskular Doppler',
+    'USG Whole Abdomen', 'USG Hepatobilier/Upper Abdomen', 'USG Lower/Ginjal Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Kandung Empedu', 'USG Jantung/Echocardiography', 'USG Vaskular Doppler',
     'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Thorax non-Kontras', 'CT Scan Abdomen kontras',
-    'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography', 'CT Scan Cardiac',
+    'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography', 'CT Scan Cardiac', 'CT Urografi kontras', 'CT Urografi non-kontras',
     'MRI Kepala', 'MRI Vertebra', 'MRI Lutut', 'MRI Pelvis',
-    'Echocardiography', 'Endoskopi', 'Kolonoskopi', 'Bronkoskopi', 'Angiography Koroner'
+    'Endoskopi', 'Kolonoskopi', 'Bronkoskopi', 'Angiography Koroner'
 ];
 
 export const PROCEDURES = [

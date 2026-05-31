@@ -126,7 +126,7 @@ const CustomTextArea = ({ label, name, value, onChange, children, extraButtons, 
     }, [value]);
 
     return (
-        <div className="mb-3 border p-2 rounded bg-white relative group hover:border-indigo-300 transition">
+        <div className="mb-3 border p-2 rounded bg-white relative group hover:border-indigo-300 transition focus-within:z-30">
             <div className="flex justify-between items-center mb-1">
                 <div className="flex items-center">
                     <label className="block text-[10px] font-bold text-gray-700 uppercase bg-gray-100 px-2 py-0.5 rounded mr-2">
@@ -1498,7 +1498,7 @@ const renderPlanningCell = (text) => {
     );
 };
 
-// --- Helper Baru: Format Objektif dengan Balon Lacak Terintegrasi ---
+// --- Helper Baru: Format Objektif dengan Balon Lacak Terintegrasi & Pewarna Lab ---
 const renderObjectiveCell = (text) => {
     if (!text) return '-';
     const lines = text.split('\n');
@@ -1511,15 +1511,14 @@ const renderObjectiveCell = (text) => {
 
     let lacakBubble = null;
     if (lacakLines.length > 0) {
-        // Ekstrak nama pemeriksaannya saja (menghapus kata "Lacak/Lapor" atau "Lacak")
+        // Ekstrak nama pemeriksaannya saja
         const items = lacakLines.map(line => {
             return line
                 .replace(/lacak\/lapor\s*/i, '') // Hapus Lacak/Lapor
-                .replace(/lacak\s*/i, '')       // Hapus Lacak (jika inputnya cuma 'Lacak Sputum')
+                .replace(/lacak\s*/i, '')       // Hapus Lacak
                 .trim();
         });
 
-        // Gabungkan semua item dengan koma
         const combinedItems = items.join(', ');
 
         lacakBubble = (
@@ -1530,14 +1529,12 @@ const renderObjectiveCell = (text) => {
     }
 
     return (
-        <div className="text-xs text-gray-800 whitespace-pre-wrap font-sans">
+        <div className="text-xs text-gray-800 font-sans">
             {/* Tampilkan Balon Lacak Terlebih Dahulu Jika Ada */}
             {lacakBubble}
             
-            {/* Tampilkan Sisa Teks Objektif (TTV, dll) */}
-            {normalLines.map((line, idx) => (
-                <div key={idx}>{line}</div>
-            ))}
+            {/* Tampilkan Sisa Teks Objektif menggunakan Mesin Pewarna Lab ✨ */}
+            <FormattedObjective text={normalLines.join('\n')} />
         </div>
     );
 };
@@ -2020,9 +2017,13 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     // ✨ FIX MULTI-BANGSAL: Pakai roomList aktif (Dahlia/Melati), jika kosong baru pakai ROOM_LIST lama
     const currentRooms = roomList && roomList.length > 0 ? roomList : ROOM_LIST;
     const totalBed = currentRooms.length;
-
-    // ✨ FIX ISOLASI: Kamar isolasi hanya diaktifkan jika berada di RUANG MELATI
-    const isoRooms = wardName.toLowerCase().includes('melati') ? ['K14A', 'K15A', 'K15B'] : [];
+    
+    // ✨ FIX ISOLASI: Multi-Bangsal
+    let isoRooms = [];
+    if (wardName.toLowerCase().includes('melati')) isoRooms = ['K14A', 'K15A', 'K15B'];
+    else if (wardName.toLowerCase().includes('teratai')) isoRooms = ['K7A', 'K7B'];
+    else if (wardName.toLowerCase().includes('anyelir')) isoRooms = ['ISO-A', 'ISO-B'];
+    else if (wardName.toLowerCase().includes('anggrek')) isoRooms = ['ISO-A', 'ISO-B'];
 
     const activeCount = activeRecords.length;
     const occupiedRooms = activeRecords.map(r => r.roomNumber);
@@ -2080,13 +2081,20 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
 
     // --- HITUNG INDIKATOR MUTASI PASIEN HARI INI ---
     const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
-    const todayRecords = records.filter(r => r.updatedAt && r.updatedAt.toDate() >= startOfToday);
+    
+    // ✨ FIX BUG TANGGAL: Helper aman untuk membaca tanggal dari Firebase maupun lokal
+    const getSafeDate = (val) => {
+        if (!val) return new Date(0);
+        return typeof val.toDate === 'function' ? val.toDate() : new Date(val);
+    };
+
+    const todayRecords = records.filter(r => r.updatedAt && getSafeDate(r.updatedAt) >= startOfToday);
 
     const pulangCount = todayRecords.filter(r => r.isDischarged && r.dischargeType === 'pulang').length;
     const blplCount = activeRecords.filter(r => r.statusBolehPulang).length;
     const pindahCount = todayRecords.filter(r => r.isDischarged && r.dischargeType === 'pindah').length;
     const meninggalCount = todayRecords.filter(r => r.isDischarged && r.dischargeType === 'meninggal').length;
-    const newPatientCount = activeRecords.filter(r => r.createdAt && r.createdAt.toDate() >= startOfToday).length;
+    const newPatientCount = activeRecords.filter(r => r.createdAt && getSafeDate(r.createdAt) >= startOfToday).length;
 
     // --- HITUNG STATISTIK BEBAN DPJP ---
     const dpjpCounts = {};
@@ -2380,7 +2388,7 @@ const MedicalRecordApp = ({
   const filteredActiveRecords = useMemo(() => {
     return activeRecords.filter(rec => {
         const matchesDpjp = dpjpFilter.length === 0 || dpjpFilter.includes(rec.dpjpName);
-        const matchesRoom = selectedRoomFilter.length === ROOM_LIST.length || selectedRoomFilter.includes(rec.roomNumber);
+        const matchesRoom = selectedRoomFilter.length === currentWardConfig.roomList.length || selectedRoomFilter.includes(rec.roomNumber);
         const term = searchTerm.toLowerCase();
         const matchesSearch = !searchTerm || 
             rec.name.toLowerCase().includes(term) || 
@@ -3467,7 +3475,7 @@ const processDischarge = async (type) => {
                             <div>
                                 <h3 className="text-xs font-bold text-indigo-900 uppercase">Kamar</h3>
                                 <p className="text-[9px] text-gray-500">
-                                    {dpjpFilter.length > 0 || selectedRoomFilter.length !== ROOM_LIST.length || searchTerm ? 'Filter Aktif' : 'Semua'}
+                                    {dpjpFilter.length > 0 || selectedRoomFilter.length !== currentWardConfig.roomList.length || searchTerm ? 'Filter Aktif' : 'Semua'}
                                 </p>
                             </div>
                         </div>
@@ -3674,14 +3682,35 @@ const processDischarge = async (type) => {
                                         onClick={() => onSwitchWard('MELATI')} 
                                         className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Melati' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
                                     >
-                                        🏥 Pantau Melati
+                                        🏥 Ruang Melati
                                     </button>
                                     
                                     <button 
                                         onClick={() => onSwitchWard('DAHLIA')} 
                                         className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Dahlia' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
                                     >
-                                        🏥 Pantau Dahlia
+                                        🏥 Ruang Dahlia
+                                    </button>
+
+                                    <button 
+                                        onClick={() => onSwitchWard('TERATAI')} 
+                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Teratai' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                    >
+                                        🏥 Ruang Teratai
+                                    </button>
+
+                                    <button 
+                                        onClick={() => onSwitchWard('ANYELIR')} 
+                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Anyelir' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                    >
+                                        🏥 Ruang Anyelir
+                                    </button>
+
+                                    <button 
+                                        onClick={() => onSwitchWard('ANGGREK')} 
+                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Anggrek' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                    >
+                                        🏥 Ruang Anggrek
                                     </button>
                                 </>
                             )}
@@ -3701,7 +3730,7 @@ const processDischarge = async (type) => {
 
         <div className="relative flex flex-row max-w-7xl mx-auto lg:h-[calc(100vh-64px)] overflow-hidden">
             <div className={`fixed top-16 right-0 bottom-0 w-full md:w-[400px] z-[60] bg-white transition-transform duration-300 ease-in-out shadow-2xl border-l ${showWaitingModal ? 'translate-x-0' : 'translate-x-full'}`}>
-                <WaitingListInputPanel show={showWaitingModal} onClose={() => setShowWaitingModal(false)} onAdd={handleAddWaiting} availableRooms={ROOM_LIST} occupiedRooms={occupiedRooms} waitingList={waitingList} onUpdateRoom={updateWaitingListRoom} activeRecords={activeRecords}/>
+                <WaitingListInputPanel show={showWaitingModal} onClose={() => setShowWaitingModal(false)} onAdd={handleAddWaiting} availableRooms={currentWardConfig.roomList} occupiedRooms={occupiedRooms} waitingList={waitingList} onUpdateRoom={updateWaitingListRoom} activeRecords={activeRecords}/>
             </div>
             <div className="w-full h-full flex flex-col overflow-hidden">
                 <div className="p-4 h-full overflow-y-auto custom-scrollbar">
@@ -3820,6 +3849,9 @@ const processDischarge = async (type) => {
                                             <select value={adminUserForm.ward || 'MELATI'} onChange={e => setAdminUserForm({...adminUserForm, ward: e.target.value})} className="p-2 border rounded text-xs bg-white font-bold text-indigo-700 outline-none border-indigo-200">
                                                 <option value="MELATI">🏥 Ruang Melati</option>
                                                 <option value="DAHLIA">🏥 Ruang Dahlia</option>
+                                                <option value="TERATAI">🏥 Ruang Teratai</option>
+                                                <option value="ANYELIR">🏥 Ruang Anyelir</option>
+                                                <option value="ANGGREK">🏥 Ruang Anggrek</option>
                                             </select>
                                         </div>
                                         
@@ -5098,7 +5130,7 @@ const InputSidePanel = ({
                             pullLabel="Tarik P"
                         >
                             {/* ISINYA (CHILDREN) TETAP DI SINI */}
-                            <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-0">
+                            <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-10">
                                 <PlanningQuickTag onSelect={(text) => appendText('planning', text)} />
 
                                 <TagSelector 
@@ -5344,6 +5376,87 @@ const InputSidePanel = ({
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+// ✨ 1. KAMUS NILAI NORMAL LAB (Bisa kamu edit kapan saja sesuai referensi RS)
+export const LAB_NORMAL_RANGES = {
+    'Hb': { min: 11.7, max: 15.5 },       
+    'Leu': { min: 4000, max: 11000 },     
+    'Trmbsit': { min: 150000, max: 440000 },
+    'Ht': { min: 35, max: 47 },           
+    'GDS': { min: 70, max: 200 },         
+    'GDP': { min: 70, max: 100 },
+    '2JPP': { min: 70, max: 140 },
+    'Ur': { min: 15, max: 43 },
+    'Cr': { min: 0.6, max: 1.2 },
+    'SGOT': { min: 0, max: 35 },
+    'SGPT': { min: 0, max: 45 },
+    'Alb': { min: 3.5, max: 5.2 },
+    'Na': { min: 135, max: 145 },
+    'K': { min: 3.5, max: 5.0 },
+    'Cl': { min: 98, max: 107 },
+    'Bil.Tot': { min: 0.1, max: 1.2 },
+    'LED': { min: 0, max: 20 }
+};
+
+// ✨ 2. MESIN PEMBACA & PEWARNA OTOMATIS (FIX BUG SPASI/ENTER)
+const FormattedObjective = ({ text }) => {
+    if (!text) return <span>-</span>;
+    
+    const lines = text.split('\n');
+    
+    return (
+        <div className="whitespace-pre-wrap">
+            {lines.map((line, idx) => {
+                let abnormalType = null; 
+                
+                // Scan baris ini ke semua kamus lab
+                for (const [key, range] of Object.entries(LAB_NORMAL_RANGES)) {
+                    if (line.trim().toLowerCase().startsWith(key.toLowerCase() + ' ')) {
+                        
+                        const match = line.match(/[\d.,]+/);
+                        if (match) {
+                            let valStr = match[0];
+                            let val;
+                            
+                            if (range.max > 1000) {
+                                val = parseFloat(valStr.replace(/\./g, '').replace(/,/g, ''));
+                            } else {
+                                val = parseFloat(valStr.replace(',', '.'));
+                            }
+
+                            if (!isNaN(val)) {
+                                if (val > range.max) abnormalType = 'high';
+                                else if (val < range.min) abnormalType = 'low';
+                            }
+                        }
+                        break; 
+                    }
+                }
+
+                let spanClass = "";
+                let arrow = "";
+                
+                if (abnormalType === 'high') {
+                    spanClass = "text-red-600 font-bold bg-red-50 px-1 rounded inline-block shadow-sm"; 
+                    arrow = " ⬆️";
+                } else if (abnormalType === 'low') {
+                    spanClass = "text-blue-600 font-bold bg-blue-50 px-1 rounded inline-block shadow-sm"; 
+                    arrow = " ⬇️";
+                }
+
+                // ✨ FIX UTAMA: <br /> diletakkan DI LUAR span pembungkus warna
+                return (
+                    <span key={idx}>
+                        <span className={spanClass}>
+                            {line}{arrow}
+                        </span>
+                        {idx !== lines.length - 1 && <br />}
+                    </span>
+                );
+            })}
         </div>
     );
 };
