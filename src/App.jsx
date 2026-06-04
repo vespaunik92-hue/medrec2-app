@@ -2230,6 +2230,85 @@ const MedicalRecordApp = ({
   const [allUsers, setAllUsers] = useState([]); // Daftar user (Admin Only)
   const [profileForm, setProfileForm] = useState({ name: '', pass: '' }); // Form Profil Sendiri
   const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' }); // ✨ Ditambah default ward
+  // ✨ STATE NAVIGASI KEYBOARD UNTUK MENU DROPDOWN UTAMA
+  const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
+  const [mainMenuHighlight, setMainMenuHighlight] = useState(-1);
+  const menuWrapperRef = useRef(null);
+
+  // Auto-close menu jika pengguna klik di luar area menu
+  useEffect(() => {
+      const handleClickOutside = (event) => {
+          if (menuWrapperRef.current && !menuWrapperRef.current.contains(event.target)) {
+              setIsMainMenuOpen(false);
+          }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Susunan daftar menu aktif secara dinamis untuk dibaca oleh Keyboard index
+  const activeMenuItems = useMemo(() => {
+      const items = [
+          { type: 'link', label: '☕ Traktir Kopi?', href: 'https://trakteer.id/481nugroho' },
+          { type: 'view', label: '🏠 Dashboard', value: 'dashboard' },
+          { type: 'view', label: '📋 Daftar Pasien', value: 'patient-list' },
+          { type: 'view', label: '🗃️ Gudang Arsip Pasien', value: 'archived-list' },
+          { type: 'view', label: '⚙️ Setelan', value: 'settings' }
+      ];
+      if (cashflowRole) items.push({ type: 'finance', label: 'Panel Keuangan' });
+      if (currentUser?.role === 'SUPERADMIN' || currentUser?.name?.toLowerCase().includes('abi')) {
+          ['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK'].forEach(w => items.push({ type: 'ward', label: `🏥 Ruang ${w}`, ward: w }));
+      }
+      items.push({ type: 'logout', label: '🚪 Keluar' });
+      return items;
+  }, [cashflowRole, currentUser]);
+
+  // Mesin pembaca navigasi keyboard
+  const handleMenuKeyDown = (e) => {
+      if (!isMainMenuOpen) {
+          if (e.key === 'ArrowDown' || e.key === 'Enter') {
+              e.preventDefault();
+              setIsMainMenuOpen(true);
+              setMainMenuHighlight(0);
+          }
+          return;
+      }
+
+      if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setMainMenuHighlight(prev => (prev < activeMenuItems.length - 1 ? prev + 1 : 0));
+      } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setMainMenuHighlight(prev => (prev > 0 ? prev - 1 : activeMenuItems.length - 1));
+      } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (mainMenuHighlight >= 0 && mainMenuHighlight < activeMenuItems.length) {
+              const item = activeMenuItems[mainMenuHighlight];
+              if (item.type === 'link') window.open(item.href, '_blank');
+              else if (item.type === 'view') setView(item.value);
+              else if (item.type === 'finance') setAppMode('KEUANGAN');
+              else if (item.type === 'ward') onSwitchWard(item.ward);
+              else if (item.type === 'logout') onLogout();
+              setIsMainMenuOpen(false);
+              setMainMenuHighlight(-1);
+          }
+      } else if (e.key === 'Escape') {
+          setIsMainMenuOpen(false);
+      }
+  };
+
+  // Helper pencari index item
+  const getMenuIdx = (type, val = '') => {
+      return activeMenuItems.findIndex(item => {
+          if (type === 'link' || type === 'finance' || type === 'logout') return item.type === type;
+          if (type === 'view') return item.type === 'view' && item.value === val;
+          if (type === 'ward') return item.type === 'ward' && item.ward === val;
+          return false;
+      });
+  };
+
+  // Helper pembuat huruf Kapital awal kata
+  const toTitleCase = (str) => str.toLowerCase().replace(/(?:^|\s)\w/g, m => m.toUpperCase());
 
   // --- STATE LAMA (TETAP ADA) ---
   const [records, setRecords] = useState([]);
@@ -2328,9 +2407,9 @@ const MedicalRecordApp = ({
 
   // --- [LEVEL 4] LOGIC: USER MONITORING & ACTIONS ---
   
-  // 1. Monitor Users (Khusus Admin)
+  // 1. Monitor Users (Admin, Karu, & Admin Ruangan)
   useEffect(() => {
-      if (currentUser?.role !== 'admin' || !db) return;
+      if (!['admin', 'karu', 'admin_ruangan'].includes(currentUser?.role) || !db) return;
       const usersRef = collection(db, 'users');
       const q = query(usersRef, orderBy('name', 'asc'));
       const unsub = onSnapshot(q, (snap) => {
@@ -2359,32 +2438,50 @@ const MedicalRecordApp = ({
   const handleAdminSaveUser = async () => {
       if (!adminUserForm.id || !adminUserForm.name || !adminUserForm.pass) return alert("Semua kolom wajib diisi!");
       const targetId = adminUserForm.id.toLowerCase().trim().replace(/\s+/g, '_');
+      
+      // Mengunci otomatis ruangan sesuai lokasi Karu/Admin Ruangan bertugas
+      const isLockedWard = ['karu', 'admin_ruangan'].includes(currentUser?.role);
+      const targetWard = isLockedWard ? currentUser.ward : (adminUserForm.ward || 'MELATI');
+
       try {
           const exists = allUsers.find(u => u.id === targetId);
+          
+          // Blokir jika Karu/Admin ruangan mencoba mengedit akun dari ruangan lain
+          if (exists && isLockedWard && exists.ward !== currentUser.ward) {
+              return alert("Gagal! Anda tidak memiliki hak akses untuk memodifikasi perawat dari ruangan lain.");
+          }
+
           if (!exists) {
              await setDoc(doc(db, 'users', targetId), { 
                  ...adminUserForm, 
                  id: targetId, 
-                 ward: adminUserForm.ward || 'MELATI', // ✨ Kunci otomatis ruangan saat register
+                 ward: targetWard, 
+                 role: adminUserForm.role || 'member',
                  createdAt: Timestamp.now() 
              });
-             alert(`User baru "${adminUserForm.name}" ditambahkan!`);
+             alert(`User baru "${adminUserForm.name}" berhasil ditambahkan ke Ruang ${targetWard}!`);
           } else {
              await updateDoc(doc(db, 'users', targetId), { 
                  name: adminUserForm.name, 
                  pass: adminUserForm.pass, 
                  role: adminUserForm.role,
-                 ward: adminUserForm.ward || 'MELATI' // ✨ Izinkan update mutasi ruangan di sini
+                 ward: targetWard 
              });
-             alert(`User "${adminUserForm.name}" diperbarui.`);
+             alert(`User "${adminUserForm.name}" berhasil diperbarui.`);
           }
-          setAdminUserForm({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' });
+          setAdminUserForm({ id: '', name: '', pass: '', role: 'member', ward: currentUser?.ward || 'MELATI' });
       } catch (e) { alert("Error: " + e.message); }
   };
 
   // 5. Action: Admin Hapus User
   const handleAdminDeleteUser = async (targetId) => {
       if (targetId === currentUser.id) return alert("Tidak bisa menghapus diri sendiri!");
+      
+      const targetUser = allUsers.find(u => u.id === targetId);
+      if (['karu', 'admin_ruangan'].includes(currentUser?.role) && targetUser?.ward !== currentUser.ward) {
+          return alert("Gagal! Anda hanya bisa menghapus anggota perawat di ruangan Anda sendiri.");
+      }
+
       if (!confirm("Hapus user ini permanen?")) return;
       try {
           await deleteDoc(doc(db, 'users', targetId));
@@ -3554,7 +3651,7 @@ const processDischarge = async (type) => {
             <div className="bg-white rounded-lg shadow-sm border border-indigo-200 overflow-hidden">
                 <div className="bg-indigo-600 px-3 py-2 text-white flex justify-between items-center">
                     <div className="flex items-center space-x-2"><span className="text-xs font-bold uppercase tracking-tight">📋 Waiting List</span><span className="bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] font-mono">{waitingList.length}</span></div>
-                    <button onClick={() => setShowWaitingModal(true)} className="bg-white text-indigo-700 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50 flex items-center"><span className="mr-1 text-sm">+</span> Tambah</button>
+                    <button onClick={() => setShowWaitingModal(true)} className="bg-white text-indigo-700 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50 flex items-center"><span className="mr-1 text-sm">+</span> Tambah/Edit</button>
                 </div>
                 <div className="max-h-56 overflow-y-auto">
                     {waitingList.length === 0 ? <div className="p-6 text-center text-gray-400 italic text-xs">Belum ada antrean.</div> : (
@@ -3647,99 +3744,78 @@ const processDischarge = async (type) => {
                 <div className={`hidden sm:block w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-green-400' : 'bg-red-500'} ring-2 ring-white`} title={isOnline ? "Online" : "Offline"}></div>
                 
                 {/* --- MENU NAVIGASI UNIVERSAL --- */}
-                <div className="relative group ml-2">
-                    <button className="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm hover:bg-gray-50 transition">
+                {/* --- MENU NAVIGASI UNIVERSAL (UPGRADE KEYBOARD NAVIGATION) --- */}
+                <div className="relative ml-2" ref={menuWrapperRef} onKeyDown={handleMenuKeyDown}>
+                    <button 
+                        onClick={() => { setIsMainMenuOpen(!isMainMenuOpen); setMainMenuHighlight(-1); }}
+                        className="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm hover:bg-gray-50 transition outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
                         <span>☰</span> MENU ▾
                     </button>
                     
-                    <div className="absolute top-full right-0 pt-2 w-48 z-[90] hidden group-hover:block animate-in fade-in zoom-in-95 origin-top-right">
-                        <div className="bg-white rounded-lg shadow-xl border border-gray-100 py-1">
-                            
-                            {/* ✨ SEKSI TENTANG APLIKASI & LINK TRAKTEER NYELIP DI SINI ✨ */}
-                            <div className="px-3 py-1.5 text-[10px] text-gray-500 border-b border-gray-100 mb-1 bg-indigo-50/40">
-                                <p className="font-bold text-indigo-900">SIMPAN </p>
-                                <p className="text-[9px]">Nursing System Handover </p>
-                                <a 
-                                    href="https://trakteer.id/481nugroho" 
-                                    target="_blank" 
-                                    rel="noreferrer"
-                                    className="block mt-1.5 text-[10px] text-indigo-600 font-extrabold hover:underline"
-                                >
-                                    ☕ Traktir Kopi?
-                                </a>
+                    {isMainMenuOpen && (
+                        <div className="absolute top-full right-0 pt-2 w-48 z-[90] animate-in fade-in zoom-in-95 origin-top-right">
+                            <div className="bg-white rounded-lg shadow-xl border border-gray-100 py-1">
+                                
+                                {/* SEKSI TENTANG APLIKASI & LINK TRAKTEER */}
+                                <div className="px-3 py-1.5 text-[10px] text-gray-500 border-b border-gray-100 mb-1 bg-indigo-50/40">
+                                    <p className="font-bold text-indigo-900">SIMPAN </p>
+                                    <p className="text-[9px]">Nursing System Handover </p>
+                                    <a 
+                                        href="https://trakteer.id/481nugroho" 
+                                        target="_blank" 
+                                        rel="noreferrer"
+                                        className={`block mt-1.5 text-[10px] text-indigo-600 font-extrabold hover:underline p-1 rounded transition-colors ${mainMenuHighlight === getMenuIdx('link') ? 'bg-indigo-100 text-indigo-900 font-black' : ''}`}
+                                    >
+                                        ☕ Traktir Kopi?
+                                    </a>
+                                </div>
+
+                                <div className="px-4 py-1 border-b border-gray-50 mb-1">
+                                    <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded w-fit block uppercase">
+                                        👤 {currentUser ? currentUser.name : 'Guest'}
+                                    </span>
+                                </div>
+                                
+                                <button onClick={() => { setView('dashboard'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'dashboard') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>🏠 Dashboard</button>
+                                <button onClick={() => { setView('patient-list'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'patient-list') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>📋 Daftar Pasien</button>
+                                <button onClick={() => { setView('archived-list'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'archived-list') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>🗃️ Gudang Arsip Pasien</button>
+                                <button onClick={() => { setView('settings'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'settings') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>⚙️ Setelan</button>
+                                
+                                {/* MENU KEUANGAN (HANYA MUNCUL JIKA USER ADALAH PJ) */}
+                                {cashflowRole && (
+                                    <>
+                                        <div className="border-t border-gray-100 my-1"></div>
+                                        <button onClick={() => { setAppMode('MEDIS'); setAppMode('KEUANGAN'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${mainMenuHighlight === getMenuIdx('finance') ? 'bg-indigo-100 text-indigo-900 font-black' : 'hover:bg-teal-50 text-teal-700'}`}>
+                                            <Wallet size={14} className="mr-2"/> Panel Keuangan
+                                        </button>
+                                    </>
+                                )}
+
+                                {/* MENU SUPERADMIN / GOD MODE SWITCH BANGSAL */}
+                                {(currentUser?.role === 'SUPERADMIN' || currentUser?.name?.toLowerCase().includes('abi')) && (
+                                    <>
+                                        <div className="border-t border-gray-100 my-1"></div>
+                                        <div className="px-3 py-1 bg-purple-50">
+                                            <span className="text-[9px] font-bold text-purple-700 uppercase tracking-wider">👑 God Mode (Admin)</span>
+                                        </div>
+                                        {['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK'].map(wName => (
+                                            <button 
+                                                key={wName}
+                                                onClick={() => { onSwitchWard(wName); setIsMainMenuOpen(false); }} 
+                                                className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${mainMenuHighlight === getMenuIdx('ward', wName) ? 'bg-indigo-100 text-indigo-900 font-black' : currentWardConfig.name === toTitleCase(wName) ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                            >
+                                                🏥 Ruang {toTitleCase(wName)}
+                                            </button>
+                                        ))}
+                                    </>
+                                )}
+
+                                <div className="border-t border-gray-100 my-1"></div>
+                                <button onClick={() => { onLogout(); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs text-rose-600 font-bold flex items-center transition-colors ${mainMenuHighlight === getMenuIdx('logout') ? 'bg-rose-100 font-black text-rose-700' : 'hover:bg-rose-50'}`}>🚪 Keluar</button>
                             </div>
-
-                            <div className="px-4 py-1 border-b border-gray-50 mb-1">
-                                <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded w-fit block uppercase">
-                                    👤 {currentUser ? currentUser.name : 'Guest'}
-                                </span>
-                            </div>
-                            
-                            <button onClick={() => setView('dashboard')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🏠 Dashboard</button>
-                            <button onClick={() => setView('patient-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">📋 Daftar Pasien</button>
-                            <button onClick={() => setView('archived-list')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">🗃️ Gudang Arsip Pasien</button>
-                            <button onClick={() => setView('settings')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-slate-50 text-slate-700">⚙️ Setelan</button>
-                            
-                            {/* MENU KEUANGAN (HANYA MUNCUL JIKA USER ADALAH PJ) */}
-                            {cashflowRole && (
-                                <>
-                                    <div className="border-t border-gray-100 my-1"></div>
-                                    <button onClick={() => setAppMode('KEUANGAN')} className="w-full text-left px-4 py-2 text-xs flex items-center hover:bg-teal-50 text-teal-700 font-bold">
-                                        <Wallet size={14} className="mr-2"/> Panel Keuangan
-                                    </button>
-                                </>
-                            )}
-
-                            {/* ✨ TAHAP 4: MENU SUPERADMIN (HANYA MUNCUL UNTUK DEVELOPER) */}
-                            {(currentUser?.role === 'SUPERADMIN' || currentUser?.name?.toLowerCase().includes('abi')) && (
-                                <>
-                                    <div className="border-t border-gray-100 my-1"></div>
-                                    <div className="px-3 py-1 bg-purple-50">
-                                        <span className="text-[9px] font-bold text-purple-700 uppercase tracking-wider">👑 God Mode (Admin)</span>
-                                    </div>
-                                    
-                                    <button 
-                                        onClick={() => onSwitchWard('MELATI')} 
-                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Melati' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
-                                    >
-                                        🏥 Ruang Melati
-                                    </button>
-                                    
-                                    <button 
-                                        onClick={() => onSwitchWard('DAHLIA')} 
-                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Dahlia' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
-                                    >
-                                        🏥 Ruang Dahlia
-                                    </button>
-
-                                    <button 
-                                        onClick={() => onSwitchWard('TERATAI')} 
-                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Teratai' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
-                                    >
-                                        🏥 Ruang Teratai
-                                    </button>
-
-                                    <button 
-                                        onClick={() => onSwitchWard('ANYELIR')} 
-                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Anyelir' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
-                                    >
-                                        🏥 Ruang Anyelir
-                                    </button>
-
-                                    <button 
-                                        onClick={() => onSwitchWard('ANGGREK')} 
-                                        className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${currentWardConfig.name === 'Anggrek' ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
-                                    >
-                                        🏥 Ruang Anggrek
-                                    </button>
-                                </>
-                            )}
-
-                            <div className="border-t border-gray-100 my-1"></div>
-                            
-                            <button onClick={onLogout} className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-bold flex items-center">🚪 Keluar</button>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 <button onClick={() => setShowInputModal(true)} className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-bold transition flex items-center gap-1 ml-1">
@@ -3840,45 +3916,58 @@ const processDischarge = async (type) => {
                                         <button onClick={handleUpdateSelf} className="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition shadow-sm mt-2">Simpan Perubahan Profil</button>
                                     </div>
                                 </div>
-                                {/* 2. ADMIN PANEL */}
-                                {currentUser.role === 'admin' && (
+                                {/* 2. ADMIN & MANAGEMENT PANEL */}
+                                {['admin', 'karu', 'admin_ruangan'].includes(currentUser.role) && (
                                 <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-200">
-                                    <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">🛡️ Admin: Manajemen User</h3>
+                                    <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">
+                                        {currentUser.role === 'admin' ? '🛡️ God Admin: Manajemen Global' : '📋 Manajemen Anggota Ruangan'}
+                                    </h3>
                                     
-                                    {/* --- FORM INPUT USER (SEKARANG SUDAH 3 KOLOM) --- */}
+                                    {/* --- FORM INPUT USER --- */}
                                     <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm mb-4">
-                                        <h4 className="text-xs font-bold text-indigo-800 mb-2 uppercase">Tambah / Reset User</h4>
+                                        <h4 className="text-xs font-bold text-indigo-800 mb-2 uppercase">Tambah / Reset Perawat</h4>
                                         <div className="grid grid-cols-2 gap-2 mb-2">
                                             <input type="text" placeholder="ID (Username)" value={adminUserForm.id} onChange={e => setAdminUserForm({...adminUserForm, id: e.target.value})} className="p-2 border rounded text-xs" />
                                             <input type="text" placeholder="Nama Lengkap" value={adminUserForm.name} onChange={e => setAdminUserForm({...adminUserForm, name: e.target.value})} className="p-2 border rounded text-xs" />
                                         </div>
                                         
-                                        {/* Diubah menjadi grid-cols-3 untuk menampung Pilihan Ruangan */}
                                         <div className="grid grid-cols-3 gap-2 mb-2">
                                             <input type="text" placeholder="Password" value={adminUserForm.pass} onChange={e => setAdminUserForm({...adminUserForm, pass: e.target.value})} className="p-2 border rounded text-xs font-mono" />
                                             
                                             <select value={adminUserForm.role} onChange={e => setAdminUserForm({...adminUserForm, role: e.target.value})} className="p-2 border rounded text-xs bg-white outline-none">
-                                                <option value="member">Member</option>
-                                                <option value="admin">Admin</option>
+                                                <option value="member">Perawat Pelaksana</option>
+                                                <option value="karu">Kepala Ruangan (Karu)</option>
+                                                <option value="admin_ruangan">Admin Ruangan</option>
                                                 <option value="finance_jm">Keuangan (JM)</option>
                                                 <option value="finance_kas">Keuangan (KAS)</option>
                                                 <option value="finance_doc">Keuangan (Dokter)</option>
+                                                {currentUser.role === 'admin' && <option value="admin">God Admin</option>}
                                             </select>
 
-                                            {/* Dropdown Master Mutasi Ruangan Staf */}
-                                            <select value={adminUserForm.ward || 'MELATI'} onChange={e => setAdminUserForm({...adminUserForm, ward: e.target.value})} className="p-2 border rounded text-xs bg-white font-bold text-indigo-700 outline-none border-indigo-200">
-                                                <option value="MELATI">🏥 Ruang Melati</option>
-                                                <option value="DAHLIA">🏥 Ruang Dahlia</option>
-                                                <option value="TERATAI">🏥 Ruang Teratai</option>
-                                                <option value="ANYELIR">🏥 Ruang Anyelir</option>
-                                                <option value="ANGGREK">🏥 Ruang Anggrek</option>
-                                            </select>
+                                            {/* Dropdown Pilihan Ruangan (Otomatis Terkunci & Menyesuaikan Pengguna) */}
+                                            <div>
+                                                <select 
+                                                    value={['karu', 'admin_ruangan'].includes(currentUser.role) ? currentUser.ward : (adminUserForm.ward || 'MELATI')} 
+                                                    onChange={e => setAdminUserForm({...adminUserForm, ward: e.target.value})} 
+                                                    disabled={['karu', 'admin_ruangan'].includes(currentUser.role)}
+                                                    className="w-full p-2 border rounded text-xs bg-white font-bold text-indigo-700 outline-none border-indigo-200 disabled:bg-gray-100 disabled:text-gray-400"
+                                                >
+                                                    <option value="MELATI">🏥 Ruang Melati</option>
+                                                    <option value="DAHLIA">🏥 Ruang Dahlia</option>
+                                                    <option value="TERATAI">🏥 Ruang Teratai</option>
+                                                    <option value="ANYELIR">🏥 Ruang Anyelir</option>
+                                                    <option value="ANGGREK">🏥 Ruang Anggrek</option>
+                                                </select>
+                                                {['karu', 'admin_ruangan'].includes(currentUser.role) && (
+                                                    <p className="text-[9px] text-amber-600 mt-0.5 font-medium">*Hubungi God Admin jika ingin mengajukan mutasi</p>
+                                                )}
+                                            </div>
                                         </div>
                                         
                                         <button onClick={handleAdminSaveUser} className="w-full bg-indigo-600 text-white py-1.5 rounded text-xs font-bold hover:bg-indigo-700">Simpan / Update User</button>
                                     </div>
 
-                                    {/* --- TABEL DAFTAR USER (SUDAH DITAMBAH KOLOM RUANGAN) --- */}
+                                    {/* --- TABEL DAFTAR USER (Saringan Sisi Klien Otomatis) --- */}
                                     <div className="overflow-hidden rounded border border-indigo-200">
                                         <table className="w-full text-left text-xs bg-white">
                                             <thead className="bg-indigo-100 text-indigo-800">
@@ -3886,29 +3975,27 @@ const processDischarge = async (type) => {
                                                     <th className="p-2">ID</th>
                                                     <th className="p-2">Nama</th>
                                                     <th className="p-2">Role</th>
-                                                    <th className="p-2">Ruangan</th> {/* Header Baru */}
+                                                    <th className="p-2">Ruangan</th>
                                                     <th className="p-2">Pass</th>
                                                     <th className="p-2 text-center">Aksi</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-indigo-50">
-                                                {allUsers.map(u => (
+                                                {allUsers
+                                                    .filter(u => currentUser.role === 'admin' || u.ward === currentUser.ward)
+                                                    .map(u => (
                                                     <tr key={u.id} className="hover:bg-indigo-50">
                                                         <td className="p-2 font-mono text-slate-500">{u.id}</td>
                                                         <td className="p-2 font-bold">{u.name}</td>
                                                         <td className="p-2">
-                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role==='admin'?'bg-purple-100 text-purple-700':u.role==='member'?'bg-slate-100 text-slate-600':'bg-green-100 text-green-700'}`}>{u.role}</span>
+                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role==='admin'?'bg-purple-100 text-purple-700':u.role==='karu'?'bg-amber-100 text-amber-700':u.role==='admin_ruangan'?'bg-blue-100 text-blue-700':u.role==='member'?'bg-slate-100 text-slate-600':'bg-green-100 text-green-700'}`}>{u.role}</span>
                                                         </td>
-                                                        
-                                                        {/* Cell Data Indikator Ruangan Bangsal */}
                                                         <td className="p-2 font-extrabold text-indigo-600 text-[10px] tracking-wide">
                                                             📂 {u.ward || 'MELATI'}
                                                         </td>
-
                                                         <td className="p-2 font-mono text-slate-500">{u.pass}</td>
                                                         <td className="p-2 text-center flex justify-center gap-1">
-                                                            {/* Otomatis mengisi data form + default ward saat tombol pensil/edit diklik */}
-                                                            <button onClick={()=>setAdminUserForm({ ward: 'MELATI', ...u })} className="bg-yellow-100 text-yellow-700 p-1 rounded">✏️</button>
+                                                            <button onClick={()=>setAdminUserForm({ ward: currentUser.ward, ...u })} className="bg-yellow-100 text-yellow-700 p-1 rounded">✏️</button>
                                                             {u.id !== currentUser.id && (
                                                                 <button onClick={()=>handleAdminDeleteUser(u.id)} className="bg-red-100 text-red-700 p-1 rounded">🗑️</button>
                                                             )}
@@ -4045,7 +4132,7 @@ const processDischarge = async (type) => {
   );
 };
 
-// --- PANEL INPUT WAITING LIST (FINAL: EDIT KAMAR + WARNA GENDER PINTAR) ---
+// --- PANEL INPUT WAITING LIST (UPDATED: CTRL+S SHORTCUT & QUICK TAGS MENU) ---
 const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingList = [], onUpdateRoom, activeRecords = [] }) => {
     
     // State Form Input
@@ -4058,23 +4145,44 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
     const [editingId, setEditingId] = useState(null);
     const [tempRoom, setTempRoom] = useState('');
 
+    // --- 1. SHORTCUT KEYBOARD: CTRL + S DI MENU ANTREAN ---
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!show) return;
+            
+            // Deteksi Ctrl + S atau Ctrl + Enter
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'Enter')) {
+                e.preventDefault(); // Cegah browser menyimpan halaman
+                
+                if (form.name && form.plannedRoom) {
+                    onAdd(form);
+                    setForm({ name: '', plannedRoom: '', originRoom: '', insuranceClass: '', waNumber: '', diagnosis: '' });
+                    onClose();
+                } else {
+                    alert("Gagal! Nama Pasien dan Target Kamar wajib diisi.");
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [show, form, onAdd, onClose]);
+
     if (!show) return null;
 
     const handleSubmit = (e) => {
-        e.preventDefault();
+        if (e) e.preventDefault();
         if (!form.name || !form.plannedRoom) return alert("Nama dan Rencana Kamar wajib diisi!");
         onAdd(form);
         setForm({ name: '', plannedRoom: '', originRoom: '', insuranceClass: '', waNumber: '', diagnosis: '' });
         onClose(); 
     };
 
-    // Fungsi Mulai Edit
     const startEditing = (item) => {
         setEditingId(item.id);
         setTempRoom(item.plannedRoom);
     };
 
-    // Fungsi Simpan Edit
     const saveEditing = () => {
         if (onUpdateRoom && tempRoom) {
             onUpdateRoom(editingId, tempRoom);
@@ -4082,47 +4190,43 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
         setEditingId(null);
     };
 
-    // LOGIKA PINTAR UNTUK DOT WARNA DROPDOWN (GABUNGAN BARU)
+    // LOGIKA DOT WARNA DROPDOWN
     const getRoomOptionStatus = (roomName) => {
         const SINGLE_BED_ROOMS = ['K7A', 'K8A', 'K9A', 'K11A', 'K12A', 'K14A'];
-        
-        // 1. Terisi?
         const patient = activeRecords.find(r => r.roomNumber === roomName);
         if (patient) return { dot: '🔴', label: 'Terisi', colorClass: 'text-red-600 font-bold' };
 
-        // 2. Antre?
         const booking = waitingList?.find(w => w.plannedRoom === roomName);
         if (booking) return { dot: '🟡', label: 'Antre', colorClass: 'text-yellow-700 font-bold' };
 
-        // 3. Single Bed Kosong?
         if (SINGLE_BED_ROOMS.includes(roomName)) return { dot: '🟢', label: 'Kosong', colorClass: 'text-green-700 font-bold' };
 
-        // 4. Double Bed (Cek Tetangga Lk/Pr)
         const match = roomName.match(/^(K\d+)([AB])$/);
         if (match) {
             const roomCode = match[1];
             const neighborBed = match[2] === 'A' ? 'B' : 'A';
             const neighborRoomName = `${roomCode}${neighborBed}`;
-            
             const neighbor = activeRecords.find(r => r.roomNumber === neighborRoomName);
             if (neighbor) {
                 if (neighbor.gender === 'L') return { dot: '🔵', label: 'Sisa Lk', colorClass: 'text-sky-600 font-bold' };
                 if (neighbor.gender === 'P') return { dot: '🟣', label: 'Sisa Pr', colorClass: 'text-purple-600 font-bold' };
             }
         }
-        
-        // 5. Kosong Total
         return { dot: '🟢', label: 'Kosong', colorClass: 'text-green-700 font-bold' };
     };
+
+    // --- 2. DATA DAFTAR PILIHAN REKOMENDASI (QUICK TAGS) ---
+    const quickOrigins = ['IGD', 'Poli Dalam', 'Poli Paru', 'Poli Saraf', 'ICU', 'HD'];
+    const quickDiagnoses = ['DHF', 'Dyspnea', 'GEA', 'CKD', 'Stroke', 'CAD', 'DM Tipe 2', 'Hipertensi', 'Pneumonia'];
 
     return (
         <div className="flex flex-col h-full bg-white shadow-2xl border-r border-indigo-200 relative">
             
-            {/* 1. HEADER (TOMBOL SIMPAN DI ATAS - KODINGAN ASLIMU) */}
+            {/* HEADER */}
             <div className="p-3 bg-indigo-700 text-white flex justify-between items-center shadow-md z-10">
                 <div className="flex flex-col">
                     <h3 className="font-bold text-sm flex items-center gap-1">📝 Input Antrean</h3>
-                    <p className="text-[10px] opacity-80">Isi data pasien inden</p>
+                    <p className="text-[10px] opacity-80">Tekan Ctrl + S untuk simpan cepat</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={handleSubmit} className="px-3 py-1.5 text-[10px] bg-white text-indigo-700 font-bold rounded shadow hover:bg-indigo-50 transition flex items-center gap-1">
@@ -4132,13 +4236,13 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
                 </div>
             </div>
 
-            {/* 2. AREA TENGAH (FORM + TABEL) */}
+            {/* AREA UTAMA */}
             <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50 flex flex-col">
                 
-                {/* A. FORM INPUT */}
+                {/* FORM INPUT */}
                 <div className="p-4 space-y-3 bg-white border-b border-gray-200 mb-2 shadow-sm">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Kamar</label>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Kamar *</label>
                         <select 
                             className="w-full p-2 text-xs border border-gray-300 rounded bg-white outline-none font-bold focus:ring-2 focus:ring-indigo-500" 
                             value={form.plannedRoom} 
@@ -4159,25 +4263,76 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">
-                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Pasien</label><input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Nama..." value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Asal</label><input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500" placeholder="IGD/Poli..." value={form.originRoom} onChange={e => setForm({...form, originRoom: e.target.value})} /></div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Pasien *</label>
+                            <input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500 font-bold" placeholder="Nama..." value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+                        </div>
+                        
+                        {/* INPUT ASAL + MENU SHORTCUT REKOMENDASI TAG */}
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Asal Pasien</label>
+                            <input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500 font-medium" placeholder="IGD/Poli..." value={form.originRoom} onChange={e => setForm({...form, originRoom: e.target.value})} />
+                            {/* Menu Tag Selector Asal */}
+                            <div className="flex flex-wrap gap-1 mt-1">
+                                {quickOrigins.map(ori => (
+                                    <button 
+                                        key={ori} type="button" 
+                                        onClick={() => setForm({...form, originRoom: ori})}
+                                        className="text-[8px] bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 px-1 py-0.5 rounded border border-slate-200 transition font-bold"
+                                    >
+                                        {ori}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Kelas</label>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Kelas Jaminan</label>
                             <select className="w-full p-2 text-xs border rounded outline-none bg-white focus:ring-1 focus:ring-indigo-500" value={form.insuranceClass} onChange={e => setForm({...form, insuranceClass: e.target.value})}>
-                                <option value="">- Pilih -</option><option value="BPJS Kls 1">BPJS Kls 1</option><option value="BPJS Kls 2">BPJS Kls 2</option><option value="BPJS Kls 3">BPJS Kls 3</option><option value="Umum/Asuransi">Umum/Asuransi</option>
+                                <option value="">- Pilih -</option>
+                                <option value="BPJS Kls 1">BPJS Kls 1</option>
+                                <option value="BPJS Kls 2">BPJS Kls 2</option>
+                                <option value="BPJS Kls 3">BPJS Kls 3</option>
+                                <option value="Umum/Asuransi">Umum/Asuransi</option>
                             </select>
                         </div>
-                        <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">No. HP</label><input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500" placeholder="08xxx..." value={form.waNumber} onChange={e => setForm({...form, waNumber: e.target.value})} /></div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">No. HP Keluarga</label>
+                            <input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="08xxx..." value={form.waNumber} onChange={e => setForm({...form, waNumber: e.target.value})} />
+                        </div>
                     </div>
-                    <div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Diagnosa</label><textarea rows="2" className="w-full p-2 text-xs border rounded outline-none resize-none focus:ring-1 focus:ring-indigo-500" placeholder="Diagnosa..." value={form.diagnosis} onChange={e => setForm({...form, diagnosis: e.target.value})}></textarea></div>
+
+                    {/* INPUT DIAGNOSA + MENU SHORTCUT REKOMENDASI TAG */}
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Diagnosa Awal / Keluhan</label>
+                        <textarea rows="2" className="w-full p-2 text-xs border rounded outline-none resize-none focus:ring-1 focus:ring-indigo-500 font-medium" placeholder="Ketik diagnosa medis..." value={form.diagnosis} onChange={e => setForm({...form, diagnosis: e.target.value})}></textarea>
+                        {/* Menu Tag Selector Diagnosa */}
+                        <div className="flex flex-wrap gap-1 mt-1">
+                            {quickDiagnoses.map(diag => (
+                                <button 
+                                    key={diag} type="button" 
+                                    onClick={() => {
+                                        const currentDiag = form.diagnosis ? form.diagnosis.trim() : '';
+                                        // Jika kolom kosong langsung isi, jika ada isinya tambahkan koma spasi
+                                        setForm({
+                                            ...form, 
+                                            diagnosis: currentDiag ? `${currentDiag}, ${diag}` : diag
+                                        });
+                                    }}
+                                    className="text-[8px] bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white px-1.5 py-0.5 rounded border border-indigo-100 transition font-bold"
+                                >
+                                    +{diag}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
-                {/* B. TABEL ANTREAN (DENGAN FITUR EDIT KAMAR ASLIMU) */}
+                {/* TABEL DAFTAR ANTREAN */}
                 <div className="p-2 flex-1">
-                    <h3 className="px-2 mb-1 text-[10px] font-bold text-indigo-800 uppercase tracking-wider">Daftar Antrean ({waitingList.length})</h3>
+                    <h3 className="px-2 mb-1 text-[10px] font-bold text-indigo-800 uppercase tracking-wider">Daftar Antrean Saat Ini ({waitingList.length})</h3>
                     {waitingList.length === 0 ? (
                         <div className="text-center py-8 text-gray-400 italic text-xs border-2 border-dashed border-gray-200 rounded mt-2 bg-white">Belum ada pasien antre.</div>
                     ) : (
@@ -4193,18 +4348,15 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
                                 <tbody className="text-xs divide-y divide-gray-100">
                                     {waitingList.map((item) => (
                                         <tr key={item.id} className="hover:bg-indigo-50/50 group transition-colors">
-                                            
-                                            {/* KOLOM TARGET (BISA DIEDIT) */}
                                             <td className="p-2 font-bold text-indigo-700 w-[130px] align-top">
                                                 {editingId === item.id ? (
                                                     <div className="flex items-center gap-1 animate-in zoom-in-95 duration-100">
                                                         <select 
-                                                            className="w-full p-1 text-[10px] border border-indigo-300 rounded bg-white focus:ring-1 focus:ring-indigo-500" 
+                                                            className="w-full p-1 text-[10px] border border-indigo-300 rounded bg-white focus:ring-1 focus:ring-indigo-500 font-bold" 
                                                             value={tempRoom} 
                                                             onChange={e => setTempRoom(e.target.value)}
                                                             autoFocus
                                                         >
-                                                            {/* Saya pakaikan logic warna pintar juga di dropdown edit ini! */}
                                                             {[...availableRooms]
                                                             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
                                                             .map(r => {
@@ -4227,12 +4379,11 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
                                                     </div>
                                                 )}
                                             </td>
-
                                             <td className="p-2 align-top">
                                                 <div className="font-bold text-gray-800">{item.name}</div>
                                                 <div className="text-[9px] text-gray-500 truncate max-w-[120px] leading-tight">{item.diagnosis || '-'}</div>
                                             </td>
-                                            <td className="p-2 text-center text-gray-500 text-[10px] align-top pt-3">
+                                            <td className="p-2 text-center text-gray-500 text-[10px] align-top pt-3 font-bold">
                                                 {item.originRoom || 'IGD'}
                                             </td>
                                         </tr>
@@ -4250,6 +4401,7 @@ const PlanningQuickTag = ({ onSelect }) => {
     const tags = [
         // LAB (Merah)
         { label: 'DR', isi: 'Lab. R/ Darah Rutin (DR)', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'Tubex', isi: 'Lab. R/ Tubex', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'GDS', isi: 'Lab. R/ GDS', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'GDP-2JPP', isi: 'Lab. R/ GDP-2JPP', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'Ur-Cr', isi: 'Lab. R/ Ureum-Creatinin', warna: 'bg-red-100 text-red-700 border-red-200' },
@@ -5748,7 +5900,7 @@ const App = () => {
                               cashflowRole: getCashflowRole(),
                               cashflowLabel: currentUser.cfLabel
                           }} 
-                          membersList={allUsers} // Menggunakan data user dari Firestore
+                          membersList={allUsers.filter(u => (u.ward || 'MELATI') === currentUser.ward)} // ✨ FIX: Saring anggota perawat per ruangan
                           onLogout={handleInternalLogout} 
                       />
                   </div>
