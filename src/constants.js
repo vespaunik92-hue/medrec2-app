@@ -246,3 +246,21 @@ export const MEDICATIONS = [
     'Drip pantoprazole 8 mg/j', 'IVFD: clinimix 500 + Clinoleic 250', 'IVFD: Kidmin', 'IVFD: Asering', 'IVFD: Futrolit', 'IVFD: Bfluid', 'IVFD: D5%', 'IVFD: D10%', 'IVFD: NaCl 0.9%', 'IVFD: RL',
     'IVFD: NaCl 3%'
 ];
+
+// ✨ MASTER DATABASE ANTIBIOTIK (PPRA)
+export const ANTIBIOTICS_DB = [
+    'seftri', 'ceftri', 'broadced', 'terfacef', 
+    'meropenem', 'merosan', 
+    'azitro', 'azithro', 'zithromax', 
+    'levoflok', 'levoflox', 'cravit', 
+    'cipro', 'baquinor', 
+    'amoksi', 'amoxi', 'amoxsan', 
+    'sefotaksim', 'cefotaxime', 
+    'cefoperazone', 'sulbactam', 'sulbaktam', 
+    'metronidazol', 'flagyl', 
+    'gentamisin', 'gentamicin', 
+    'amikasin', 'amikacin', 
+    'ampisilin', 'ampicillin', 'viccillin',
+    'klindamisin', 'clindamycin', 
+    'cefepim', 'cefspan', 'cefixim', 'sefiksim'
+];
