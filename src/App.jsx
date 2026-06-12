@@ -2011,7 +2011,8 @@ const getDoctorGreeting = (drName) => {
     const nonMuslimDoctors = [
         'dian ekowati', 
         'martin', 
-        'irwan'
+        'irwan',
+        'synthia'
     ];
 
     const isNonMuslim = nonMuslimDoctors.some(n => name.includes(n));
@@ -2967,7 +2968,7 @@ const MedicalRecordApp = ({
         dpjpName: rec.dpjpName, raberName: rec.raberName || '', raber2Name: rec.raber2Name || '',
         subjective: rec.subjective || '', objective: rec.objective || '', admissionDate: rec.admissionDate || '',
         analysis: rec.analysis || '', planning: rec.planning || '', isDischarged: false, evidenceImages: rec.evidenceImages || [],
-        bpjsClass: rec.bpjsClass || '', medicationLogs: rec.medicationLogs || {}
+        bpjsClass: rec.bpjsClass || ''
     });
     setCurrentRecordId(rec.id);
     setIsEditing(true);
@@ -3061,7 +3062,10 @@ const processDischarge = async (type) => {
       const phone = normalizePhone(profile?.waNumber);
       if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
       const salam = getDoctorGreeting(drName);
-      const text = `${salam} dokter, izin melaporkan jumlah pasien dokter di Ruang ${currentWardConfig.name} ada ${count} pasien ya. terimakasih`;
+      
+      // ✨ Nama perawat disisipkan tanpa cetak tebal
+      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin melaporkan jumlah pasien dokter pagi ini ada ${count} pasien ya dok. Terima kasih.`;
+      
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -3070,7 +3074,10 @@ const processDischarge = async (type) => {
       const phone = normalizePhone(profile?.waNumber);
       if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
       const salam = getDoctorGreeting(drName);
-      const text = `${salam} dokter, izin mengingatkan ada pasien Raber ya di Ruang ${currentWardConfig.name} a.n ${patientNames.join(', ')}. terimakasih`;
+      
+      // ✨ Nama perawat disisipkan tanpa cetak tebal
+      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin mengingatkan hari ini ada pasien Raber ya dok a.n ${patientNames.join(', ')}. Terima kasih.`;
+      
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -3115,16 +3122,62 @@ const processDischarge = async (type) => {
 
   const handleLapor = async (rec, type) => {
       let targetNumber = '';
+      let salam = 'Dokter'; 
+      
       if (type === 'DPJP') {
           const profile = dpjpProfiles.find(p => p.name === rec.dpjpName);
           targetNumber = normalizePhone(profile?.waNumber);
           if (!targetNumber) return alert(`Nomor WA ${rec.dpjpName} belum disetting.`);
-      } 
+          salam = getDoctorGreeting(rec.dpjpName);
+      } else {
+          // ✨ UPDATE FORWARD: Menambahkan Assalamualaikum di depan sapaan waktu grup/jaga
+          const h = new Date().getHours();
+          if (h >= 4 && h < 10) salam = "Assalamualaikum, Selamat Pagi";
+          else if (h >= 10 && h < 15) salam = "Assalamualaikum, Selamat Siang";
+          else if (h >= 15 && h < 18) salam = "Assalamualaikum, Selamat Sore";
+          else salam = "Assalamualaikum, Selamat Malam";
+      }
       
+      // ✨ MESIN PEMILAH GENDER & USIA (MEMBACA TEKS NAMA)
+      const getPatientTitle = (pRecord) => {
+          const nameStr = String(pRecord?.name || '').toLowerCase().trim();
+          const genderStr = String(pRecord?.gender || '').toLowerCase().trim();
+          
+          // 1. CEGAH GELAR GANDA: Jika perawat sudah ngetik "Tn.", "Ny.", "An.", "Nn.", "By." di awal nama
+          if (/^(tn\.|ny\.|an\.|nn\.|by\.|sdr\.)\s/i.test(nameStr)) {
+              return ""; // Biarkan kosong, karena namanya sudah pakai gelar
+          }
+
+          // 2. DETEKSI BAYI/BALITA dari kurung nama (misal: "Bilqis (8 bln)" atau "Arka (12 hari)")
+          if (nameStr.includes('bln') || nameStr.includes('bulan') || nameStr.includes('hari') || nameStr.includes('by')) {
+              return "An. ";
+          }
+          
+          // 3. DETEKSI ANAK DARI ANGKA TAHUN (misal: "Adit (5 thn)" atau "Rara 12 th")
+          const ageMatch = nameStr.match(/(?:^|\(|\s)(\d+)\s*(?:th|tahun|thn)/i);
+          if (ageMatch) {
+              const age = parseInt(ageMatch[1]);
+              if (age < 15) return "An. ";
+          }
+          
+          // 4. DEFAULT DEWASA BERDASARKAN GENDER
+          if (genderStr === 'l' || genderStr.includes('laki')) {
+              return "Tn. ";
+          }
+          if (genderStr === 'p' || genderStr.includes('perempuan') || genderStr.includes('wanita')) {
+              return "Ny. ";
+          }
+          
+          return ""; 
+      };
+
+      const patientTitle = getPatientTitle(rec);
       const { labs, rads, tms, others } = parsePlanning(rec.planning);
       const planningText = [...others.filter(Boolean), labs.length > 0 ? `Lab: ${labs.join(', ')}` : null, rads.length > 0 ? `Rad: ${rads.join(', ')}` : null, tms.length > 0 ? `Tndkn: ${tms.join(', ')}` : null].filter(Boolean).join('\n');
       const dpjpInfo = type === 'Forward' ? `\nDPJP: ${rec.dpjpName || '-'}` : '';
-      const text = `Dokter dari Ruang ${currentWardConfig.name} Izin Lapor Pasien \n*a.n ${rec.name}* ${dpjpInfo}\n\n*S:*\n${rec.subjective || '-'}\n\n*O:*\n${rec.objective || '-'}\n\n*A:*\n${rec.analysis || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis,\nTerimakasih`;
+      
+      // ✨ FORMAT BARU: Mengganti "a.n" dengan panggilan dinamis Tn/Ny/An tanpa cetak tebal (bold)
+      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin lapor pasien:\n\n${patientTitle}${rec.name} ${dpjpInfo}\n\n*S:*\n${rec.subjective || '-'}\n\n*O:*\n${rec.objective || '-'}\n\n*A:*\n${rec.analysis || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis dok,\nTerima kasih.`;
 
       try {
           // 1. Salin Teks Laporan
@@ -3132,7 +3185,6 @@ const processDischarge = async (type) => {
           
           // 2. Proses Gambar Lampiran
           if (rec.evidenceImages && rec.evidenceImages.length > 0) {
-              // GABUNGKAN SEMUA GAMBAR JADI SATU!
               const combinedImg = await combineImages(rec.evidenceImages);
               
               const imgWindow = window.open("", "_blank", "width=600,height=800");
@@ -4125,9 +4177,10 @@ const processDischarge = async (type) => {
         </div>
         {/* ✨ JENDELA MELAYANG REKAM OBAT MAR DIGITAL */}
         <MedicationMarModal 
-            show={isMarModalOpen} 
+            isOpen={isMarModalOpen} 
             onClose={() => { setIsMarModalOpen(false); setMarSelectedRecord(null); }} 
             record={marSelectedRecord}
+            allRecords={records}
             db={db}
             currentUser={currentUser}
             firebaseConfig={firebaseConfig}
@@ -4414,208 +4467,202 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
     );
 };
 
-// --- COMPONENT: MODAL REKAM PEMBERIAN OBAT (MAR DIGITAL V15 - NATIVE VISUAL CALENDAR) ---
-const MedicationMarModal = ({ show, onClose, record, db, currentUser, firebaseConfig }) => {
-    const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA')); 
-    const [localLogs, setLocalLogs] = useState({});
+// --- COMPONENT: MODAL CATATAN PEMBERIAN OBAT (CPO) INDIVIDUAL (V21 - FULL SYNC CREATED_AT) ---
+const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, currentUser, firebaseConfig }) => {
+    const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
+    const [localLogs, setLocalLogs] = useState(record?.medicationLogs || {});
 
     useEffect(() => {
-        if (record && record.medicationLogs) setLocalLogs(record.medicationLogs);
-        else setLocalLogs({});
-    }, [record, show]);
+        if (isOpen) {
+            // ✨ BACA DATA DARI DATABASE UTAMA, BUKAN DARI FOTOCOPY-AN FORM SOAP
+            const realRecord = allRecords.find(r => r.id === record?.id) || record;
+            setLocalLogs(realRecord?.medicationLogs || {});
+            setSelectedDate(getSafeYMD());
+        }
+    }, [isOpen, record, allRecords]);
 
     const todayStr = new Date().toLocaleDateString('en-CA');
 
-    // ✨ MESIN PENGHITUNG BATAS TANGGAL (MIN/MAX) UNTUK KALENDER NATIVE
+    // ✨ MESIN MIN-DATE (SEKARANG MELIHAT DATA ASLI DARI DATABASE UTAMA)
     const minDateStr = useMemo(() => {
         let startObj = new Date();
         startObj.setHours(0,0,0,0);
+        let hasValidDate = false;
+        
+        // Cari rekam medis asli dari daftar pasien utama menggunakan ID
+        const realRecord = allRecords.find(r => r.id === record?.id) || record;
 
-        // 1. Ambil dari tanggal pasien diinput (Masuk RS)
-        if (record?.createdAt) {
+        if (realRecord?.createdAt) {
             try {
-                if (typeof record.createdAt.toDate === 'function') startObj = record.createdAt.toDate();
-                else startObj = new Date(record.createdAt);
+                const d = typeof realRecord.createdAt.toDate === 'function' ? realRecord.createdAt.toDate() : new Date(realRecord.createdAt);
+                d.setHours(0,0,0,0);
+                startObj = d;
+                hasValidDate = true;
             } catch (e) {}
         }
 
-        // 2. Antisipasi jika ada obat yang terekam sebelum tanggal masuk tercatat
-        const logDates = Object.keys(localLogs).sort();
-        if (logDates.length > 0) {
-            const firstLog = new Date(logDates[0]);
-            if (firstLog < startObj) startObj = firstLog;
+        const validDates = Object.keys(localLogs).filter(dateStr => {
+            const dayData = localLogs[dateStr] || {};
+            return Object.values(dayData).some(med => 
+                Object.values(med).some(shift => shift.checked || shift.scheduled)
+            );
+        }).sort();
+
+        if (validDates.length > 0) {
+            const firstLog = new Date(validDates[0]);
+            firstLog.setHours(0,0,0,0);
+            if (!hasValidDate || firstLog < startObj) startObj = firstLog;
         }
-
-        // 3. Fallback: Minimal beri mundur 5 hari
-        const fallbackStart = new Date();
-        fallbackStart.setDate(fallbackStart.getDate() - 5);
-        fallbackStart.setHours(0,0,0,0);
-        if (startObj > fallbackStart) startObj = fallbackStart;
-
-        return startObj.toLocaleDateString('en-CA');
-    }, [record, localLogs]);
-
-    if (!show || !record) return null;
-
-    const dayLogs = localLogs[selectedDate] || {};
-
-    const planMeds = (record.planning || '').split('\n')
-        .map(line => line.trim().replace(/^[-*\u2022\d.]+\s*/, ''))
-        .filter(line => {
-            if (line.length < 3) return false;
-            const lower = line.toLowerCase();
-            const blacklist = ['diet', 'cek lab', 'darah rutin', 'usg', 'rontgen', 'foto thorax', 'konsul', 'observasi', 'ttv', 'edukasi', 'pulang', 'blpl', 'resep', 'lacak', 'lapor', 'acc', 'stop', 'aff ', 'terapi lanjut', 'monitoring', 'rawat luka', 'gv', 'ekg', 'hemodialisa'];
-            if (blacklist.some(word => lower.includes(word))) return false;
-            if (/\bhd\b/i.test(lower)) return false; 
-
-            const hasFreq = /\d+\s*x\s*\d+/i.test(lower) || /\d+\s*x/i.test(lower);
-            const hasUnit = /\b(mg|gr|mcg|ml|iu|tts|amp|vial|tab|caps|syr|inj|iv|po|im|sc|drip|supp|prn|k\/p|gtt|fls|flash)\b/i.test(lower);
-            const hasPrefix = lower.startsWith('th') || lower.startsWith('rx');
-
-            return hasFreq || hasUnit || hasPrefix;
-        });
-
-    const logMeds = Object.keys(dayLogs);
-    const extractedMeds = Array.from(new Set([...planMeds, ...logMeds]));
-
-    const handleToggleShift = async (medName, shift) => {
-        const medLogs = dayLogs[medName] || {};
-        const shiftLog = medLogs[shift] || { checked: false };
-
-        let updatedShiftLog = {};
-        if (shiftLog.checked) {
-            updatedShiftLog = { checked: false }; 
-        } else {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-            updatedShiftLog = { checked: true, time: timeStr, by: currentUser?.name || 'Perawat' };
-        }
-
-        const updatedLogs = {
-            ...localLogs,
-            [selectedDate]: { ...dayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
-        };
-
-        setLocalLogs(updatedLogs); 
-
-        try {
-            const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`, record.id);
-            await updateDoc(docRef, { medicationLogs: updatedLogs });
-        } catch (e) {
-            alert("Koneksi gagal. Perubahan tidak tersimpan.");
-            setLocalLogs(localLogs); 
-        }
-    };
+        
+        const y = startObj.getFullYear();
+        const m = String(startObj.getMonth() + 1).padStart(2, '0');
+        const d = String(startObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }, [record, localLogs, allRecords]);
 
     const currentDateObj = new Date(selectedDate);
     const nextDateObj = new Date(currentDateObj);
     nextDateObj.setDate(currentDateObj.getDate() + 1);
     const nextDateStr = `${String(nextDateObj.getDate()).padStart(2, '0')}/${String(nextDateObj.getMonth() + 1).padStart(2, '0')}`;
 
-    const prevDateObj = new Date(currentDateObj);
-    prevDateObj.setDate(currentDateObj.getDate() - 1);
-    const prevDateIso = prevDateObj.toLocaleDateString('en-CA');
-    const yesterdayLogs = localLogs[prevDateIso] || {};
-
     const shifts = [
         { key: 'jam_12', label: '☀️ JAM 12:00', time: 'Dinas Pagi' },
-        { key: 'jam_18', label: '🌆 JAM 18 / 20', time: 'Dinas Sore' },
+        { key: 'jam_18', label: '🌆 JAM 16 / 18 / 20', time: 'Dinas Sore' },
         { key: 'jam_24', label: '🌙 JAM 24:00', time: 'Dinas Malam' },
-        { key: 'jam_06', label: '🌅 JAM 04 / 06', time: `Dinas Malam Tgl ${nextDateStr} Pagi` } 
+        { key: 'jam_06', label: '🌅 JAM 04 / 06', time: `Malam Tgl ${nextDateStr}` }
     ];
 
-    const displayDate = selectedDate.split('-').reverse().map((d, i) => i === 2 ? d.slice(-2) : d).join('/');
-    const isToday = selectedDate === todayStr;
-    const hasRecordsOnSelectedDate = (isToday && planMeds.length > 0) || (localLogs[selectedDate] && Object.keys(localLogs[selectedDate]).length > 0);
+    const planMeds = (record?.planning || '').split('\n')
+        .map(line => line.trim().replace(/^[-*\u2022\d.]+\s*/, ''))
+        .filter(line => {
+            if (line.length < 3) return false;
+            const lower = line.toLowerCase();
+            const blacklist = ['diet', 'cek lab', 'darah rutin', 'usg', 'rontgen', 'foto thorax', 'konsul', 'observasi', 'ttv', 'edukasi', 'pulang', 'blpl', 'resep', 'lacak', 'lapor', 'acc', 'aff ', 'terapi lanjut', 'monitoring', 'rawat luka', 'gv', 'ekg', 'hemodialisa'];
+            if (blacklist.some(word => lower.includes(word))) return false;
+            if (/\bhd\b/i.test(lower)) return false; 
+            return /\d+\s*x/i.test(lower) || /\b(mg|gr|mcg|ml|iu|tts|amp|vial|tab|caps|syr|inj|iv|po|im|sc|drip|supp|prn|k\/p|gtt|fls|flash)\b/i.test(lower) || lower.startsWith('th') || lower.startsWith('rx') || /\/\s*\d+\s*jam/i.test(lower);
+        });
+
+    const dayLogs = localLogs[selectedDate] || {};
+    
+    const logMeds = Object.keys(dayLogs).filter(medName => {
+        const shiftsObj = dayLogs[medName] || {}; 
+        return Object.values(shiftsObj).some(s => s && (s.checked || s.scheduled));
+    });
+    
+    const extractedMeds = Array.from(new Set([...planMeds, ...logMeds]));
+
+    const handleToggleShift = async (medName, shift) => {
+        const currentDayLogs = localLogs[selectedDate] || {};
+        const medLogs = currentDayLogs[medName] || {};
+        const shiftLog = medLogs[shift] || { checked: false };
+
+        let updatedShiftLog = {};
+        if (shiftLog.checked) {
+            updatedShiftLog = { ...shiftLog, checked: false, time: null, by: null };
+        } else {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            updatedShiftLog = { ...shiftLog, checked: true, time: timeStr, by: currentUser?.name || 'Perawat' };
+        }
+
+        const updatedLogs = {
+            ...localLogs,
+            [selectedDate]: { ...currentDayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
+        };
+
+        setLocalLogs(updatedLogs);
+
+        try {
+            const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`, record.id);
+            await updateDoc(docRef, { medicationLogs: updatedLogs });
+        } catch (e) {}
+    };
+
+    const handleTogglePattern = async (medName, shift) => {
+        const currentDayLogs = localLogs[selectedDate] || {};
+        const medLogs = currentDayLogs[medName] || {};
+        const shiftLog = medLogs[shift] || { checked: false };
+
+        const updatedShiftLog = { ...shiftLog, scheduled: !shiftLog.scheduled };
+        const updatedLogs = {
+            ...localLogs,
+            [selectedDate]: { ...currentDayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
+        };
+
+        setLocalLogs(updatedLogs);
+        try {
+            const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`, record.id);
+            await updateDoc(docRef, { medicationLogs: updatedLogs });
+        } catch (e) {}
+    };
+
+    if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 backdrop-blur-sm" style={{ zIndex: 9999 }}>
+            <div className="bg-slate-50 w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
                 
-                <div className="p-4 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex justify-between items-center">
+                <div className="bg-emerald-600 text-white px-5 py-4 flex justify-between items-center shrink-0">
                     <div>
-                        <h3 className="font-black text-sm flex items-center gap-1.5">💊 Catat Pemberian Obat (CPO)</h3>
-                        <p className="text-[10px] opacity-90 font-medium">Bed {record.roomNumber} - {record.name}</p>
+                        <h2 className="text-lg font-black flex items-center gap-2">💊 Catatan Pemberian Obat (CPO)</h2>
+                        <p className="text-emerald-100 text-xs mt-0.5 font-medium">Bed {record?.roomNumber} - {record?.name}</p>
                     </div>
-                    <button onClick={onClose} className="hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold">✕</button>
+                    <button onClick={onClose} className="p-2 hover:bg-emerald-500 rounded-full transition-colors"><span className="text-xl leading-none">✖</span></button>
                 </div>
 
-                <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1">
-                        <button 
-                            type="button"
-                            onClick={() => {
-                                const d = new Date(selectedDate);
-                                d.setDate(d.getDate() - 1);
-                                const newDateStr = d.toLocaleDateString('en-CA');
-                                if (newDateStr >= minDateStr) setSelectedDate(newDateStr);
-                            }}
-                            className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-extrabold text-slate-600 hover:bg-slate-100 hover:text-indigo-600 shadow-sm transition"
-                        >
-                            ⬅️ Kemarin
-                        </button>
-                        <button 
-                            type="button"
-                            onClick={() => setSelectedDate(todayStr)}
-                            className={`px-2.5 py-1.5 bg-white border rounded-lg text-[10px] font-extrabold shadow-sm transition ${isToday ? 'border-emerald-400 text-emerald-700 bg-emerald-50' : 'border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-emerald-600'}`}
-                        >
-                            🏠 Hari Ini
-                        </button>
+                <div className="bg-white px-5 py-3 border-b border-slate-200 flex justify-between items-center shrink-0 shadow-sm z-10">
+                    <div className="flex gap-2">
+                        <button type="button" onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); const n = d.toLocaleDateString('en-CA'); if (n >= minDateStr) setSelectedDate(n); }} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-extrabold rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition shadow-sm hidden sm:block">⬅️ Kemarin</button>
+                        <button type="button" onClick={() => setSelectedDate(todayStr)} className={`px-3 py-1.5 border text-xs font-extrabold rounded-lg transition shadow-sm hidden sm:block ${selectedDate === todayStr ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-emerald-600'}`}>🏠 Hari Ini</button>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                        {/* INDIKATOR STATUS (Teks "Kosong") */}
-                        {!hasRecordsOnSelectedDate && (
-                            <span className="text-[9px] font-bold text-slate-400 bg-slate-200/50 px-2 py-1 rounded">
-                                Kosong
-                            </span>
-                        )}
-
-                        {/* ✨ NATIVE VISUAL CALENDAR DI SINI */}
-                        <div className="relative cursor-pointer group">
-                            <div className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-black text-slate-800 text-xs shadow-sm flex items-center gap-2 group-hover:border-emerald-500 transition">
-                                {displayDate} <span className="text-[12px] opacity-80">📅</span>
-                            </div>
-                            <input 
-                                type="date" 
-                                value={selectedDate} 
-                                min={minDateStr} 
-                                max={todayStr} 
-                                onChange={e => setSelectedDate(e.target.value)}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            />
+                    
+                    <div className="relative inline-block">
+                        <div className="bg-white border-2 border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 text-sm focus:border-emerald-500 transition shadow-sm flex items-center justify-between w-[130px] cursor-pointer hover:border-emerald-500">
+                            <span>{selectedDate.split('-').reverse().join('/')}</span>
+                            <span className="text-slate-400 text-xs">📅</span>
                         </div>
+                        <input type="date" value={selectedDate} min={minDateStr} max={todayStr} onChange={e => setSelectedDate(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
                     {extractedMeds.length === 0 ? (
-                        <div className="text-center py-10 text-slate-400 italic text-xs bg-slate-50 border border-dashed rounded-xl">
-                            Daftar obat tidak ditemukan.
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                            <span className="text-5xl mb-3">📭</span>
+                            <p className="font-bold">Belum ada obat yang dijadwalkan.</p>
                         </div>
                     ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                             {extractedMeds.map((med, mIdx) => {
-                                const medLog = dayLogs[med] || {};
+                                const medLog = localLogs[selectedDate]?.[med] || {};
+                                const prevDateObj = new Date(selectedDate);
+                                prevDateObj.setDate(prevDateObj.getDate() - 1);
+                                const yMedLog = localLogs[prevDateObj.toLocaleDateString('en-CA')]?.[med] || {};
+                                const yCheckedShifts = Object.keys(yMedLog).filter(k => yMedLog[k].checked).map(k => ({ jam_12: '12', jam_18: '16/18/20', jam_24: '24', jam_06: '06' }[k] || k));
                                 
-                                const yMedLog = yesterdayLogs[med] || {};
-                                const yCheckedShifts = Object.keys(yMedLog)
-                                    .filter(k => yMedLog[k].checked)
-                                    .map(k => {
-                                        const shortLabels = { jam_12: '12', jam_18: '18/20', jam_24: '24', jam_06: '06' };
-                                        return shortLabels[k] || k;
-                                    });
-
-                                const freqMatch = med.match(/(\d+)\s*x/i);
-                                const freq = freqMatch ? parseInt(freqMatch[1]) : 1;
                                 const checkedShifts = Object.keys(medLog).filter(k => medLog[k].checked);
 
-                                // ✨ OTAK BARU: KECERDASAN POLA JANGKAR (ANCHOR PATTERN) UNTUK CPO INDIVIDU
+                                const lowerMed = med.toLowerCase();
+                                let freq = 1;
+                                const freqMatch = med.match(/(\d+)\s*x/i);
+                                if (freqMatch) freq = parseInt(freqMatch[1]);
+                                else if (/\/\s*8\s*jam/i.test(lowerMed)) freq = 3;
+                                else if (/\/\s*12\s*jam/i.test(lowerMed)) freq = 2;
+                                else if (/\/\s*6\s*jam/i.test(lowerMed)) freq = 4;
+                                else if (/\/\s*24\s*jam/i.test(lowerMed)) freq = 1;
+                                else if (/\/\s*48\s*jam/i.test(lowerMed)) freq = 1;
+
+                                const isStopOrTunda = lowerMed.includes('stop') || lowerMed.includes('tunda');
+                                const is48Jam = /\/\s*48\s*jam/i.test(lowerMed);
+
                                 const everCheckedShifts = [];
                                 Object.keys(localLogs).forEach(date => {
-                                    const dLog = localLogs[date][med] || {};
-                                    Object.keys(dLog).forEach(sKey => {
-                                        if (dLog[sKey]?.checked && !everCheckedShifts.includes(sKey)) {
+                                    const dayData = localLogs[date] || {}; 
+                                    const medShifts = dayData[med] || {};  
+                                    Object.keys(medShifts).forEach(sKey => {
+                                        const s = medShifts[sKey];
+                                        if (s && (s.checked || s.scheduled) && !everCheckedShifts.includes(sKey)) {
                                             everCheckedShifts.push(sKey);
                                         }
                                     });
@@ -4623,33 +4670,22 @@ const MedicationMarModal = ({ show, onClose, record, db, currentUser, firebaseCo
 
                                 let activeShifts = [];
                                 if (everCheckedShifts.length > 0) {
-                                    // Jika sudah ada riwayat jangkar
                                     if (freq === 1) activeShifts = [...everCheckedShifts];
                                     else if (freq === 2) {
                                         everCheckedShifts.forEach(sKey => {
                                             if (!activeShifts.includes(sKey)) activeShifts.push(sKey);
-                                            let partner = '';
-                                            if (sKey === 'jam_12') partner = 'jam_24';
-                                            if (sKey === 'jam_24') partner = 'jam_12';
-                                            if (sKey === 'jam_18') partner = 'jam_06';
-                                            if (sKey === 'jam_06') partner = 'jam_18';
+                                            let partner = sKey === 'jam_12' ? 'jam_24' : sKey === 'jam_24' ? 'jam_12' : sKey === 'jam_18' ? 'jam_06' : 'jam_18';
                                             if (partner && !activeShifts.includes(partner)) activeShifts.push(partner);
                                         });
                                     } else if (freq === 3) {
                                         const hasStandard = everCheckedShifts.some(k => ['jam_12', 'jam_18', 'jam_06'].includes(k));
                                         if (hasStandard) activeShifts = ['jam_12', 'jam_18', 'jam_06'];
-                                        everCheckedShifts.forEach(sKey => {
-                                            if (!activeShifts.includes(sKey)) activeShifts.push(sKey);
-                                        });
-                                    } else {
-                                        activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
-                                    }
+                                        everCheckedShifts.forEach(sKey => { if (!activeShifts.includes(sKey)) activeShifts.push(sKey); });
+                                    } else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
                                 } else {
-                                    // Jika obat baru belum pernah dieksekusi (Fallback teks)
-                                    const lowerMed = med.toLowerCase();
                                     if (lowerMed.includes('malam') || lowerMed.includes('24')) activeShifts = ['jam_24'];
                                     else if (lowerMed.includes('pagi') || lowerMed.includes('12')) activeShifts = ['jam_12'];
-                                    else if (lowerMed.includes('sore') || lowerMed.includes('18')) activeShifts = ['jam_18'];
+                                    else if (lowerMed.includes('sore') || lowerMed.includes('18') || lowerMed.includes('16') || lowerMed.includes('20')) activeShifts = ['jam_18'];
                                     else {
                                         if (freq === 1) activeShifts = ['jam_12'];
                                         else if (freq === 2) activeShifts = ['jam_18', 'jam_06'];
@@ -4658,73 +4694,53 @@ const MedicationMarModal = ({ show, onClose, record, db, currentUser, firebaseCo
                                     }
                                 }
 
-                                // Visual kotak rekomendasi sekarang menyesuaikan pola jangkar
-                                const isRecommended = (shiftKey) => {
-                                    if (checkedShifts.includes(shiftKey)) return false; 
-                                    return activeShifts.includes(shiftKey);
-                                };
+                                if (isStopOrTunda) {
+                                    activeShifts = [];
+                                } else if (is48Jam) {
+                                    const yLog = localLogs[prevDateObj.toLocaleDateString('en-CA')]?.[med] || {};
+                                    const givenYesterday = Object.values(yLog).some(s => s.checked);
+                                    if (givenYesterday) activeShifts = [];
+                                }
+
+                                const isRecommended = (shiftKey) => !checkedShifts.includes(shiftKey) && activeShifts.includes(shiftKey);
 
                                 return (
-                                    <div key={mIdx} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm hover:border-emerald-300 transition">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2 border-b border-slate-100 pb-1.5">
-                                            <div className="flex items-center gap-2">
-                                                <p className="text-xs font-bold text-indigo-900">📄 {med}</p>
-                                                {/* ✨ INDIKATOR HARI ANTIBIOTIK (AUTO COUNT) */}
-                                                {getAntibioticDay(med, record.medicationLogs) && (
-                                                    <span className="text-[9px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-md border border-rose-200 font-black animate-pulse shadow-sm">
-                                                        🚨 {getAntibioticDay(med, record.medicationLogs)}
-                                                    </span>
+                                    <div key={mIdx} className={`bg-white border rounded-xl overflow-hidden shadow-sm transition-shadow ${isStopOrTunda ? 'border-rose-200 bg-rose-50/20' : 'border-slate-200 hover:shadow-md'}`}>
+                                        <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <h4 className={`font-bold text-sm ${isStopOrTunda ? 'text-rose-500 line-through' : 'text-slate-800'}`}>📄 {med}</h4>
+                                                {isStopOrTunda && <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded font-black shadow-sm">🛑 DIHENTIKAN</span>}
+                                                {is48Jam && <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black shadow-sm">⏳ PER 48 JAM</span>}
+                                                {getAntibioticDay(med, localLogs) && !isStopOrTunda && (
+                                                    <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm">🚨 {getAntibioticDay(med, localLogs)}</span>
                                                 )}
                                             </div>
-                                            
-                                            {yCheckedShifts.length > 0 ? (
-                                                <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md font-bold w-fit">
-                                                    ⏪ Kemarin Diberikan Jam: {yCheckedShifts.join(', ')}
-                                                </span>
-                                            ) : (
-                                                <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-medium w-fit">
-                                                    ⏪ Kemarin: ❌ Tidak ada
-                                                </span>
-                                            )}
                                         </div>
-                                        
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                             {shifts.map(s => {
                                                 const log = medLog[s.key] || { checked: false };
                                                 const recommendGlow = isRecommended(s.key);
 
                                                 return (
-                                                    <button
-                                                        key={s.key}
-                                                        type="button"
-                                                        onClick={() => handleToggleShift(med, s.key)}
-                                                        className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all group h-[52px] relative overflow-hidden ${
-                                                            log.checked 
-                                                            ? 'bg-emerald-50 border-emerald-400 shadow-inner' 
-                                                            : recommendGlow
-                                                                ? 'bg-yellow-50 border-yellow-400 ring-2 ring-yellow-400/50 shadow-md animate-pulse' 
-                                                                : 'bg-white border-slate-200 hover:bg-slate-50'
-                                                        }`}
-                                                    >
+                                                    <button 
+                                                        key={s.key} type="button" 
+                                                        onClick={() => !isStopOrTunda && handleToggleShift(med, s.key)} 
+                                                        disabled={isStopOrTunda}
+                                                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all group h-[70px] relative overflow-hidden ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-2 ring-yellow-400/50 shadow-sm animate-pulse' : isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
                                                         {log.checked && <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-100 rounded-bl-full -z-10"></div>}
-                                                        
                                                         <div className="flex justify-between items-center w-full relative z-10">
-                                                            <span className={`text-[9px] sm:text-[10px] font-extrabold uppercase tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-600'}`}>
-                                                                {s.label}
-                                                            </span>
-                                                            <span className={`text-[9px] ${log.checked ? 'text-emerald-600' : recommendGlow ? 'text-yellow-500' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                                                {log.checked ? '✅' : '⚪'}
-                                                            </span>
-                                                        </div>
-                                                        
-                                                        {log.checked ? (
-                                                            <div className="text-[8px] font-bold text-emerald-700 leading-none truncate w-full mt-1 relative z-10">
-                                                                ⏱️ {log.time} ({log.by.split(' ')[0]})
+                                                            <span className={`text-[11px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-600'}`}>{s.label}</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                {!log.checked && !isStopOrTunda && (
+                                                                    <span onClick={(e) => { e.stopPropagation(); handleTogglePattern(med, s.key); }} className={`text-[12px] p-0.5 rounded hover:bg-slate-200 active:bg-slate-300 cursor-pointer ${log.scheduled ? 'bg-amber-400 text-slate-950 font-black scale-110 shadow-xs' : 'text-slate-300'}`} title="Set Pola Jadwal Jam Ini">🕒</span>
+                                                                )}
+                                                                <span className="text-[12px]">{log.checked ? '✅' : '⚪'}</span>
                                                             </div>
+                                                        </div>
+                                                        {log.checked ? (
+                                                            <div className="text-[10px] font-bold text-emerald-700 mt-1 relative z-10">⏱️ {log.time} ({log.by?.split(' ')[0]})</div>
                                                         ) : (
-                                                            <span className={`text-[8px] font-mono relative z-10 ${recommendGlow ? 'text-yellow-600 font-bold' : 'text-slate-400'}`}>
-                                                                {recommendGlow ? `NEXT ➔ ${s.time}` : s.time}
-                                                            </span>
+                                                            <span className={`text-[9px] font-mono relative z-10 ${recommendGlow ? 'text-yellow-600 font-bold' : 'text-slate-400'}`}>{recommendGlow ? `NEXT ➔ ${s.time}` : s.time}</span>
                                                         )}
                                                     </button>
                                                 );
@@ -4737,16 +4753,15 @@ const MedicationMarModal = ({ show, onClose, record, db, currentUser, firebaseCo
                     )}
                 </div>
 
-                <div className="p-3 bg-slate-50 border-t border-slate-100 text-right">
-                    <button onClick={onClose} className="px-6 py-2 bg-slate-700 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition shadow-md">Selesai</button>
+                <div className="bg-slate-50 px-5 py-4 border-t border-slate-200 flex justify-end shrink-0 rounded-b-2xl">
+                    <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white text-sm font-bold rounded-xl shadow-md hover:bg-slate-700 transition-colors">Selesai</button>
                 </div>
-
             </div>
         </div>
     );
 };
 
-// --- COMPONENT: MODE TROLI OBAT GLOBAL + AUTO REKAP SHIFT (BANGSAL V17 - PATTERN LOCK) ---
+// --- COMPONENT: MODE TROLI OBAT GLOBAL + AUTO REKAP SHIFT (BANGSAL V20 - SMART PARSER & STOP/TUNDA) ---
 const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEditPatient }) => {
     const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
     const [localLogsMap, setLocalLogsMap] = useState({});
@@ -4754,16 +4769,12 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
 
     useEffect(() => {
         const newLogsMap = {};
-        records.forEach(r => {
-            newLogsMap[r.id] = r.medicationLogs || {};
-        });
+        records.forEach(r => { newLogsMap[r.id] = r.medicationLogs || {}; });
         setLocalLogsMap(newLogsMap);
     }, [records]);
 
     const todayStr = new Date().toLocaleDateString('en-CA');
-    const displayDate = selectedDate.split('-').reverse().map((d, i) => i === 2 ? d.slice(-2) : d).join('/');
 
-    // Mesin Hitung Tanggal Batas Mundur (Min Date)
     const minDateStr = useMemo(() => {
         let startObj = new Date();
         startObj.setHours(0,0,0,0);
@@ -4772,17 +4783,31 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                 if (r.createdAt) {
                     try {
                         const d = typeof r.createdAt.toDate === 'function' ? r.createdAt.toDate() : new Date(r.createdAt);
+                        d.setHours(0,0,0,0);
                         if (d < startObj) startObj = d;
                     } catch(e) {}
                 }
             });
         }
-        const fallbackStart = new Date();
-        fallbackStart.setDate(fallbackStart.getDate() - 5);
-        fallbackStart.setHours(0,0,0,0);
-        if (startObj > fallbackStart) startObj = fallbackStart;
-        return startObj.toLocaleDateString('en-CA');
-    }, [records]);
+        const validDates = Object.keys(localLogsMap).flatMap(recordId => {
+            const pLogs = localLogsMap[recordId] || {};
+            return Object.keys(pLogs).filter(dateStr => {
+                const dayData = pLogs[dateStr] || {};
+                return Object.values(dayData).some(med => Object.values(med).some(shift => shift.checked || shift.scheduled));
+            });
+        }).sort();
+
+        if (validDates.length > 0) {
+            const firstLog = new Date(validDates[0]);
+            firstLog.setHours(0,0,0,0);
+            if (firstLog < startObj) startObj = firstLog;
+        }
+
+        const y = startObj.getFullYear();
+        const m = String(startObj.getMonth() + 1).padStart(2, '0');
+        const d = String(startObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }, [records, localLogsMap]);
 
     const currentDateObj = new Date(selectedDate);
     const nextDateObj = new Date(currentDateObj);
@@ -4791,9 +4816,9 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
 
     const shifts = [
         { key: 'jam_12', label: '☀️ 12:00', time: 'Dinas Pagi' },
-        { key: 'jam_18', label: '🌆 18/20', time: 'Dinas Sore' },
-        { key: 'jam_24', label: '🌙 24:00', time: 'Dinas Malam (Tengah Malam)' },
-        { key: 'jam_06', label: '🌅 04/06', time: `Dinas Malam Tgl ${nextDateStr} Pagi` }
+        { key: 'jam_18', label: '🌆 JAM 16 / 18 / 20', time: 'Dinas Sore' },
+        { key: 'jam_24', label: '🌙 24:00', time: 'Dinas Malam' },
+        { key: 'jam_06', label: '🌅 04/06', time: `Malam Tgl ${nextDateStr}` }
     ];
 
     const handleToggleShift = async (recordId, medName, shift) => {
@@ -4804,11 +4829,11 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
 
         let updatedShiftLog = {};
         if (shiftLog.checked) {
-            updatedShiftLog = { checked: false };
+            updatedShiftLog = { ...shiftLog, checked: false, time: null, by: null };
         } else {
             const now = new Date();
             const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-            updatedShiftLog = { checked: true, time: timeStr, by: currentUser?.name || 'Perawat' };
+            updatedShiftLog = { ...shiftLog, checked: true, time: timeStr, by: currentUser?.name || 'Perawat' };
         }
 
         const updatedRecordLogs = {
@@ -4817,16 +4842,31 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
         };
 
         setLocalLogsMap(prev => ({ ...prev, [recordId]: updatedRecordLogs }));
-
         try {
             const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`, recordId);
             await updateDoc(docRef, { medicationLogs: updatedRecordLogs });
-        } catch (e) {
-            alert("Koneksi gagal. Perubahan tidak tersimpan.");
-        }
+        } catch (e) {}
     };
 
-    // ✨ DATA DASAR + INTEGRASI KECERDASAN JANGKAR WAKTU (ANCHOR PATTERN RECOGNITION)
+    const handleTogglePattern = async (recordId, medName, shift) => {
+        const currentRecordLogs = localLogsMap[recordId] || {};
+        const dayLogs = currentRecordLogs[selectedDate] || {};
+        const medLogs = dayLogs[medName] || {};
+        const shiftLog = medLogs[shift] || { checked: false };
+
+        const updatedShiftLog = { ...shiftLog, scheduled: !shiftLog.scheduled };
+        const updatedRecordLogs = {
+            ...currentRecordLogs,
+            [selectedDate]: { ...dayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
+        };
+
+        setLocalLogsMap(prev => ({ ...prev, [recordId]: updatedRecordLogs }));
+        try {
+            const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`, recordId);
+            await updateDoc(docRef, { medicationLogs: updatedRecordLogs });
+        } catch (e) {}
+    };
+
     const recordsWithMeds = useMemo(() => {
         const sorted = [...records].sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true }));
         
@@ -4839,32 +4879,43 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                 .filter(line => {
                     if (line.length < 3) return false;
                     const lower = line.toLowerCase();
-                    const blacklist = ['diet', 'cek lab', 'darah rutin', 'usg', 'rontgen', 'foto thorax', 'konsul', 'observasi', 'ttv', 'edukasi', 'pulang', 'blpl', 'resep', 'lacak', 'lapor', 'acc', 'stop', 'aff ', 'terapi lanjut', 'monitoring', 'rawat luka', 'gv', 'ekg', 'hemodialisa'];
+                    const blacklist = ['diet', 'cek lab', 'darah rutin', 'usg', 'rontgen', 'foto thorax', 'konsul', 'observasi', 'ttv', 'edukasi', 'pulang', 'blpl', 'resep', 'lacak', 'lapor', 'acc', 'aff ', 'terapi lanjut', 'monitoring', 'rawat luka', 'gv', 'ekg', 'hemodialisa'];
                     if (blacklist.some(word => lower.includes(word))) return false;
                     if (/\bhd\b/i.test(lower)) return false; 
-
-                    const hasFreq = /\d+\s*x\s*\d+/i.test(lower) || /\d+\s*x/i.test(lower);
-                    const hasUnit = /\b(mg|gr|mcg|ml|iu|tts|amp|vial|tab|caps|syr|inj|iv|po|im|sc|drip|supp|prn|k\/p|gtt|fls|flash)\b/i.test(lower);
-                    const hasPrefix = lower.startsWith('th') || lower.startsWith('rx');
-
-                    return hasFreq || hasUnit || hasPrefix;
+                    return /\d+\s*x/i.test(lower) || /\b(mg|gr|mcg|ml|iu|tts|amp|vial|tab|caps|syr|inj|iv|po|im|sc|drip|supp|prn|k\/p|gtt|fls|flash)\b/i.test(lower) || lower.startsWith('th') || lower.startsWith('rx') || /\/\s*\d+\s*jam/i.test(lower);
                 });
 
-            const logMeds = Object.keys(dayLogs);
-            const extractedMeds = Array.from(new Set([...planMeds, ...logMeds]));
-            
-            // ✨ MESIN PENGUNCI POLA JADWAL REAL-TIME BERDASARKAN EKSEKUSI NYATA PERAWAT
-            const medsConfig = {};
-            extractedMeds.forEach(med => {
-                const freqMatch = med.match(/(\d+)\s*x/i);
-                const freq = freqMatch ? parseInt(freqMatch[1]) : 1;
+            const logMeds = Object.keys(dayLogs).filter(medName => {
+                const shiftsObj = dayLogs[medName] || {};
+                return Object.values(shiftsObj).some(s => s && (s.checked || s.scheduled));
+            });
 
-                // Cari seluruh riwayat centangan obat ini di tanggal manapun (Mencari Titik Jangkar)
+            const extractedMeds = Array.from(new Set([...planMeds, ...logMeds]));
+            const medsConfig = {};
+
+            extractedMeds.forEach(med => {
+                const lowerMed = med.toLowerCase();
+                let freq = 1;
+                
+                // ✨ MESIN PINTAR BACA / 8 JAM DLL
+                const freqMatch = med.match(/(\d+)\s*x/i);
+                if (freqMatch) freq = parseInt(freqMatch[1]);
+                else if (/\/\s*8\s*jam/i.test(lowerMed)) freq = 3;
+                else if (/\/\s*12\s*jam/i.test(lowerMed)) freq = 2;
+                else if (/\/\s*6\s*jam/i.test(lowerMed)) freq = 4;
+                else if (/\/\s*24\s*jam/i.test(lowerMed)) freq = 1;
+                else if (/\/\s*48\s*jam/i.test(lowerMed)) freq = 1;
+
+                const isStopOrTunda = lowerMed.includes('stop') || lowerMed.includes('tunda');
+                const is48Jam = /\/\s*48\s*jam/i.test(lowerMed);
+
                 const everCheckedShifts = [];
                 Object.keys(currentRecordLogs).forEach(date => {
-                    const dLog = currentRecordLogs[date][med] || {};
-                    Object.keys(dLog).forEach(sKey => {
-                        if (dLog[sKey]?.checked && !everCheckedShifts.includes(sKey)) {
+                    const dayData = currentRecordLogs[date] || {};
+                    const medShifts = dayData[med] || {};
+                    Object.keys(medShifts).forEach(sKey => {
+                        const s = medShifts[sKey];
+                        if (s && (s.checked || s.scheduled) && !everCheckedShifts.includes(sKey)) {
                             everCheckedShifts.push(sKey);
                         }
                     });
@@ -4872,34 +4923,22 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
 
                 let activeShifts = [];
                 if (everCheckedShifts.length > 0) {
-                    // 💡 JIKA SUDAH ADA RIWAYAT CENTANG: Kunci ritme jadwal berdasarkan eksekusi pertama tersebut!
-                    if (freq === 1) {
-                        activeShifts = [...everCheckedShifts];
-                    } else if (freq === 2) {
+                    if (freq === 1) activeShifts = [...everCheckedShifts];
+                    else if (freq === 2) {
                         everCheckedShifts.forEach(sKey => {
                             if (!activeShifts.includes(sKey)) activeShifts.push(sKey);
-                            let partner = '';
-                            if (sKey === 'jam_12') partner = 'jam_24';
-                            if (sKey === 'jam_24') partner = 'jam_12';
-                            if (sKey === 'jam_18') partner = 'jam_06';
-                            if (sKey === 'jam_06') partner = 'jam_18';
+                            let partner = sKey === 'jam_12' ? 'jam_24' : sKey === 'jam_24' ? 'jam_12' : sKey === 'jam_18' ? 'jam_06' : 'jam_18';
                             if (partner && !activeShifts.includes(partner)) activeShifts.push(partner);
                         });
                     } else if (freq === 3) {
                         const hasStandard = everCheckedShifts.some(k => ['jam_12', 'jam_18', 'jam_06'].includes(k));
                         if (hasStandard) activeShifts = ['jam_12', 'jam_18', 'jam_06'];
-                        everCheckedShifts.forEach(sKey => {
-                            if (!activeShifts.includes(sKey)) activeShifts.push(sKey);
-                        });
-                    } else {
-                        activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
-                    }
+                        everCheckedShifts.forEach(sKey => { if (!activeShifts.includes(sKey)) activeShifts.push(sKey); });
+                    } else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
                 } else {
-                    // 💡 JIKA OBAT BARU BELUM PERNAH DICENTANG: Gunakan prediksi teks default
-                    const lowerMed = med.toLowerCase();
                     if (lowerMed.includes('malam') || lowerMed.includes('24')) activeShifts = ['jam_24'];
                     else if (lowerMed.includes('pagi') || lowerMed.includes('12')) activeShifts = ['jam_12'];
-                    else if (lowerMed.includes('sore') || lowerMed.includes('18')) activeShifts = ['jam_18'];
+                    else if (lowerMed.includes('sore') || lowerMed.includes('18') || lowerMed.includes('16') || lowerMed.includes('20')) activeShifts = ['jam_18'];
                     else {
                         if (freq === 1) activeShifts = ['jam_12'];
                         else if (freq === 2) activeShifts = ['jam_18', 'jam_06'];
@@ -4908,7 +4947,18 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                     }
                 }
 
-                medsConfig[med] = { freq, activeShifts };
+                // ✨ LOGIKA STOP DAN 48 JAM
+                if (isStopOrTunda) {
+                    activeShifts = []; 
+                } else if (is48Jam) {
+                    const prevDateObj = new Date(selectedDate);
+                    prevDateObj.setDate(prevDateObj.getDate() - 1);
+                    const yLog = currentRecordLogs[prevDateObj.toLocaleDateString('en-CA')]?.[med] || {};
+                    const givenYesterday = Object.values(yLog).some(s => s.checked);
+                    if (givenYesterday) activeShifts = []; // Kemarin dikasih, hari ini libur
+                }
+
+                medsConfig[med] = { freq, activeShifts, isStopOrTunda, is48Jam };
             });
 
             const prevDateObj = new Date(selectedDate);
@@ -4919,15 +4969,14 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
         }).filter(r => r.extractedMeds.length > 0); 
     }, [records, localLogsMap, selectedDate]);
 
-    // ✨ REKAP SHIFT V2: Mengikuti hasil medsConfig yang sudah terkunci polanya
     const recapByShift = useMemo(() => {
         const structure = { jam_12: [], jam_18: [], jam_24: [], jam_06: [] };
 
         shifts.forEach(s => {
             recordsWithMeds.forEach(p => {
                 const medsInThisShift = p.extractedMeds.filter(med => {
-                    const config = p.medsConfig[med] || { activeShifts: [] };
-                    // Tampilkan jika hari ini dicentang manual ATAU masuk dalam jadwal aktif hasil deteksi pola jangkar
+                    const config = p.medsConfig[med] || { activeShifts: [], isStopOrTunda: false };
+                    if (config.isStopOrTunda) return false; // Jangan tampilkan di rekap shift jika di-stop
                     return p.dayLogs[med]?.[s.key]?.checked || config.activeShifts.includes(s.key);
                 });
 
@@ -4953,60 +5002,28 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
 
     return (
         <div className="flex flex-col h-full bg-slate-50 animate-in fade-in duration-300">
-            {/* HEADER UTARA */}
             <div className="bg-white px-3 py-1.5 shadow-sm border-b border-slate-200 flex justify-between items-center shrink-0 z-20 sticky top-0">
                 <div className="flex items-center gap-2">
                     <h2 className="text-xs font-black text-rose-700 uppercase tracking-tight flex items-center gap-1">🛒 Troli Obat</h2>
                     <div className="flex bg-slate-100 p-0.5 rounded-lg border ml-2">
-                        <button 
-                            type="button" 
-                            onClick={() => setIsRecapMode(false)}
-                            className={`px-2 py-0.5 text-[9px] font-extrabold rounded-md transition ${!isRecapMode ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}
-                        >
-                            👥 Per Pasien
-                        </button>
-                        <button 
-                            type="button" 
-                            onClick={() => setIsRecapMode(true)}
-                            className={`px-2 py-0.5 text-[9px] font-extrabold rounded-md transition flex items-center gap-1 ${isRecapMode ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}
-                        >
-                            📋 Rekap Kerja Shift ⚡
-                        </button>
+                        <button type="button" onClick={() => setIsRecapMode(false)} className={`px-2 py-0.5 text-[9px] font-extrabold rounded-md transition ${!isRecapMode ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}>👥 Per Pasien</button>
+                        <button type="button" onClick={() => setIsRecapMode(true)} className={`px-2 py-0.5 text-[9px] font-extrabold rounded-md transition flex items-center gap-1 ${isRecapMode ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}>📋 Rekap Kerja Shift</button>
                     </div>
                 </div>
-
                 <div className="flex items-center gap-1.5">
-                    <button 
-                        type="button"
-                        onClick={() => {
-                            const d = new Date(selectedDate);
-                            d.setDate(d.getDate() - 1);
-                            const newDateStr = d.toLocaleDateString('en-CA');
-                            if (newDateStr >= minDateStr) setSelectedDate(newDateStr);
-                        }}
-                        className="px-2 py-1 bg-white border border-slate-200 rounded text-[9px] font-extrabold text-slate-600 hover:bg-slate-100 hover:text-indigo-600 shadow-sm transition"
-                    >
-                        ⬅️ Kemarin
-                    </button>
-                    <button 
-                        type="button"
-                        onClick={() => setSelectedDate(todayStr)}
-                        className={`px-2 py-1 bg-white border rounded text-[9px] font-extrabold shadow-sm transition ${selectedDate === todayStr ? 'border-emerald-400 text-emerald-700 bg-emerald-50' : 'border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-emerald-600'}`}
-                    >
-                        🏠 Hari Ini
-                    </button>
-                    <input 
-                        type="date" 
-                        value={selectedDate} 
-                        min={minDateStr} 
-                        max={todayStr} 
-                        onChange={e => setSelectedDate(e.target.value)}
-                        className="bg-white border border-slate-300 rounded px-1.5 py-0.5 font-bold text-slate-800 text-[10px] shadow-sm hover:border-emerald-500 transition cursor-pointer outline-none h-[24px]"
-                    />
+                    <button type="button" onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); const n = d.toLocaleDateString('en-CA'); if (n >= minDateStr) setSelectedDate(n); }} className="px-2 py-1 bg-white border border-slate-200 rounded text-[9px] font-extrabold text-slate-600 hover:bg-slate-100 hover:text-indigo-600 shadow-sm transition hidden md:block">⬅️ Kemarin</button>
+                    <button type="button" onClick={() => setSelectedDate(todayStr)} className={`px-2 py-1 border rounded text-[9px] font-extrabold shadow-sm transition hidden md:block ${selectedDate === todayStr ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-emerald-600'}`}>🏠 Hari Ini</button>
+                    
+                    <div className="relative inline-block ml-1">
+                        <div className="bg-white border-2 border-slate-300 rounded-lg px-2 py-0.5 font-bold text-slate-700 text-[10px] focus:border-emerald-500 transition shadow-sm flex items-center justify-between min-w-[85px]">
+                            <span>{selectedDate.split('-').reverse().join('/')}</span>
+                            <span className="text-slate-400 text-[9px] ml-1">📅</span>
+                        </div>
+                        <input type="date" value={selectedDate} min={minDateStr} max={todayStr} onChange={e => setSelectedDate(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                    </div>
                 </div>
             </div>
 
-            {/* AREA UTAMA PANEL */}
             <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
                 {!isRecapMode ? (
                     recordsWithMeds.length === 0 ? (
@@ -5017,56 +5034,36 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                     ) : (
                         recordsWithMeds.map(record => (
                             <div key={record.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col md:flex-row hover:shadow-md transition-shadow mb-3 last:mb-0">
-                                <div 
-                                    onClick={() => onEditPatient && onEditPatient(record)}
-                                    className="bg-slate-50 md:w-64 p-3 border-b md:border-b-0 md:border-r border-slate-200 flex flex-col justify-center relative overflow-hidden cursor-pointer hover:bg-indigo-50/80 active:bg-indigo-100 transition-colors group"
-                                >
-                                    <div className="absolute top-0 right-0 w-12 h-12 bg-indigo-50 rounded-bl-full -z-10"></div>
+                                <div onClick={() => onEditPatient && onEditPatient(record)} className="bg-slate-50 md:w-64 p-3 border-b md:border-b-0 md:border-r border-slate-200 flex flex-col justify-center relative overflow-hidden cursor-pointer hover:bg-indigo-50/80 transition-colors group">
                                     <div className="flex items-center gap-2 mb-1.5">
                                         <span className="bg-indigo-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded shadow-sm">BED {record.roomNumber}</span>
                                         <span className="text-[9px] font-bold text-slate-500 bg-white border px-1.5 py-0.5 rounded">Kls: {record.bpjsClass || 'UMUM'}</span>
                                     </div>
                                     <h3 className="font-black text-[14px] text-slate-800 leading-tight mb-0.5">{record.name}</h3>
                                     <p className="text-[10px] font-mono font-bold text-slate-400 mb-1">RM: {record.rmNumber || '-'}</p>
-                                    <p className="text-[9px] text-slate-500 font-bold leading-tight">DPJP: <span className="text-indigo-600">{record.dpjpName}</span></p>
-                                    <span className="text-[8px] text-indigo-500 font-bold mt-1">📝 Klik untuk Buka SOAP</span>
                                 </div>
 
                                 <div className="flex-1 p-3 flex flex-col gap-2 bg-white">
                                     {record.extractedMeds.map((med, mIdx) => {
                                         const medLog = record.dayLogs[med] || {};
                                         const yMedLog = record.yesterdayLogs[med] || {};
-                                        const yCheckedShifts = Object.keys(yMedLog).filter(k => yMedLog[k].checked).map(k => ({ jam_12: '12', jam_18: '18/20', jam_24: '24', jam_06: '06' }[k] || k));
+                                        const yCheckedShifts = Object.keys(yMedLog).filter(k => yMedLog[k].checked).map(k => ({ jam_12: '12', jam_18: '16/18/20', jam_24: '24', jam_06: '06' }[k] || k));
                                         
-                                        const config = record.medsConfig[med] || { activeShifts: [] };
+                                        const config = record.medsConfig[med] || { activeShifts: [], isStopOrTunda: false, is48Jam: false };
                                         const checkedShifts = Object.keys(medLog).filter(k => medLog[k].checked);
-                                        
-                                        // ✨ KOTAK KUNING BERCAHAYA SEKARANG IKUTI HASIL POLA JANGKAR SECARA AKURAT
-                                        const isRecommended = (shiftKey) => {
-                                            if (checkedShifts.includes(shiftKey)) return false; 
-                                            return config.activeShifts.includes(shiftKey);
-                                        };
+                                        const isRecommended = (shiftKey) => !checkedShifts.includes(shiftKey) && config.activeShifts.includes(shiftKey);
 
                                         return (
-                                            <div key={mIdx} className="bg-slate-50/50 border border-slate-100 rounded-lg p-2 hover:border-emerald-200 transition">
+                                            <div key={mIdx} className={`bg-slate-50/50 border rounded-lg p-2 transition ${config.isStopOrTunda ? 'border-rose-200 bg-rose-50/30 opacity-70' : 'border-slate-100 hover:border-emerald-200'}`}>
                                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1.5 border-b border-slate-100 pb-1.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="text-[11px] font-bold text-indigo-900">📄 {med}</p>
-                                                        {getAntibioticDay(med, record.currentRecordLogs) && (
-                                                            <span className="text-[8px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm">
-                                                                🚨 {getAntibioticDay(med, record.currentRecordLogs)}
-                                                            </span>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <p className={`text-[11px] font-bold ${config.isStopOrTunda ? 'text-rose-500 line-through' : 'text-indigo-900'}`}>📄 {med}</p>
+                                                        {config.isStopOrTunda && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black shadow-sm">🛑 DIHENTIKAN</span>}
+                                                        {config.is48Jam && <span className="text-[8px] bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded font-black shadow-sm">⏳ PER 48 JAM</span>}
+                                                        {getAntibioticDay(med, record.currentRecordLogs) && !config.isStopOrTunda && (
+                                                            <span className="text-[8px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm">🚨 {getAntibioticDay(med, record.currentRecordLogs)}</span>
                                                         )}
                                                     </div>
-                                                    {yCheckedShifts.length > 0 ? (
-                                                        <span className="text-[8px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-bold w-fit">
-                                                            ⏪ Kemarin Jam: {yCheckedShifts.join(', ')}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[8px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded font-medium w-fit">
-                                                            ⏪ Kemarin: ❌
-                                                        </span>
-                                                    )}
                                                 </div>
 
                                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -5075,35 +5072,25 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                                         const recommendGlow = isRecommended(s.key);
 
                                                         return (
-                                                            <button
-                                                                key={s.key}
-                                                                type="button"
-                                                                onClick={() => handleToggleShift(record.id, med, s.key)}
-                                                                className={`p-1.5 rounded-md border text-left flex flex-col justify-between transition-all group h-[44px] relative overflow-hidden ${
-                                                                    log.checked 
-                                                                    ? 'bg-emerald-50 border-emerald-400 shadow-inner' 
-                                                                    : recommendGlow
-                                                                        ? 'bg-yellow-50 border-yellow-400 ring-2 ring-yellow-400/50 shadow-sm animate-pulse' 
-                                                                        : 'bg-white border-slate-200 hover:bg-slate-50'
-                                                                }`}
-                                                            >
+                                                            <button 
+                                                                key={s.key} type="button" 
+                                                                onClick={() => !config.isStopOrTunda && handleToggleShift(record.id, med, s.key)} 
+                                                                disabled={config.isStopOrTunda}
+                                                                className={`p-1.5 rounded-md border text-left flex flex-col justify-between transition-all group h-[44px] relative overflow-hidden ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-2 ring-yellow-400/50 shadow-sm animate-pulse' : config.isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
                                                                 {log.checked && <div className="absolute top-0 right-0 w-6 h-6 bg-emerald-100 rounded-bl-full -z-10"></div>}
                                                                 <div className="flex justify-between items-center w-full relative z-10">
-                                                                    <span className={`text-[8.5px] font-extrabold uppercase tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-600'}`}>
-                                                                        {s.label}
-                                                                    </span>
-                                                                    <span className={`text-[8px] ${log.checked ? 'text-emerald-600' : recommendGlow ? 'text-yellow-500' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                                                        {log.checked ? '✅' : '⚪'}
-                                                                    </span>
+                                                                    <span className={`text-[8.5px] font-extrabold uppercase tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-600'}`}>{s.label}</span>
+                                                                    <div className="flex items-center gap-1">
+                                                                        {!log.checked && !config.isStopOrTunda && (
+                                                                            <span onClick={(e) => { e.stopPropagation(); handleTogglePattern(record.id, med, s.key); }} className={`text-[10px] p-0.5 rounded hover:bg-slate-200 active:bg-slate-300 cursor-pointer ${log.scheduled ? 'bg-amber-400 text-slate-950 font-black scale-110 shadow-xs' : 'text-slate-300'}`} title="Set Pola Jam Ini">🕒</span>
+                                                                        )}
+                                                                        <span className="text-[8px]">{log.checked ? '✅' : '⚪'}</span>
+                                                                    </div>
                                                                 </div>
                                                                 {log.checked ? (
-                                                                    <div className="text-[7.5px] font-bold text-emerald-700 leading-none truncate w-full mt-1 relative z-10">
-                                                                        ⏱️ {log.time} ({log.by.split(' ')[0]})
-                                                                    </div>
+                                                                    <div className="text-[7.5px] font-bold text-emerald-700 leading-none truncate w-full mt-1 relative z-10">⏱️ {log.time} ({log.by?.split(' ')[0]})</div>
                                                                 ) : (
-                                                                    <span className={`text-[7px] font-mono relative z-10 ${recommendGlow ? 'text-yellow-600 font-bold' : 'text-slate-400'}`}>
-                                                                        {recommendGlow ? `NEXT ➔ ${s.time}` : s.time}
-                                                                    </span>
+                                                                    <span className={`text-[7px] font-mono relative z-10 ${recommendGlow ? 'text-yellow-600 font-bold' : 'text-slate-400'}`}>{recommendGlow ? `NEXT ➔ ${s.time}` : s.time}</span>
                                                                 )}
                                                             </button>
                                                         );
@@ -5117,58 +5104,30 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                         ))
                     )
                 ) : (
-                    // ----------------- MODE B: REKAP DOSIS KERJA PER SHIFT JAM -----------------
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                         {shifts.map(s => {
                             const patientsInShift = recapByShift[s.key] || [];
-                            
                             return (
                                 <div key={s.key} className="bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col max-h-[75vh] overflow-hidden">
                                     <div className="p-2.5 bg-gradient-to-b from-slate-800 to-slate-900 text-white flex justify-between items-center">
-                                        <div>
-                                            <h4 className="text-xs font-black tracking-wider uppercase text-yellow-400">{s.label}</h4>
-                                            <p className="text-[8px] text-slate-300 font-bold">{s.time}</p>
-                                        </div>
-                                        <span className="text-[9px] bg-slate-700 font-black px-2 py-0.5 rounded-full">
-                                            {patientsInShift.length} Bed
-                                        </span>
+                                        <div><h4 className="text-xs font-black tracking-wider uppercase text-yellow-400">{s.label}</h4></div>
+                                        <span className="text-[9px] bg-slate-700 font-black px-2 py-0.5 rounded-full">{patientsInShift.length} Bed</span>
                                     </div>
-
                                     <div className="flex-1 overflow-y-auto p-2 space-y-2.5 bg-slate-50 custom-scrollbar">
                                         {patientsInShift.length === 0 ? (
-                                            <p className="text-[10px] text-slate-400 italic text-center py-6">Tidak ada jadwal pemberian obat.</p>
+                                            <p className="text-[10px] text-slate-400 italic text-center py-6">Tidak ada jadwal.</p>
                                         ) : (
                                             patientsInShift.map(p => (
                                                 <div key={p.patientId} className="bg-white border border-slate-200 rounded-lg p-2 shadow-xs hover:border-indigo-300 transition-colors">
-                                                    <div 
-                                                        onClick={() => onEditPatient && onEditPatient({ id: p.patientId, name: p.name, roomNumber: p.roomNumber, bpjsClass: p.bpjsClass, rmNumber: p.rmNumber, dpjpName: p.dpjpName })}
-                                                        className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1.5 cursor-pointer group"
-                                                    >
-                                                        <div>
-                                                            <div className="flex items-center gap-1">
-                                                                <span className="text-[8.5px] bg-indigo-600 text-white px-1 rounded font-black">B{p.roomNumber}</span>
-                                                                <h5 className="text-[10px] font-extrabold text-slate-700 group-hover:text-indigo-600 transition-colors">{p.name}</h5>
-                                                            </div>
-                                                            <span className="text-[7.5px] font-mono text-slate-400 font-bold">RM: {p.rmNumber}</span>
-                                                        </div>
-                                                        <span className="text-[8px] bg-slate-100 px-1 py-0.5 rounded text-slate-500 font-bold">Kls {p.bpjsClass || '3'}</span>
+                                                    <div onClick={() => onEditPatient && onEditPatient({ id: p.patientId, name: p.name, roomNumber: p.roomNumber, bpjsClass: p.bpjsClass, rmNumber: p.rmNumber, dpjpName: p.dpjpName })} className="flex items-center gap-1 border-b border-slate-100 pb-1 mb-1.5 cursor-pointer group">
+                                                        <span className="text-[8.5px] bg-indigo-600 text-white px-1 rounded font-black">B{p.roomNumber}</span>
+                                                        <h5 className="text-[10px] font-extrabold text-slate-700 group-hover:text-indigo-600">{p.name}</h5>
                                                     </div>
-
                                                     <div className="space-y-1">
                                                         {p.meds.map((m, idx) => (
-                                                            <div 
-                                                                key={idx} 
-                                                                onClick={() => handleToggleShift(p.patientId, m.name, s.key)}
-                                                                className={`w-full p-1.5 rounded text-left border text-[9.5px] font-bold flex justify-between items-center cursor-pointer transition ${
-                                                                    m.log.checked 
-                                                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300' 
-                                                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-emerald-50/40'
-                                                                }`}
-                                                            >
+                                                            <div key={idx} onClick={() => handleToggleShift(p.patientId, m.name, s.key)} className={`w-full p-1.5 rounded text-left border text-[9.5px] font-bold flex justify-between items-center cursor-pointer transition ${m.log.checked ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
                                                                 <span className="truncate pr-1">💊 {m.name}</span>
-                                                                <span className="text-[9px] shrink-0">
-                                                                    {m.log.checked ? `✅ (${m.log.time})` : '⚪'}
-                                                                </span>
+                                                                <span className="text-[9px] shrink-0">{m.log.checked ? `✅ (${m.log.time})` : '⚪'}</span>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -5561,12 +5520,12 @@ const InputSidePanel = ({
             { key: '2JPP', reg: /(?:Gula Darah 2 Jam PP|GDP-2JPP|Glukosa 2 Jam PP)/i },
             { key: 'Ur', reg: /(?:Ureum|Ur|Urea)/i },
             { key: 'Cr', reg: /(?:Kreatinin|Creatinin|\bCr\b)/i },
-            { key: 'Alb', reg: /(?:Albumin|Alb)/i },
+            { key: 'Albumin', reg: /(?:Albumin|Alb)/i },
             { key: 'SGOT', reg: /(?:SGOT|AST|Aspartate)/i },
             { key: 'SGPT', reg: /(?:SGPT|ALT|Alanine)/i },
-            { key: 'Bil.Tot', reg: /(?:Bilirubin Total)/i },
-            { key: 'Bil.Dir', reg: /(?:Bilirubin Direct|Direk)/i },
-            { key: 'Bil.Ind', reg: /(?:Bilirubin Indirect|Indirek)/i },
+            { key: 'Bil.Total', reg: /(?:Bilirubin Total)/i },
+            { key: 'Bil.Direk', reg: /(?:Bilirubin Direct|Direk)/i },
+            { key: 'Bil.Indirek', reg: /(?:Bilirubin Indirect|Indirek)/i },
             { key: 'PT', reg: /\bPT\b/i },
             { key: 'INR', reg: /INR/i },
             { key: 'APTT', reg: /APTT/i },
@@ -6123,7 +6082,13 @@ const InputSidePanel = ({
                                             
                                             <button 
                                                 type="button" 
-                                                onClick={() => onOpenMarModal({ ...formData, id: currentRecordId })}
+                                                onClick={() => {
+                                                if (!currentRecordId) {
+                                                    alert("⚠️ Silakan klik tombol '💾 Simpan' di bawah terlebih dahulu untuk mendaftarkan Pasien Baru ini, sebelum mengisi CPO.");
+                                                    return;
+                                                }
+                                                onOpenMarModal({ ...formData, id: currentRecordId });
+                                            }}
                                                 className={`text-[9px] px-2 py-0.5 rounded border font-bold shadow-sm transition relative z-10 ${abMeds.length > 0 ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100 ring-1 ring-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
                                                 title="Catatan Pemberian Obat"
                                             >
@@ -6452,36 +6417,28 @@ const FormattedObjective = ({ text }) => {
     );
 };
 
-// ✨ FUNGSI PENGHITUNG HARI ANTIBIOTIK (PPRA AUTO-PILOT)
-const getAntibioticDay = (medName, medicationLogs) => {
-    // 1. Cek apakah dokter nulis manual (Prioritas Utama)
-    const manualMatch = medName.match(/\bH\d+\b/i);
-    if (manualMatch) return manualMatch[0].toUpperCase();
+// ✨ LOGIKA ANTIBIOTIK: MAZHAB BUKTI CENTANG (EVIDENCE-BASED)
+const getAntibioticDay = (medName, medicationLogs = {}) => {
+    if (!medName) return null;
+    
+    // Cek apakah ini antibiotik (berdasarkan database atau ada tulisan H1/H2)
+    const isAntibiotic = ANTIBIOTICS_DB.some(ab => medName.toLowerCase().includes(ab.toLowerCase())) || /\bH\d+\b/i.test(medName);
+    if (!isAntibiotic) return null;
 
-    // 2. Kalau dokter lupa, cek apakah obat ini termasuk golongan antibiotik
-    const isAb = ANTIBIOTICS_DB.some(ab => medName.toLowerCase().includes(ab));
-    if (!isAb) return null;
-
-    // 3. Jika ya, hitung otomatis dari tanggal pertama kali perawat mencentang di CPO
-    let dayCount = 1; 
-    if (medicationLogs) {
-        const logDates = Object.keys(medicationLogs).sort();
-        const firstDateStr = logDates.find(date => {
-            const dayLog = medicationLogs[date][medName];
-            if (!dayLog) return false;
-            return Object.values(dayLog).some(shift => shift.checked);
-        });
-
-        if (firstDateStr) {
-            const firstDate = new Date(firstDateStr);
-            firstDate.setHours(0,0,0,0);
-            const today = new Date();
-            today.setHours(0,0,0,0);
-            const diffDays = Math.floor((today - firstDate) / (1000 * 60 * 60 * 24));
-            dayCount = diffDays >= 0 ? diffDays + 1 : 1;
+    let checkedDaysCount = 0;
+    
+    // Hitung hanya tanggal di mana obat ini BENAR-BENAR dicentang (diberikan)
+    Object.keys(medicationLogs).forEach(dateStr => {
+        const dayLog = medicationLogs[dateStr][medName];
+        if (dayLog) {
+            const hasCheckedShift = Object.values(dayLog).some(shift => shift.checked);
+            if (hasCheckedShift) checkedDaysCount++;
         }
-    }
-    return `H${dayCount}`;
+    });
+
+    // Jika sudah ada riwayat suntik, tampilkan total harinya. Jika belum, tetap H1.
+    if (checkedDaysCount > 0) return `H${checkedDaysCount}`;
+    return 'H1';
 };
 
 const App = () => {
