@@ -16,6 +16,7 @@ import {
     getDocs,
     getDoc,
     limit,
+    runTransaction,
 } from 'firebase/firestore';
 
 import Cashflow from './components/Cashflow';
@@ -464,7 +465,7 @@ const TtvModal = ({ onClose, onSave }) => {
     
     // Simple interpretation logic
     const getGcsInterp = (score) => {
-        if (score >= 14) return 'Compos Mentis';
+        if (score >= 14) return 'Composmentis';
         if (score >= 12) return 'Apatis';
         if (score >= 10) return 'Delirium';
         if (score >= 7) return 'Somnolen';
@@ -773,68 +774,84 @@ const TagSelector = ({ label, options, placeholder, onSelect, category }) => {
     );
 };
 
-// --- COMPONENT PRINT LAYOUT (VERSI FINAL: AUTO-COMPACT / P NAIK KE ATAS) ---
 const PrintLayout = ({ record }) => {
     if (!record) return null;
 
-    // Helper Tanggal Besok
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dateString = tomorrow.toLocaleDateString('id-ID', {
         day: 'numeric', month: 'numeric', year: 'numeric'
     });
 
-    // Helper Memilah Isi Planning
-    const { others, labs, rads, tms, rxs } = useMemo(() => {
-        if (!record.planning) return { others: [], labs: [], rads: [], tms: [], rxs: [] };
-        
-        // GUNAKAN HELPER parsePlanning YANG SUDAH KITA BUAT DI GLOBAL
-        // (Pastikan fungsi parsePlanning ada di atas komponen ini di App.jsx)
-        return parsePlanning(record.planning);
-    }, [record.planning]);
+    // ✨ FIX: Sterilisasi Teks (Memotong spasi karpet merah khusus untuk preview cetak)
+    const safeSubjective = (record.subjective || '').trim();
+    const safeObjective = (record.objective || '').trim();
+    const safeAnalysis = (record.analysis || '').trim();
+    const safePlanning = (record.planning || '').trim();
 
-    const hasSubjective = record.subjective && record.subjective !== '-' && record.subjective.trim() !== '';
+    const { others, labs, rads, tms, rxs, itemAuthors } = useMemo(() => {
+        if (!safePlanning) return { others: [], labs: [], rads: [], tms: [], rxs: [], itemAuthors: {} };
+        return parsePlanning(safePlanning);
+    }, [safePlanning]);
 
-    // --- UPDATE 1: HIGHLIGHT (BLPL/PUASA) JADI text-xs (12px) ---
+    const hasSubjective = safeSubjective && safeSubjective !== '-' && safeSubjective.trim() !== '';
+
+    // ✨ MULTIUSER & ANTIBIOTIK: Render daftar item digabung jadi satu baris
+    const renderItemsWithAuthors = (items, itemAuthors, isRx = false) => {
+        return items.map((item, idx) => {
+            const authors = itemAuthors[item] || [];
+            
+            // ✨ FITUR BARU: Tampilkan Hari Antibiotik di Cetakan
+            let abBadge = null;
+            if (isRx && typeof getAntibioticDay === 'function') {
+                const cleanMedName = item.split(/\s+\d/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
+                const hCode = getAntibioticDay(cleanMedName, record.medicationLogs || {});
+                if (hCode) {
+                    abBadge = <span className="ml-1 text-[9px] font-bold text-black border border-black bg-gray-100 px-1 py-[1px] rounded">🚨 {hCode}</span>;
+                }
+            }
+
+            return (
+                <span key={item}>
+                    {idx > 0 && ', '}
+                    {item}
+                    {abBadge}
+                    {authors.length > 1 && (
+                        <span className="font-normal text-[9px] opacity-70 normal-case">
+                            {' '}({authors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' & ')})
+                        </span>
+                    )}
+                </span>
+            );
+        });
+    };
+
     const renderHighlightedOthers = (textArray) => {
         return textArray.map((line, idx) => {
             const lower = line.toLowerCase();
-            
-            // 1. KELOMPOK HORE (BLPL)
             const dischargeKeywords = ['blpl', 'rblpl', 'pulang', 'boleh pulang'];
             if (dischargeKeywords.some(k => lower.includes(k))) {
                 return (
-                    // GANTI text-[10px] JADI text-xs
                     <div key={idx} className="font-bold border border-black bg-gray-100 px-1 py-0.5 my-1 rounded text-black text-xs leading-tight w-fit">
                         🎉 {line.toUpperCase()}
                     </div>
                 );
             }
-
-            // 2. KELOMPOK WASPADA (PUASA/LAB/KONSUL)
-            const alertKeywords = [
-                'lab', 'radiologi', 'rontgen', 'usg', 'ct-scan', 'mri', 
-                'cek darah', 'konsul', 'puasa', 'operasi', 'cito', 'hd', 'hemodialisa'
-            ];
-            
+            const alertKeywords = ['lab', 'radiologi', 'rontgen', 'usg', 'ct-scan', 'cek darah', 'konsul', 'puasa', 'operasi', 'cito', 'hd'];
             if (alertKeywords.some(k => lower.includes(k))) {
                 return (
-                    // GANTI text-[10px] JADI text-xs
                     <div key={idx} className="font-bold border border-black bg-gray-100 px-1 py-0.5 my-1 rounded text-black text-xs leading-tight w-fit">
                         ⚠️ {line.toUpperCase()}
                     </div>
                 );
             }
-
             return <div key={idx} className="my-0.5">{line}</div>;
         });
     };
 
     return (
-        // Container Utama Print
         <div className="bg-white p-0 text-sm font-sans leading-snug text-black h-full flex flex-col">
-            
-            {/* Header: DPJP & Raber */}
+            {/* HEADER ATAS */}
             <div className="flex justify-between items-start border-b-2 border-black pb-1 mb-2 shrink-0">
                 <div className="flex-1">
                     <div className="font-bold text-lg uppercase tracking-wide flex items-center gap-2">
@@ -852,113 +869,86 @@ const PrintLayout = ({ record }) => {
                         )}
                     </div>
                 </div>
-                <div className="text-right">
+                
+                {/* ✨ FIX: Posisi Kanan Sejajar (Tanggal & Singkatan Ns Perawat) */}
+                <div className="text-right flex flex-col items-end justify-start">
                     <div className="font-bold text-xs">{dateString}</div>
+                    {record.contributors && record.contributors.length > 0 && (
+                        <div className="text-[10px] text-gray-700 font-bold mt-1 uppercase tracking-tight">
+                            Ns: {record.contributors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(', ')}
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Layout Grid Dua Kolom */}
-            {/* Pakai 'items-stretch' agar garis tengah (border-r) selalu full height sampai bawah */}
+            {/* BODY GRID DATA */}
             <div className="grid grid-cols-2 gap-4 flex-1 items-stretch">
-                
-                {/* --- KOLOM KIRI: A & P (LOGIKA BARU: TIDAK ADA FLEX-1) --- */}
                 <div className="border-r-2 border-gray-300 pr-2 flex flex-col">
-                    
-                    {/* BAGIAN A (ANALISA) - Height: Auto (Seperlunya) */}
                     <div className="mb-2">
                         <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">A (ANALISA)</div>
-                        <div className="whitespace-pre-wrap font-sans mb-1 pl-1">{record.analysis || '-'}</div>
+                        <div className="whitespace-pre-wrap font-sans mb-1 pl-1">{safeAnalysis || '-'}</div>
                     </div>
 
-                    {/* BAGIAN P (PLANNING) - Langsung Menempel di Bawah A */}
-                    {/* Menggunakan border-t dashed sebagai pemisah */}
                     <div className="border-t-2 border-dashed border-gray-400 pt-2 mt-1">
                         <div className="font-bold underline mb-2 bg-gray-100 inline-block px-1 text-xs">P (PLANNING)</div>
-                        
                         <div className="font-sans pl-1">
-                            {/* 1. Teks Manual (Yang akan di-Highlight) */}
                             {others.length > 0 && (
                                 <div className="mb-3 leading-relaxed whitespace-pre-wrap">
                                     {renderHighlightedOthers(others)}
                                 </div>
                             )}
-
-                            {/* 2. Item Smart Planning - VERSI FIX FONT SIZE (text-xs) */}
                             {(labs.length > 0 || rads.length > 0 || tms.length > 0 || rxs.length > 0) && (
-                                // HAPUS text-[10px] di container ini
                                 <div className="space-y-1 mt-2 border-t border-dotted border-gray-400 pt-2 text-xs"> 
-                                    
-                                    {/* LAB */}
                                     {labs.length > 0 && (
-                                        // Hapus text-[10px], biarkan mewarisi text-xs dari container
                                         <div className="flex items-start bg-gray-100 border border-black px-1 py-0.5 rounded w-fit max-w-full leading-tight">
                                             <span className="font-bold w-10 flex-shrink-0 uppercase">Lab.</span>
-                                            <span className="flex-1 font-bold underline">: {labs.join(', ')}</span>
+                                            <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(labs, itemAuthors)}</span>
                                         </div>
                                     )}
-
-                                    {/* RAD */}
                                     {rads.length > 0 && (
                                         <div className="flex items-start bg-gray-100 border border-black px-1 py-0.5 rounded w-fit max-w-full leading-tight">
                                             <span className="font-bold w-10 flex-shrink-0 uppercase">Rad.</span>
-                                            <span className="flex-1 font-bold underline">: {rads.join(', ')}</span>
+                                            <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(rads, itemAuthors)}</span>
                                         </div>
                                     )}
-
-                                    {/* TNDKN */}
                                     {tms.length > 0 && (
                                         <div className="flex items-start bg-gray-100 border border-black px-1 py-0.5 rounded w-fit max-w-full leading-tight">
                                             <span className="font-bold w-12 flex-shrink-0 uppercase">Tndkn.</span>
-                                            <span className="flex-1">: {tms.join(', ')}</span>
+                                            <span className="flex-1">: {renderItemsWithAuthors(tms, itemAuthors)}</span>
                                         </div>
                                     )}
-
-                                    {/* TERAPI */}
                                     {rxs.length > 0 && (
                                         <div className="flex items-start bg-gray-100 border border-black px-1 py-0.5 rounded w-fit max-w-full leading-tight">
                                             <span className="font-bold w-12 flex-shrink-0 uppercase">Terapi.</span>
-                                            <span className="flex-1">: {rxs.join(', ')}</span>
+                                            <span className="flex-1">: {renderItemsWithAuthors(rxs, itemAuthors, true)}</span>
                                         </div>
                                     )}
                                 </div>
                             )}
                         </div>
                     </div>
-
-                    {/* SPACER: Mendorong konten ke atas, menyisakan ruang kosong di bawah untuk tulisan tangan */}
                     <div className="flex-1"></div>
                 </div>
 
-                {/* --- KOLOM KANAN: O & S --- */}
                 <div className="flex flex-col">
-                    {/* BAGIAN O (OBJEKTIF) */}
                     <div className="mb-2">
                         <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">O (OBJEKTIF)</div>
-                        {/* Kotak TTV yang Rapi */}
                         <div className="mb-2 font-mono text-sm border border-black p-1.5 rounded bg-white leading-snug">
                             <div className="grid grid-cols-2 gap-x-4">
-                                <div>TD : ____</div>
-                                <div>N  : ____</div>
-                                <div>S  : ____</div>
-                                <div>RR : ____</div>
-                                <div>SpO2: ___</div>
-                                <div>GCS : ___</div>
+                                <div>TD : ____</div><div>N  : ____</div><div>S  : ____</div><div>RR : ____</div><div>SpO2: ___</div><div>GCS : ___</div>
                             </div>
                         </div>
                         <div className="font-sans pl-1 mt-1">
-                        <FormattedObjective text={record.objective} />
-                    </div>
+                            <FormattedObjective text={safeObjective} />
+                        </div>
                     </div>
 
-                    {/* BAGIAN S (SUBJEKTIF) - Jika Ada */}
                     {hasSubjective && (
                         <div className="border-t-2 border-dashed border-gray-400 pt-2 mt-1">
                             <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">S (SUBJEKTIF)</div>
-                            <div className="whitespace-pre-wrap font-sans mb-3 pl-1">{record.subjective}</div>
+                            <div className="whitespace-pre-wrap font-sans mb-3 pl-1">{safeSubjective}</div>
                         </div>
                     )}
-                    
-                    {/* SPACER KANAN */}
                     <div className="flex-1"></div>
                 </div>
             </div>
@@ -1167,7 +1157,7 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
     );
 };
 
-const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST }) => {
+const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST, onEdit }) => {
     // 1. STATE UNTUK SORTING (Gaya Excel)
     const [sortConfig, setSortConfig] = useState({ key: 'default', direction: 'asc' });
 
@@ -1354,7 +1344,13 @@ const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST }) =
                                 const rec = records.find(r => r.roomNumber === room);
                                 
                                 return (
-                                    <tr key={room} className={`transition-colors ${rec ? 'bg-white hover:bg-emerald-50' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                                    // ✨ FIX: Baris ini (<tr>) ditambahkan onClick dan diubah kursornya menjadi jari (pointer)
+                                    <tr 
+                                        key={room} 
+                                        className={`transition-colors ${rec ? 'bg-white hover:bg-emerald-50 cursor-pointer' : 'bg-gray-50 hover:bg-gray-100'}`}
+                                        onClick={() => { if(rec && onEdit) onEdit(rec); }}
+                                        title={rec ? "Klik untuk buka form SOAP" : ""}
+                                    >
                                         <td className="p-1 border-x border-gray-200 text-gray-400 sticky left-0 bg-inherit z-30">
                                             {index + 1}
                                         </td>
@@ -1364,7 +1360,8 @@ const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST }) =
                                         <td className="p-1 border-x border-gray-200 font-bold text-indigo-700">
                                             {formatRoom(room)}
                                         </td>
-                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20">
+                                        {/* ✨ PENGAMAN: e.stopPropagation() agar saat kita nge-klik inputan RM/Kelas, form SOAP tidak ikut terbuka */}
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20" onClick={(e) => e.stopPropagation()}>
                                             {rec && (
                                                 <>
                                                     <input type="text" defaultValue={rec.rmNumber || ''} onBlur={(e) => handleInlineSave(rec.id, 'rmNumber', e.target.value)} className="w-full bg-transparent outline-none text-center font-mono no-print" placeholder="..." />
@@ -1384,7 +1381,7 @@ const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST }) =
                                                 </>
                                             ) : ''}
                                         </td>
-                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20">
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20" onClick={(e) => e.stopPropagation()}>
                                             {rec && (
                                                 <>
                                                     <input type="text" defaultValue={rec.bpjsClass || ''} onBlur={(e) => handleInlineSave(rec.id, 'bpjsClass', e.target.value)} className="w-full bg-transparent outline-none text-center no-print" placeholder="..." />
@@ -1392,7 +1389,7 @@ const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST }) =
                                                 </>
                                             )}
                                         </td>
-                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20">
+                                        <td className="p-0.5 border-x border-gray-200 bg-yellow-50/20" onClick={(e) => e.stopPropagation()}>
                                             {rec && (
                                                 <>
                                                     <input 
@@ -1421,68 +1418,128 @@ const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST }) =
     );
 };
 
+// --- HELPER: Ekstrak tag [Nama][Jam] di awal baris & marker kolaborator ↔[Nama][Jam] di akhir ---
+// Mengembalikan: { author: 'Nama'|null, collaborators: ['Nama', ...], content: 'teks bersih tanpa tag' }
+const extractLineTags = (line) => {
+    let content = line;
+    let author = null;
+    const collaborators = [];
+
+    // 1. Tag penulis di awal: [Nama][HH:MM]
+    const authorMatch = content.match(/^\[([^\]]+)\]\[[^\]]+\]\s*/);
+    if (authorMatch) {
+        author = authorMatch[1];
+        content = content.slice(authorMatch[0].length);
+    }
+
+    // 2. Marker kolaborator di akhir (boleh lebih dari satu): [Nama][HH:MM]↔
+    const collabRegex = /\s*\[([^\]]+)\]\[[^\]]+\]↔/g;
+    content = content.replace(collabRegex, (_, name) => {
+        collaborators.push(name);
+        return '';
+    });
+
+    return { author, collaborators, content: content.trim() };
+};
+
 // --- HELPER UNTUK MEMISAHKAN PLANNING (DITAMBAH Th. UNTUK TERAPI) ---
+// ✨ MULTIUSER: tag [Nama][Jam] & marker kolaborator ↔ dilucuti sebelum dicocokkan
+// dengan prefiks Lab./Rad./TM./Th., sehingga item tetap masuk kategori & ter-highlight
+// meskipun sudah ditag oleh sistem merge multiuser.
+// Field labs/rads/tms/rxs/others tetap berupa array STRING (kompatibel dengan kode lama).
+// Tambahan field itemAuthors: Map dari teks item -> array nama kontributor (penulis + kolaborator),
+// dipakai untuk menampilkan badge "ditulis oleh siapa" pada tampilan yang mendukungnya.
 const parsePlanning = (text) => {
     // Tambah 'rxs' untuk menampung Terapi/Obat
-    if (!text) return { labs: [], rads: [], tms: [], rxs: [], others: [] }; 
-    
+    if (!text) return { labs: [], rads: [], tms: [], rxs: [], others: [], itemAuthors: {} };
+
     const lines = text.split('\n').filter(line => line.trim() !== '');
-    const res = { labs: [], rads: [], tms: [], rxs: [], others: [] }; // Tambah rxs
-    
+    const res = { labs: [], rads: [], tms: [], rxs: [], others: [], itemAuthors: {} };
+
+    const addItem = (category, rawContent, prefixToStrip, authors) => {
+        const itemText = rawContent.replace(prefixToStrip, '').trim();
+        if (!itemText) return;
+
+        // Hindari duplikasi item identik dalam kategori yang sama
+        if (!res[category].includes(itemText)) {
+            res[category].push(itemText);
+        }
+
+        // Gabungkan daftar kontributor untuk item ini (tanpa duplikat)
+        if (authors.length > 0) {
+            const existing = res.itemAuthors[itemText] || [];
+            res.itemAuthors[itemText] = Array.from(new Set([...existing, ...authors]));
+        }
+    };
+
     lines.forEach(line => {
         const trimmed = line.trim();
-        if (trimmed.startsWith('Lab. R/')) res.labs.push(trimmed.replace('Lab. R/', '').trim());
-        else if (trimmed.startsWith('Rad. R/')) res.rads.push(trimmed.replace('Rad. R/', '').trim());
-        else if (trimmed.startsWith('TM.')) res.tms.push(trimmed.replace('TM.', '').trim());
-        else if (trimmed.startsWith('Th.')) res.rxs.push(trimmed.replace('Th.', '').trim()); // TANGKAP TERAPI/OBAT
+        const { author, collaborators, content } = extractLineTags(trimmed);
+        const authors = [author, ...collaborators].filter(Boolean);
+
+        if (content.startsWith('Lab. R/')) addItem('labs', content, 'Lab. R/', authors);
+        else if (content.startsWith('Rad. R/')) addItem('rads', content, 'Rad. R/', authors);
+        else if (content.startsWith('TM.')) addItem('tms', content, 'TM.', authors);
+        else if (content.startsWith('Th.')) addItem('rxs', content, 'Th.', authors);
         else res.others.push(line);
     });
     return res;
 };
 
-// --- UPDATE: RENDER PLANNING CELL (FIX: STATIC CLASSES AGAR TERBACA TAILWIND) ---
-const renderPlanningCell = (text) => {
+
+// --- UPDATE: RENDER PLANNING CELL (DENGAN INDIKATOR HARI ANTIBIOTIK) ---
+const renderPlanningCell = (text, medicationLogs = {}) => {
     if (!text) return '-';
     
-    // Ambil data hasil parsing
-    const { labs, rads, tms, rxs, others } = parsePlanning(text);
+    const { labs, rads, tms, rxs, others, itemAuthors } = parsePlanning(text);
     
-    // Fungsi Helper Tampilan Per Item
-    const renderItem = (title, items, bgClass, borderClass, textClass) => {
+    const renderItem = (title, items, bgClass, borderClass, textClass, isRx = false) => {
         if (items.length === 0) return null;
-        
-        const itemList = items.join('; '); 
 
-        // Class disusun manual, bukan pakai rumus ${}, agar terbaca oleh Tailwind Compiler
         return (
             <div key={title} className={`block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm ${bgClass} ${borderClass} ${textClass}`}>
                 <span className="mr-1 uppercase">{title}:</span>
-                {itemList}
+                {items.map((item, idx) => {
+                    const authors = itemAuthors[item] || [];
+                    
+                    // ✨ FITUR BARU: Deteksi & Tampilkan Hari Antibiotik
+                    let abBadge = null;
+                    if (isRx && typeof getAntibioticDay === 'function') {
+                        // Bersihkan teks obat (hilangkan dosis/rute) agar cocok dengan database antibiotik
+                        const cleanMedName = item.split(/\s+\d/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
+                        const hCode = getAntibioticDay(cleanMedName, medicationLogs);
+                        if (hCode) {
+                            abBadge = <span className="ml-1 text-[9px] bg-rose-100 text-rose-700 px-1 py-[1px] rounded border border-rose-200 font-bold shadow-sm animate-pulse">🚨 {hCode}</span>;
+                        }
+                    }
+
+                    return (
+                        <span key={item}>
+                            {idx > 0 && '; '}
+                            {item}
+                            {abBadge}
+                            {authors.length > 1 && (
+                                <span className="ml-1 font-normal text-[9px] opacity-70 normal-case">
+                                    ({authors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' & ')})
+                                </span>
+                            )}
+                        </span>
+                    );
+                })}
             </div>
         );
     };
 
     return (
         <div className="space-y-1">
-            {/* 1. LAB: Merah (Tetap) */}
             {renderItem('Lab', labs, 'bg-red-100', 'border-red-300', 'text-red-500 animate-pulse')}
-            
-            {/* 2. RAD: blue */}
             {renderItem('Rad', rads, 'bg-blue-100', 'border-blue-400', 'text-blue-500')}
-            
-            {/* 3. TINDAKAN: Emerald (Hijau Zamrud) */}
             {renderItem('Tndkn', tms, 'bg-emerald-100', 'border-emerald-400', 'text-emerald-500')}
+            {/* ✨ Kirim flag 'true' khusus untuk Terapi (Obat) agar dicek antibiotiknya */}
+            {renderItem('Terapi', rxs, 'bg-fuchsia-200', 'border-fuchsia-400', 'text-fuchsia-500', true)}
             
-            {/* 4. TERAPI: Fuchsia (Ungu Pink Cerah) */}
-            {renderItem('Terapi', rxs, 'bg-fuchsia-200', 'border-fuchsia-400', 'text-fuchsia-500')}
-            
-            {/* ... (Bagian Lab, Rad, Tindakan, Terapi JANGAN DIUBAH) ... */}
-            
-            {/* 5. Lain-lain (UPDATE DISINI) */}
             {others.map((line, idx) => {
                 const lower = line.toLowerCase();
-
-                // A. LOGIKA BLPL (HITAM - SEPERTI YANG SUDAH ADA)
                 if (lower.match(/\b(blpl|rblpl|pulang|boleh pulang)\b/)) {
                     return (
                         <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-black text-white">
@@ -1490,9 +1547,6 @@ const renderPlanningCell = (text) => {
                         </div>
                     );
                 }
-
-                // B. LOGIKA KONSUL (BARU ✨) -> WARNA ORANYE (AMBER)
-                // Biar beda sama Rad (Biru) dan Lab (Merah)
                 if (lower.match(/\b(lapor|konsul|konsultasi|ts|rawat gabung|alih rawat)\b/)) {
                     return (
                         <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-amber-100 border-amber-400 text-amber-900">
@@ -1500,9 +1554,6 @@ const renderPlanningCell = (text) => {
                         </div>
                     );
                 }
-
-                // C. LOGIKA PINDAH/TRANSFER (BARU ✨) -> WARNA INDIGO (NILA)
-                // Biar kelihatan beda sebagai "Perubahan Ruangan"
                 if (lower.match(/\b(pindah|transfer|rujuk|pindah kamar)\b/)) {
                     return (
                         <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-indigo-100 border-indigo-400 text-indigo-900">
@@ -1510,8 +1561,6 @@ const renderPlanningCell = (text) => {
                         </div>
                     );
                 }
-
-                // D. DEFAULT (TEKS BIASA)
                 return <div key={`other-${idx}`} className="text-xs text-gray-700 whitespace-pre-wrap">{line}</div>;
             })}
         </div>
@@ -1695,47 +1744,47 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
         );
     };
 
-    const renderTtvPlanning = (planningText) => {
+    const renderTtvPlanning = (planningText, medicationLogs = {}) => {
         if (!planningText) return '-';
-        // Tarik semua kategori dari parsePlanning
         const { labs, rads, tms, rxs } = parsePlanning(planningText);
         
-        // Cek apakah semuanya kosong
         if (labs.length === 0 && rads.length === 0 && tms.length === 0 && rxs.length === 0) {
             return <span className="text-gray-300">-</span>;
         }
 
         return (
             <div className="text-[10px] leading-tight space-y-1">
-                {/* LAB dengan titik dua literal */}
                 {labs.length > 0 && (
                     <div className="text-red-700 font-medium">
                         <span className="font-bold text-[9px] bg-red-50 border border-red-100 px-1 rounded mr-1">LAB: </span>
                         {labs.join(', ')}
                     </div>
                 )}
-                
-                {/* RADIOLOGI dengan titik dua literal */}
                 {rads.length > 0 && (
                     <div className="text-blue-700 font-medium">
                         <span className="font-bold text-[9px] bg-blue-50 border border-blue-100 px-1 rounded mr-1">RAD: </span>
                         {rads.join(', ')}
                     </div>
                 )}
-
-                {/* TINDAKAN (TM) - Tambahan agar konsisten */}
                 {tms.length > 0 && (
                     <div className="text-emerald-700 font-medium">
                         <span className="font-bold text-[9px] bg-emerald-50 border border-emerald-100 px-1 rounded mr-1">TM: </span>
                         {tms.join(', ')}
                     </div>
                 )}
-
-                {/* TERAPI (TH) - Tambahan agar konsisten */}
+                {/* ✨ TERAPI (TH) DENGAN PENGHITUNG ANTIBIOTIK */}
                 {rxs.length > 0 && (
                     <div className="text-fuchsia-700 font-medium">
                         <span className="font-bold text-[9px] bg-fuchsia-50 border border-fuchsia-100 px-1 rounded mr-1">TH: </span>
-                        {rxs.join(', ')}
+                        {rxs.map((med, idx) => {
+                            let badge = '';
+                            if (typeof getAntibioticDay === 'function') {
+                                const cleanMedName = med.split(/\s+\d/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
+                                const hCode = getAntibioticDay(cleanMedName, medicationLogs);
+                                if (hCode) badge = ` [🚨 ${hCode}]`;
+                            }
+                            return (idx > 0 ? ', ' : '') + med + badge;
+                        })}
                     </div>
                 )}
             </div>
@@ -1797,7 +1846,7 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
             {/* ✨ KODE RENDER LAYAR BERDASARKAN MODE YANG DIPILIH */}
             {viewMode === 'buku-cm' ? (
                 <div className="flex-1 bg-gray-50 overflow-hidden">
-                    <BukuCMTable roomList={roomList} records={sortedRecords} updateRecord={updateRecord} onPrint={onPrintBukuCM} />
+                    <BukuCMTable roomList={roomList} records={sortedRecords} updateRecord={updateRecord} onPrint={onPrintBukuCM} onEdit={onEdit} />
                 </div>
             ) : viewMode === 'troli-obat' ? (
                 <div className="flex-1 bg-gray-50 overflow-hidden">
@@ -1883,7 +1932,7 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                         <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.subjective || '-'}</td>
                                         <td className="p-2 border-r border-gray-300 align-top">{renderObjectiveCell(rec.objective)}</td>
                                         <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.analysis || '-'}</td>
-                                        <td className="p-2 border-r border-gray-300 align-top">{renderPlanningCell(rec.planning)}</td>
+                                        <td className="p-2 border-r border-gray-300 align-top">{renderPlanningCell(rec.planning, rec.medicationLogs)}</td>
                                         <td className="p-1.5 border-r border-gray-300 align-middle no-print" onClick={(e) => e.stopPropagation()}>
                                             <div className="grid grid-cols-2 gap-1">
                                                 <button onClick={() => onEdit(rec)} className="flex flex-col items-center justify-center p-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 border border-yellow-300" title="Edit"><span className="text-sm">✏️</span><span className="text-[8px] font-bold">Edit</span></button>
@@ -1980,7 +2029,7 @@ const PatientTable = ({ records, onEdit, onPrint, onShowLaporModal, onDischarge,
                                                 {rec ? (
                                                     <>
                                                         {getPreparationAlert(rec.planning)}
-                                                        {renderTtvPlanning(rec.planning)}
+                                                        {renderTtvPlanning(rec.planning, rec.medicationLogs)}
                                                     </>
                                                 ) : null}
                                             </td>
@@ -2378,11 +2427,42 @@ const MedicalRecordApp = ({
 
             return [...labs, ...rads, ...prots, ...meds, ...protocols].sort((a, b) => a.label.localeCompare(b.label));
     }, [masterLabs, masterRads, masterProcedures, masterMedications]);
-  const [historyLogs, setHistoryLogs] = useState([]);
+  
   const [view, setView] = useState('dashboard'); 
+  const [rightDashboardTab, setRightDashboardTab] = useState('soap-apo'); // State untuk memori saklar kanan
   const [loading, setLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentRecordId, setCurrentRecordId] = useState(null);
+  const [historyLogs, setHistoryLogs] = useState([]);
+    // --- ANTENA PEMBACA RIWAYAT SOAP (REAL-TIME MULTIUSER) ---
+    useEffect(() => {
+        // Pelindung agar tidak blank
+        if (!db || !appId || !currentRecordId) {
+            setHistoryLogs([]);
+            return;
+        }
+        
+        try {
+            // ✨ FIX FINAL: Menggunakan variabel 'appId' persis seperti kode 12 Juni
+            const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${currentRecordId}/notes`);
+            const q = query(notesRef, orderBy('createdAt', 'desc'));
+            
+            const unsubscribe = onSnapshot(q, (snap) => {
+                const logs = snap.docs.map(d => ({ 
+                    id: d.id, 
+                    ...d.data(),
+                    updatedAt: d.data().createdAt?.seconds ? new Date(d.data().createdAt.seconds * 1000) : new Date()
+                }));
+                setHistoryLogs(logs);
+            }, (err) => {
+                console.error("Gagal mendengarkan data riwayat:", err);
+            });
+            
+            return () => unsubscribe();
+        } catch (error) {
+            console.error("Error pada antena riwayat:", error);
+        }
+    }, [db, appId, currentRecordId]);
   
   // State Print
   const [selectedRecordForPrint, setSelectedRecordForPrint] = useState(null);
@@ -2510,9 +2590,9 @@ const MedicalRecordApp = ({
     return () => unsub();
   }, [db, appId]);
 
-  // --- PENCARIAN & FILTER ---
+  // --- PENCARIAN & FILTER + SORTIR KAMAR (ATURAN DR. DELVI) ---
   const filteredActiveRecords = useMemo(() => {
-    return activeRecords.filter(rec => {
+    const filtered = activeRecords.filter(rec => {
         const matchesDpjp = dpjpFilter.length === 0 || dpjpFilter.includes(rec.dpjpName);
         const matchesRoom = selectedRoomFilter.length === currentWardConfig.roomList.length || selectedRoomFilter.includes(rec.roomNumber);
         const term = searchTerm.toLowerCase();
@@ -2523,7 +2603,28 @@ const MedicalRecordApp = ({
             (rec.rmNumber && rec.rmNumber.includes(term)); 
         return matchesDpjp && matchesRoom && matchesSearch;
     });
-  }, [activeRecords, dpjpFilter, selectedRoomFilter, searchTerm]); 
+
+    // ✨ FIX 1: Terapkan aturan urutan kamar
+    const isDelviOnly = filtered.length > 0 && filtered.every(r => r.dpjpName === 'dr. Delvi, Sp.PD');
+
+    if (isDelviOnly) {
+        // Aturan Letter-U khusus dr. Delvi
+        const uShapeBase = ['K6', 'K4', 'K2', 'K1', 'K3', 'K5', 'K7', 'K8', 'K9', 'K11', 'K12', 'K14', 'K15', 'K13', 'K10'];
+        const uShapeOrder = uShapeBase.flatMap(k => [`${k}A`, `${k}B`]);
+        
+        return filtered.sort((a, b) => {
+            let indexA = uShapeOrder.indexOf(a.roomNumber);
+            let indexB = uShapeOrder.indexOf(b.roomNumber);
+            if (indexA === -1) indexA = 999;
+            if (indexB === -1) indexB = 999;
+            return indexA - indexB;
+        });
+    }
+
+    // Urutan default (A-Z / Numerik normal)
+    return filtered.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' }));
+
+  }, [activeRecords, dpjpFilter, selectedRoomFilter, searchTerm, currentWardConfig]);
 
   // --- LOGIC DATABASE UTAMA ---
   const getCollectionRef = useCallback(() => {
@@ -2820,10 +2921,150 @@ const MedicalRecordApp = ({
   };
 
   const appendText = (field, text) => {
-      setFormData(p => ({ ...p, [field]: p[field] ? p[field] + '\n' + text : text }));
+      setFormData(p => {
+          const currentText = p[field] || '';
+          
+          // 1. Jika masih kosong, langsung masukkan teks tanpa spasi ekstra
+          if (!currentText.trim()) {
+              return { ...p, [field]: text.trim() };
+          }
+
+          const lines = currentText.split('\n');
+          const firstLine = lines[0] || '';
+
+          // Deteksi awalan grup (prefix) dari teks baru
+          const prefixMatch = text.match(/^(Lab\. R\/\s*|Rad\. R\/\s*|TM\.\s*|Th\.\s*|Lacak\/Lapor\s*)/i);
+          
+          if (prefixMatch) {
+              const prefix = prefixMatch[1];
+              const valueOnly = text.replace(prefix, '').trim();
+
+              // ✨ FIX: Pengecualian Khusus Terapi/Obat (Th.)
+              // Jika ini adalah obat, JANGAN gabung pakai koma. Biarkan turun ke bawah.
+              const isTerapi = prefix.trim().toLowerCase() === 'th.';
+
+              // Jika bukan obat dan awalannya sama, gabung MENYAMPING pakai koma
+              if (!isTerapi && firstLine.trim().startsWith(prefix)) {
+                  lines[0] = `${firstLine.trim()}, ${valueOnly}`;
+                  return { ...p, [field]: lines.join('\n') };
+              }
+          }
+
+          // 2. Jika beda grup, ATAU jika itu Terapi (Th.), taruh di paling ATAS dengan 1 enter (rapat ke bawah)
+          return { ...p, [field]: `${text.trim()}\n${currentText.trim()}` };
+      });
   };
 
-  const handleSubmit = (e) => { 
+  // =====================================================================
+  // ✨ MULTIUSER SOAP MERGE HELPERS (Atomic + Fuzzy Similarity Dedup)
+  // =====================================================================
+
+  // --- Hitung kemiripan 2 baris teks (0 = beda total, 1 = identik) ---
+  // Pakai Jaccard similarity berbasis kata, cukup ringan & cukup akurat
+  // untuk advis singkat seperti "Cek DL ulang besok" vs "DL ulang besok pagi"
+  const lineSimilarity = (a, b) => {
+      const normalize = (s) => (s || '')
+          .toLowerCase()
+          .replace(/^\[[^\]]*\]\s*/g, '') // buang tag [nama][jam] saat membandingkan
+          .replace(/[^\w\s]/g, ' ')
+          .trim();
+      const wordsA = new Set(normalize(a).split(/\s+/).filter(Boolean));
+      const wordsB = new Set(normalize(b).split(/\s+/).filter(Boolean));
+      if (wordsA.size === 0 && wordsB.size === 0) return 1;
+      if (wordsA.size === 0 || wordsB.size === 0) return 0;
+      let intersection = 0;
+      wordsA.forEach(w => { if (wordsB.has(w)) intersection++; });
+      const union = wordsA.size + wordsB.size - intersection;
+      return intersection / union;
+  };
+
+  // Ambang batas kemiripan: >= 0.75 dianggap "advis yang sama"
+  const SIMILARITY_THRESHOLD = 0.75;
+
+  // --- Tambahkan tag [Nama][HH:MM] di depan baris-baris baru ---
+  // Hanya baris yang BELUM bertag akan ditag (mencegah double-tag saat merge berulang)
+  const tagNewLines = (text, authorName) => {
+      const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+      const tag = `[${authorName.charAt(0).toUpperCase() + authorName.slice(1)}][${timeStr}]`;
+      return (text || '').split('\n').map(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return line;
+          if (/^\[[^\]]+\]\[[^\]]+\]\s/.test(trimmed)) return line; // sudah bertag, biarkan
+          return `${tag} ${trimmed}`;
+      }).join('\n');
+  };
+
+  // --- Ambil hanya baris-baris yang BARU diketik perawat ini (dibandingkan snapshot awal) ---
+  const getNewLines = (currentText, initialText) => {
+      const cleanLines = (txt) => (txt || '').split('\n').map(l => l.trim()).filter(Boolean);
+      const currentLines = cleanLines(currentText);
+      const initialSet = new Set(cleanLines(initialText));
+      return currentLines.filter(l => !initialSet.has(l));
+  };
+
+  // --- Ambil baris-baris yang DIHAPUS perawat ini (ada di snapshot awal, tapi sudah
+  //     tidak ada lagi di teks lokal sekarang). Dipakai untuk membuang baris tersebut
+  //     dari hasil merge, supaya hapusan perawat ini tidak "muncul lagi" karena
+  //     baris itu masih ada di data DB terkini. ---
+  const getRemovedLines = (currentText, initialText) => {
+      const cleanLines = (txt) => (txt || '').split('\n').map(l => l.trim()).filter(Boolean);
+      const currentSet = new Set(cleanLines(currentText));
+      const initialLines = cleanLines(initialText);
+      return initialLines.filter(l => !currentSet.has(l));
+  };
+
+  // --- Gabungkan baris dari DB (terbaru) + baris baru dari form lokal ---
+  // - Baris yang DIHAPUS perawat ini (removedLines) -> dibuang dari hasil
+  // - Baris identik -> tidak diduplikasi
+  // - Baris MIRIP (>= threshold) -> tidak diduplikasi, tapi nama kontributor
+  //   baris lokal ditambahkan sebagai tag tambahan di baris DB ("juga dilaporkan oleh ...")
+  // - Baris baru yang unik -> ditambahkan di atas (terbaru di atas)
+  const smartMergeLines = (dbText, localNewText, removedLines = []) => {
+      const cleanLines = (txt) => (txt || '').split('\n').map(l => l.trim()).filter(Boolean);
+      const stripTagGlobal = (l) => l.replace(/^\[[^\]]+\]\[[^\]]+\]\s*/, '');
+      const removedSet = new Set(removedLines.map(stripTagGlobal));
+
+      const dbLines = cleanLines(dbText).filter(l => !removedSet.has(stripTagGlobal(l)));
+      const localLines = cleanLines(localNewText);
+
+      const result = [...dbLines];
+
+      localLines.forEach(localLine => {
+          // 1. Cek identik persis (tanpa tag) -> skip
+          const stripTag = (l) => l.replace(/^\[[^\]]+\]\[[^\]]+\]\s*/, '');
+          const localStripped = stripTag(localLine);
+
+          const exactIdx = result.findIndex(r => stripTag(r) === localStripped);
+          if (exactIdx !== -1) return; // sudah ada, jangan duplikasi
+
+          // 2. Cek mirip dengan baris yang sudah ada
+          let mergedIntoExisting = false;
+          for (let i = 0; i < result.length; i++) {
+              const sim = lineSimilarity(result[i], localLine);
+              if (sim >= SIMILARITY_THRESHOLD) {
+                  // Tambahkan tag kontributor lokal ke baris yang sudah ada
+                  // sebagai indikasi "advis serupa juga dilaporkan oleh X"
+                  const localTagMatch = localLine.match(/^\[[^\]]+\]\[[^\]]+\]/);
+                  const localTag = localTagMatch ? localTagMatch[0] : '';
+                  if (localTag && !result[i].includes(localTag)) {
+                      result[i] = `${result[i]} ${localTag}↔`; // ↔ = "advis serupa juga dicatat oleh"
+                  }
+                  mergedIntoExisting = true;
+                  break;
+              }
+          }
+          if (mergedIntoExisting) return;
+
+          // 3. Baris baru & unik -> tambahkan di paling atas
+          result.unshift(localLine);
+      });
+
+      return result.join('\n');
+  };
+
+
+
+  const handleSubmit = async (e) => { 
       e.preventDefault();
       if (!formData.name || !formData.roomNumber || !formData.dpjpName) {
           alert('Mohon lengkapi data wajib (Nama, Kamar, DPJP).');
@@ -2836,42 +3077,116 @@ const MedicalRecordApp = ({
       if (!isEditing && isRoomOccupied) return alert(`Kamar ${formData.roomNumber} sudah terisi.`);
 
       const now = Timestamp.now();
+      const myName = (currentUser?.name || 'perawat').split(' ')[0].toLowerCase();
       
-      // ✨ KODE YANG KEMARIN HILANG DIKEMBALIKAN ✨
-      const data = { 
+      // ✨ FIX: Menghapus "Karpet Merah" yang kosong (trim text) agar tidak boros baris kosong di print/database
+      const baseData = { 
           ...formData, 
+          subjective: (formData.subjective || '').trim(),
+          objective: (formData.objective || '').trim(),
+          analysis: (formData.analysis || '').trim(),
+          planning: (formData.planning || '').trim(),
           admissionDate: parseDateCM(formData.admissionDate), 
           updatedAt: now,
-          ward: currentUser?.ward || 'MELATI' // Stempel Bangsal
+          ward: currentUser?.ward || 'MELATI' 
       };
-      if (!isEditing) data.createdAt = now;
+
+      // ✨ MULTIUSER: Field snapshot internal ini hanya dipakai untuk deteksi baris baru,
+      // jangan ikut tersimpan ke Firestore.
+      delete baseData.initialSubjective;
+      delete baseData.initialObjective;
+      delete baseData.initialAnalysis;
+      delete baseData.initialPlanning;
+      delete baseData.initialUpdatedAt;
+
       const ref = getCollectionRef();
 
       if (isEditing && currentRecordId) {
-          updateDoc(doc(ref, currentRecordId), data).catch(err => console.error("Gagal update:", err));
-          
-          if (db && appId) {
-              const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${currentRecordId}/notes`);
-              addDoc(notesRef, { 
-                  ...formData, 
-                  admissionDate: parseDateCM(formData.admissionDate),
-                  createdAt: now, 
-                  noteType: 'daily_update',
-                  savedBy: currentUser?.name || 'System',
-                  ward: currentUser?.ward || 'MELATI'
-              }).catch(err => console.error("Gagal tambah riwayat:", err));
+          const docRef = doc(ref, currentRecordId);
+          const myDisplayName = (currentUser?.name || 'Perawat').split(' ')[0];
+
+          try {
+              const finalData = await runTransaction(db, async (transaction) => {
+                  const docSnap = await transaction.get(docRef);
+                  let result = { ...baseData };
+
+                  if (docSnap.exists()) {
+                      const latestDbData = docSnap.data();
+
+                      // --- Tracking "Tim Perawat Hari Ini" (reset otomatis tiap hari) ---
+                      const lastUpdateDate = latestDbData.updatedAt?.toDate ? latestDbData.updatedAt.toDate() : new Date(0);
+                      const today = new Date();
+                      const myName = (currentUser?.name || 'perawat').split(' ')[0].toLowerCase();
+                      let newContributors = [];
+
+                      if (lastUpdateDate.getDate() === today.getDate() && lastUpdateDate.getMonth() === today.getMonth() && lastUpdateDate.getFullYear() === today.getFullYear()) {
+                          newContributors = Array.from(new Set([...(latestDbData.contributors || []), myName]));
+                      } else {
+                          newContributors = [myName];
+                      }
+                      result.contributors = newContributors;
+
+                      // --- Smart Merge S/O/A/P ---
+                      // Ambil HANYA baris baru yang ditulis perawat ini di sesi edit sekarang,
+                      // beri tag [Nama][Jam], lalu gabungkan dengan data SOAP terkini di DB
+                      // (yang mungkin sudah diupdate perawat lain sejak form ini dibuka).
+                      const fields = ['subjective', 'objective', 'analysis', 'planning'];
+                      fields.forEach((field) => {
+                          const initialField = `initial${field.charAt(0).toUpperCase()}${field.slice(1)}`;
+                          const newLines = getNewLines(baseData[field], formData[initialField]);
+                          const removedLines = getRemovedLines(baseData[field], formData[initialField]);
+
+                          if (newLines.length === 0 && removedLines.length === 0) {
+                              // Tidak ada perubahan baris dari perawat ini -> pakai data DB terkini
+                              // (mencegah perawat ini menimpa balik perubahan perawat lain
+                              // dengan versi lokalnya yang sudah usang)
+                              result[field] = (latestDbData[field] || '').trim();
+                          } else {
+                              const taggedNewLines = newLines.length > 0 ? tagNewLines(newLines.join('\n'), myDisplayName) : '';
+                              result[field] = smartMergeLines(latestDbData[field], taggedNewLines, removedLines);
+                          }
+                      });
+                  } else {
+                      const myName = (currentUser?.name || 'perawat').split(' ')[0].toLowerCase();
+                      result.contributors = [myName];
+                      // Dokumen baru: tag semua baris SOAP yang diisi sebagai milik perawat ini
+                      ['subjective', 'objective', 'analysis', 'planning'].forEach((field) => {
+                          if (result[field]) result[field] = tagNewLines(result[field], myDisplayName);
+                      });
+                  }
+
+                  transaction.set(docRef, result, { merge: true });
+                  return result;
+              });
+
+              // Simpan rekaman ke Sub-Koleksi Notes (Riwayat) di luar transaksi
+              if (db) {
+                  const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${currentRecordId}/notes`);
+                  await addDoc(notesRef, {
+                      ...finalData,
+                      createdAt: now,
+                      noteType: 'daily_update',
+                      savedBy: currentUser?.name || 'System'
+                  });
+              }
+          } catch (e) {
+              console.error("Gagal update & merge (transaction):", e);
+              alert("Gagal menyimpan: kemungkinan ada konflik update bersamaan. Silakan coba simpan ulang.");
+              return;
           }
       } else {
-          addDoc(ref, data).then(newDoc => {
-              if (db && appId) {
+          // Mode Pasien Baru
+          baseData.createdAt = now;
+          baseData.contributors = [myName];
+
+          addDoc(ref, baseData).then(newDoc => {
+              if (db) {
                   const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${newDoc.id}/notes`);
                   addDoc(notesRef, { 
-                      ...formData, 
-                      admissionDate: parseDateCM(formData.admissionDate),
+                      ...baseData, 
                       createdAt: now, 
                       noteType: 'daily_update',
-                      savedBy: currentUser?.name || 'System',
-                      ward: currentUser?.ward || 'MELATI'
+                      savedBy: currentUser?.name || 'System'
                   });
               }
           }).catch(err => console.error("Gagal tambah pasien:", err));
@@ -2963,32 +3278,37 @@ const MedicalRecordApp = ({
   };
 
   const handleEdit = async (rec) => {
+    const formatPrependOpen = (text) => {
+        if (!text || !text.trim()) return '';
+        const trimmed = text.trim();
+        if (trimmed.startsWith('\n')) return trimmed;
+        return `\n\n${trimmed}`;
+    };
+
     setFormData({
         roomNumber: rec.roomNumber, name: rec.name, rmNumber: rec.rmNumber || '', gender: rec.gender || '', 
         dpjpName: rec.dpjpName, raberName: rec.raberName || '', raber2Name: rec.raber2Name || '',
-        subjective: rec.subjective || '', objective: rec.objective || '', admissionDate: rec.admissionDate || '',
-        analysis: rec.analysis || '', planning: rec.planning || '', isDischarged: false, evidenceImages: rec.evidenceImages || [],
-        bpjsClass: rec.bpjsClass || ''
+        subjective: formatPrependOpen(rec.subjective), 
+        objective: formatPrependOpen(rec.objective), 
+        analysis: formatPrependOpen(rec.analysis), 
+        planning: formatPrependOpen(rec.planning), 
+        isDischarged: false, evidenceImages: rec.evidenceImages || [],
+        bpjsClass: rec.bpjsClass || '',
+        admissionDate: rec.admissionDate || '',
+        initialUpdatedAt: rec.updatedAt || null,
+        // ✨ MULTIUSER: Snapshot S/O/A/P saat form dibuka, untuk mendeteksi baris BARU
+        // yang diketik perawat ini saja (dipakai saat smart-merge & auto-tag nama).
+        initialSubjective: (rec.subjective || '').trim(),
+        initialObjective: (rec.objective || '').trim(),
+        initialAnalysis: (rec.analysis || '').trim(),
+        initialPlanning: (rec.planning || '').trim(),
+        // ✨ FIX: Masukkan daftar perawat agar terbawa saat cetak via form SOAP
+        contributors: rec.contributors || [] 
     });
     setCurrentRecordId(rec.id);
     setIsEditing(true);
     setShowRaber1(!!rec.raberName);
     setShowRaber2(!!rec.raber2Name);
-    
-    setHistoryLogs([]); 
-    if (db && userId) {
-       try {
-           const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${rec.id}/notes`);
-           const q = query(notesRef, orderBy('createdAt', 'desc'));
-           const snapshot = await getDocs(q);
-           const logs = snapshot.docs.map(doc => ({
-               ...doc.data(),
-               updatedAt: doc.data().createdAt?.seconds ? new Date(doc.data().createdAt.seconds * 1000) : new Date()
-           }));
-           if (logs.length > 0) setHistoryLogs(logs);
-           else setHistoryLogs([rec]);
-       } catch (e) { console.error("Gagal tarik history:", e); }
-    }
     setShowInputModal(true); 
   };
 
@@ -3707,66 +4027,185 @@ const processDischarge = async (type) => {
                 </div>
             </div>            
         </div>
-        <div className="lg:col-span-6 h-[calc(100vh-140px)] overflow-y-auto space-y-4 pr-1 custom-scrollbar">
-            <div className="bg-white rounded-lg shadow-sm border border-indigo-200 overflow-hidden">
-                <div className="bg-indigo-600 px-3 py-2 text-white flex justify-between items-center">
-                    <div className="flex items-center space-x-2"><span className="text-xs font-bold uppercase tracking-tight">📋 Waiting List</span><span className="bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] font-mono">{waitingList.length}</span></div>
-                    <button onClick={() => setShowWaitingModal(true)} className="bg-white text-indigo-700 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50 flex items-center"><span className="mr-1 text-sm">+</span> Tambah/Edit</button>
-                </div>
-                <div className="max-h-56 overflow-y-auto">
-                    {waitingList.length === 0 ? <div className="p-6 text-center text-gray-400 italic text-xs">Belum ada antrean.</div> : (
-                        <table className="w-full text-[10px] text-left">
-                            <thead className="bg-gray-50 sticky top-0 border-b z-10"><tr><th className="p-2 text-center w-8">No</th><th className="p-2">Target</th><th className="p-2">Pasien</th><th className="p-2">Asal</th><th className="p-2 text-center">Aksi</th></tr></thead>
-                            <tbody>{waitingList.map((w, idx) => (
-                                <tr key={w.id} className="border-b hover:bg-indigo-50 group"><td className="p-2 text-center font-bold text-gray-400">{idx+1}</td><td className="p-2 font-bold text-indigo-700">{w.plannedRoom}</td><td className="p-2"><div className="font-bold">{w.name}</div><div className="text-[9px] text-gray-400 truncate">{w.diagnosis}</div></td><td className="p-2"><div className="font-bold">{w.originRoom}</div>{w.insuranceClass && <div className="text-[9px] bg-blue-50 text-blue-600 px-1 rounded w-fit">{w.insuranceClass}</div>}</td><td className="p-2 text-center"><button onClick={() => handleMoveToRoom(w)} className="bg-green-600 text-white px-2 py-1 rounded font-bold text-[9px]">Masuk</button><button onClick={() => handleDeleteWaiting(w.id)} className="ml-2 text-red-400 opacity-0 group-hover:opacity-100">🗑️</button></td></tr>
-                            ))}</tbody>
-                        </table>
+        {/* === SISI KANAN: DYNAMIC PANEL (SOAP vs STATS) === */}
+        <div className="lg:col-span-6 h-[calc(100vh-140px)] flex flex-col">
+            
+            {/* 1. TOMBOL SAKLAR */}
+            <div className="flex bg-white p-1 rounded-lg border border-indigo-200 mb-3 shrink-0 shadow-sm">
+                <button 
+                    onClick={() => setRightDashboardTab('soap-apo')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${rightDashboardTab === 'soap-apo' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                >
+                    📝 Ontang-anting
+                </button>
+                <button 
+                    onClick={() => setRightDashboardTab('stats')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition flex items-center justify-center gap-1 ${rightDashboardTab === 'stats' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                >
+                    <span>📊 Antrean & Statistik</span>
+                    {waitingList.length > 0 && (
+                        <span className="bg-rose-500 text-white px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">{waitingList.length}</span>
                     )}
-                </div>
+                </button>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-                <div className="bg-green-100 border border-green-300 text-green-900 rounded p-2 text-center"><span className="text-[9px] font-bold">KOSONG</span><div className="text-xl font-extrabold">{stats.emptyCount}</div></div>
-                <div className="bg-sky-100 border border-sky-300 text-sky-900 rounded p-2 text-center"><span className="text-[9px] font-bold">SISA LK</span><div className="text-xl font-extrabold">{stats.emptyMale}</div></div>
-                <div className="bg-purple-100 border border-purple-300 text-purple-900 rounded p-2 text-center"><span className="text-[9px] font-bold">SISA PR</span><div className="text-xl font-extrabold">{stats.emptyFemale}</div></div>
+
+            {/* 2. AREA KONTEN BAWAH */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar pb-10">
+                
+                {rightDashboardTab === 'soap-apo' ? (
+                    
+                    /* --- SUB-TAB 1: LIVE SOAP (APO) MINI PRINT PREVIEW STYLE --- */
+                    <div className="space-y-3">
+                        {filteredActiveRecords.length === 0 ? (
+                            <div className="p-6 text-center text-gray-400 italic text-xs bg-white rounded-lg border">Tidak ada pasien aktif untuk ditampilkan.</div>
+                        ) : (
+                            filteredActiveRecords.map(rec => {
+                                // Bersihkan spasi kosong karpet merah/sisa input teks
+                                const safeSubjective = (rec.subjective || '').trim();
+                                const safeObjective = (rec.objective || '').trim();
+                                const safeAnalysis = (rec.analysis || '').trim();
+                                const safePlanning = (rec.planning || '').trim();
+                                const hasSubjective = safeSubjective && safeSubjective !== '-' && safeSubjective !== '';
+
+                                return (
+                                    <div 
+                                        key={rec.id} 
+                                        onClick={() => handleEdit(rec)}
+                                        className="bg-white rounded-xl border border-slate-300 shadow-sm p-4 hover:border-indigo-500 hover:shadow-md transition cursor-pointer group text-xs text-black font-sans relative"
+                                        title="Klik untuk Edit SOAP Pasien"
+                                    >
+                                        {/* Header Atas Kartu Ala Lembar Cetak */}
+                                        <div className="flex justify-between items-start border-b-2 border-black pb-1 mb-2">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-2">
+                                                    <span className="text-[10px] font-black border-2 border-black px-1.5 py-0.5 bg-slate-50 text-black"> 
+                                                        {rec.roomNumber ? rec.roomNumber.replace(/[AB]$/, '') : ''}
+                                                    </span>
+                                                    <span className="truncate group-hover:text-indigo-600 transition-colors">{rec.name}</span>
+                                                </div>
+                                                <div className="text-[10px] mt-0.5 flex flex-wrap gap-x-3 font-semibold text-slate-700">
+                                                    <span>DPJP: {rec.dpjpName}</span>
+                                                    {(rec.raberName || rec.raber2Name) && (
+                                                        <span className="text-slate-500 italic font-medium">
+                                                            Rb: {[rec.raberName, rec.raber2Name].filter(Boolean).join(', ')}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Sisi Kanan Header: Tanggal & Inisial Dinas Ns */}
+                                            <div className="text-right flex flex-col items-end justify-start font-bold text-[10px] text-slate-800 shrink-0">
+                                                <div>{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'numeric', year: 'numeric' })}</div>
+                                                {rec.contributors && rec.contributors.length > 0 && (
+                                                    <div className="text-[9px] text-indigo-700 font-extrabold mt-0.5 uppercase tracking-tight">
+                                                        Ns: {rec.contributors.map(n => n.split(' ')[0]).join(', ')}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Grid 2 Kolom Presisi Komponen APOS */}
+                                        <div className="grid grid-cols-2 gap-3 pt-0.5 items-stretch">
+                                            
+                                            {/* Kolom Kiri: A (Analisa) & P (Planning) */}
+                                            <div className="border-r border-slate-200 pr-2 flex flex-col justify-between gap-2">
+                                                <div>
+                                                    <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">A (ANALISA)</div>
+                                                    <div className="whitespace-pre-wrap pl-1 text-slate-800 leading-tight text-[11px] font-medium">{safeAnalysis || '-'}</div>
+                                                </div>
+
+                                                <div className="border-t border-dashed border-slate-300 pt-1.5">
+                                                    <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">P (PLANNING)</div>
+                                                    {/* ✨ FIX 2: Hidupkan Badge Warna-Warni & Kedip di Planning */}
+                                                    <div className="pl-1">
+                                                        {safePlanning ? renderPlanningCell(safePlanning, rec.medicationLogs) : <span className="text-slate-800 text-[11px] font-medium">-</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Kolom Kanan: O (Objektif) & S (Subektif) */}
+                                            <div className="flex flex-col justify-between gap-2">
+                                                <div>
+                                                    <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">O (OBJEKTIF)</div>
+                                                    {/* ✨ FIX 3: Hidupkan Lacak Kedip Oranye & Nilai Lab Merah/Biru */}
+                                                    <div className="pl-1 text-slate-800 leading-tight text-[11px]">
+                                                        {safeObjective ? (
+                                                            <div className="bg-slate-50 p-1.5 border border-slate-200 rounded text-slate-700 leading-normal">
+                                                                {renderObjectiveCell(safeObjective)}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-slate-400 italic text-[10px] pl-1">- Belum ada TTV -</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {hasSubjective && (
+                                                    <div className="border-t border-dashed border-slate-300 pt-1.5">
+                                                        <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">S (SUBJEKTIF)</div>
+                                                        <div className="whitespace-pre-wrap pl-1 text-slate-800 leading-tight text-[11px] font-medium">{safeSubjective}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+
+                ) : (
+                    
+                    /* --- SUB-TAB 2: STATISTIK & WAITING LIST LAMA --- */
+                    <>
+                        <div className="bg-white rounded-lg shadow-sm border border-indigo-200 overflow-hidden">
+                            <div className="bg-indigo-600 px-3 py-2 text-white flex justify-between items-center">
+                                <div className="flex items-center space-x-2"><span className="text-xs font-bold uppercase tracking-tight">📋 Waiting List</span><span className="bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] font-mono">{waitingList.length}</span></div>
+                                <button onClick={() => setShowWaitingModal(true)} className="bg-white text-indigo-700 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50 flex items-center"><span className="mr-1 text-sm">+</span> Tambah/Edit</button>
+                            </div>
+                            <div className="max-h-56 overflow-y-auto">
+                                {waitingList.length === 0 ? <div className="p-6 text-center text-gray-400 italic text-xs">Belum ada antrean.</div> : (
+                                    <table className="w-full text-[10px] text-left">
+                                        <thead className="bg-gray-50 sticky top-0 border-b z-10"><tr><th className="p-2 text-center w-8">No</th><th className="p-2">Target</th><th className="p-2">Pasien</th><th className="p-2">Asal</th><th className="p-2 text-center">Aksi</th></tr></thead>
+                                        <tbody>{waitingList.map((w, idx) => (
+                                            <tr key={w.id} className="border-b hover:bg-indigo-50 group"><td className="p-2 text-center font-bold text-gray-400">{idx+1}</td><td className="p-2 font-bold text-indigo-700">{w.plannedRoom}</td><td className="p-2"><div className="font-bold">{w.name}</div><div className="text-[9px] text-gray-400 truncate">{w.diagnosis}</div></td><td className="p-2"><div className="font-bold">{w.originRoom}</div>{w.insuranceClass && <div className="text-[9px] bg-blue-50 text-blue-600 px-1 rounded w-fit">{w.insuranceClass}</div>}</td><td className="p-2 text-center"><button onClick={() => handleMoveToRoom(w)} className="bg-green-600 text-white px-2 py-1 rounded font-bold text-[9px]">Masuk</button><button onClick={() => handleDeleteWaiting(w.id)} className="ml-2 text-red-400 opacity-0 group-hover:opacity-100">🗑️</button></td></tr>
+                                        ))}</tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-green-100 border border-green-300 text-green-900 rounded p-2 text-center"><span className="text-[9px] font-bold">KOSONG</span><div className="text-xl font-extrabold">{stats.emptyCount}</div></div>
+                            <div className="bg-sky-100 border border-sky-300 text-sky-900 rounded p-2 text-center"><span className="text-[9px] font-bold">SISA LK</span><div className="text-xl font-extrabold">{stats.emptyMale}</div></div>
+                            <div className="bg-purple-100 border border-purple-300 text-purple-900 rounded p-2 text-center"><span className="text-[9px] font-bold">SISA PR</span><div className="text-xl font-extrabold">{stats.emptyFemale}</div></div>
+                        </div>
+                        <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-3 text-xs uppercase">Pasien per DPJP</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{Object.entries(stats.dpjpCounts).sort((a,b)=>b[1]-a[1]).map(([n,c])=>(<div key={n} className="flex justify-between items-center text-[10px] p-2 bg-gray-50 rounded border hover:bg-indigo-50 group"><span className="truncate font-medium">{n}</span><div className="flex items-center gap-1"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{c}</span><button onClick={()=>handleReportDpjpCount(n,c)} className="text-[9px] bg-green-100 text-green-700 p-1 rounded-full opacity-80 group-hover:opacity-100">📱</button></div></div>))}</div>
+                        </div>
+                        <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-2 text-xs uppercase flex justify-between"><span>🤝 Raber/Konsul</span><span className="bg-yellow-100 px-2 rounded-full">{Object.keys(stats.raberData).length} Dr</span></h3>
+                            <div className="space-y-2">{Object.entries(stats.raberData).length===0?<div className="text-[10px] text-gray-400 text-center">Nihil.</div>:Object.entries(stats.raberData).map(([d,p])=>(<div key={d} className="text-[10px] bg-yellow-50 p-2 rounded border flex justify-between group"><div className="flex-1"><div className="font-bold text-indigo-800">{d}</div><div className="text-gray-600">({p.join(', ')})</div></div><button onClick={()=>handleReportRaber(d,p)} className="ml-2 bg-green-100 text-green-700 px-2 py-1 rounded opacity-80 group-hover:opacity-100">📱</button></div>))}</div>
+                        </div>
+                        <div className="bg-white rounded overflow-hidden border">
+                        <div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase">📊 Rekap</div>
+                        <table className="w-full text-[10px] text-left">
+                            <thead className="bg-gray-100 text-gray-500 font-bold border-b">
+                                <tr>
+                                    <th className="p-2">Bulan</th><th className="p-2 text-center">Aktif</th><th className="p-2 text-center" title="Pulang Biasa">Plg</th><th className="p-2 text-center text-indigo-600" title="Pindah Ruangan">Pdh</th><th className="p-2 text-center text-slate-800" title="Meninggal">Mng</th><th className="p-2 text-center text-red-600">Lab</th><th className="p-2 text-center text-blue-600">Rad</th><th className="p-2 text-center text-green-600">TM</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Object.entries(stats.monthly).map(([m,d])=>(
+                                    <tr key={m} className="border-b hover:bg-gray-50">
+                                        <td className="p-2 font-bold text-indigo-900">{m}</td><td className="p-2 text-center">{d.active}</td><td className="p-2 text-center font-bold">{d.pulang}</td><td className="p-2 text-center font-bold text-indigo-600">{d.pindah}</td><td className="p-2 text-center font-bold text-slate-800">{d.meninggal}</td><td className="p-2 text-center font-bold text-red-600">{d.lab}</td><td className="p-2 text-center font-bold text-blue-600">{d.rad}</td><td className="p-2 text-center font-bold text-green-600">{d.tm}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    </>
+                )}
+
             </div>
-            <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-3 text-xs uppercase">Pasien per DPJP</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{Object.entries(stats.dpjpCounts).sort((a,b)=>b[1]-a[1]).map(([n,c])=>(<div key={n} className="flex justify-between items-center text-[10px] p-2 bg-gray-50 rounded border hover:bg-indigo-50 group"><span className="truncate font-medium">{n}</span><div className="flex items-center gap-1"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{c}</span><button onClick={()=>handleReportDpjpCount(n,c)} className="text-[9px] bg-green-100 text-green-700 p-1 rounded-full opacity-80 group-hover:opacity-100">📱</button></div></div>))}</div>
-            </div>
-            <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-2 text-xs uppercase flex justify-between"><span>🤝 Raber/Konsul</span><span className="bg-yellow-100 px-2 rounded-full">{Object.keys(stats.raberData).length} Dr</span></h3>
-                <div className="space-y-2">{Object.entries(stats.raberData).length===0?<div className="text-[10px] text-gray-400 text-center">Nihil.</div>:Object.entries(stats.raberData).map(([d,p])=>(<div key={d} className="text-[10px] bg-yellow-50 p-2 rounded border flex justify-between group"><div className="flex-1"><div className="font-bold text-indigo-800">{d}</div><div className="text-gray-600">({p.join(', ')})</div></div><button onClick={()=>handleReportRaber(d,p)} className="ml-2 bg-green-100 text-green-700 px-2 py-1 rounded opacity-80 group-hover:opacity-100">📱</button></div>))}</div>
-            </div>
-            <div className="bg-white rounded overflow-hidden border">
-             <div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase">📊 Rekap</div>
-             <table className="w-full text-[10px] text-left">
-                 <thead className="bg-gray-100 text-gray-500 font-bold border-b">
-                     <tr>
-                         <th className="p-2">Bulan</th>
-                         <th className="p-2 text-center">Aktif</th>
-                         <th className="p-2 text-center" title="Pulang Biasa">Plg</th>
-                         <th className="p-2 text-center text-indigo-600" title="Pindah Ruangan">Pdh</th>
-                         <th className="p-2 text-center text-slate-800" title="Meninggal">Mng</th>
-                         <th className="p-2 text-center text-red-600">Lab</th>
-                         <th className="p-2 text-center text-blue-600">Rad</th>
-                         <th className="p-2 text-center text-green-600">TM</th>
-                     </tr>
-                 </thead>
-                 <tbody>
-                     {Object.entries(stats.monthly).map(([m,d])=>(
-                         <tr key={m} className="border-b hover:bg-gray-50">
-                             <td className="p-2 font-bold text-indigo-900">{m}</td>
-                             <td className="p-2 text-center">{d.active}</td>
-                             <td className="p-2 text-center font-bold">{d.pulang}</td>
-                             <td className="p-2 text-center font-bold text-indigo-600">{d.pindah}</td>
-                             <td className="p-2 text-center font-bold text-slate-800">{d.meninggal}</td>
-                             <td className="p-2 text-center font-bold text-red-600">{d.lab}</td>
-                             <td className="p-2 text-center font-bold text-blue-600">{d.rad}</td>
-                             <td className="p-2 text-center font-bold text-green-600">{d.tm}</td>
-                         </tr>
-                     ))}
-                 </tbody>
-             </table>
-         </div>
-            <div className="h-10"></div>
         </div>
     </div>
   );
@@ -4173,7 +4612,12 @@ const processDischarge = async (type) => {
                     masterLabs={masterLabs} masterRads={masterRads} 
                     masterProcedures={masterProcedures} 
                     masterMedications={masterMedications} 
-                    archivedRecords={archivedRecords} onOpenMarModal={(data) => { setMarSelectedRecord(data); setIsMarModalOpen(true); }} /></div>}
+                    activeRecords={activeRecords}
+                    onOpenMarModal={(data) => { setMarSelectedRecord(data); setIsMarModalOpen(true); }}
+                    db={db}
+                    currentUser={currentUser}
+                    firebaseConfig={firebaseConfig}
+            /></div>}
         </div>
         {/* ✨ JENDELA MELAYANG REKAM OBAT MAR DIGITAL */}
         <MedicationMarModal 
@@ -4467,69 +4911,56 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
     );
 };
 
-// --- COMPONENT: MODAL CATATAN PEMBERIAN OBAT (CPO) INDIVIDUAL (V21 - FULL SYNC CREATED_AT) ---
+// --- COMPONENT: MODAL CATATAN PEMBERIAN OBAT (CPO) INDIVIDUAL (V25 - STRICT BOUNDARY & FLEX 48H) ---
 const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, currentUser, firebaseConfig }) => {
-    const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
+    const getSafeYMD = (d = new Date()) => {
+        if (isNaN(d)) d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+
+    const [selectedDate, setSelectedDate] = useState(getSafeYMD());
     const [localLogs, setLocalLogs] = useState(record?.medicationLogs || {});
 
     useEffect(() => {
         if (isOpen) {
-            // ✨ BACA DATA DARI DATABASE UTAMA, BUKAN DARI FOTOCOPY-AN FORM SOAP
-            const realRecord = allRecords.find(r => r.id === record?.id) || record;
+            const safeAllRecords = allRecords || [];
+            const realRecord = safeAllRecords.find(r => r.id === record?.id) || record;
             setLocalLogs(realRecord?.medicationLogs || {});
             setSelectedDate(getSafeYMD());
         }
     }, [isOpen, record, allRecords]);
 
-    const todayStr = new Date().toLocaleDateString('en-CA');
+    const todayStr = getSafeYMD();
 
-    // ✨ MESIN MIN-DATE (SEKARANG MELIHAT DATA ASLI DARI DATABASE UTAMA)
-    const minDateStr = useMemo(() => {
-        let startObj = new Date();
-        startObj.setHours(0,0,0,0);
-        let hasValidDate = false;
-        
-        // Cari rekam medis asli dari daftar pasien utama menggunakan ID
-        const realRecord = allRecords.find(r => r.id === record?.id) || record;
+    const displayDates = useMemo(() => {
+        return [-1, 0, 1, 2].map(offset => {
+            const parts = (selectedDate || todayStr).split('-');
+            const d = new Date(parts[0], parts[1]-1, parts[2]);
+            d.setDate(d.getDate() + offset);
+            return getSafeYMD(d);
+        });
+    }, [selectedDate, todayStr]);
 
-        if (realRecord?.createdAt) {
-            try {
-                const d = typeof realRecord.createdAt.toDate === 'function' ? realRecord.createdAt.toDate() : new Date(realRecord.createdAt);
-                d.setHours(0,0,0,0);
-                startObj = d;
-                hasValidDate = true;
-            } catch (e) {}
-        }
-
-        const validDates = Object.keys(localLogs).filter(dateStr => {
-            const dayData = localLogs[dateStr] || {};
-            return Object.values(dayData).some(med => 
-                Object.values(med).some(shift => shift.checked || shift.scheduled)
-            );
-        }).sort();
-
-        if (validDates.length > 0) {
-            const firstLog = new Date(validDates[0]);
-            firstLog.setHours(0,0,0,0);
-            if (!hasValidDate || firstLog < startObj) startObj = firstLog;
-        }
-        
-        const y = startObj.getFullYear();
-        const m = String(startObj.getMonth() + 1).padStart(2, '0');
-        const d = String(startObj.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-    }, [record, localLogs, allRecords]);
-
-    const currentDateObj = new Date(selectedDate);
-    const nextDateObj = new Date(currentDateObj);
-    nextDateObj.setDate(currentDateObj.getDate() + 1);
-    const nextDateStr = `${String(nextDateObj.getDate()).padStart(2, '0')}/${String(nextDateObj.getMonth() + 1).padStart(2, '0')}`;
+    const formatDayHeader = (dateStr) => {
+        if (!dateStr) return '';
+        if (dateStr === todayStr) return `Hari Ini (${dateStr.split('-').reverse().join('/')})`;
+        const parts = dateStr.split('-');
+        const d = new Date(parts[0], parts[1]-1, parts[2]);
+        const yest = new Date(); yest.setDate(yest.getDate() - 1);
+        const tom = new Date(); tom.setDate(tom.getDate() + 1);
+        if (dateStr === getSafeYMD(yest)) return `Kemarin (${dateStr.split('-').reverse().join('/')})`;
+        if (dateStr === getSafeYMD(tom)) return `Besok (${dateStr.split('-').reverse().join('/')})`;
+        return dateStr.split('-').reverse().join('/');
+    };
 
     const shifts = [
-        { key: 'jam_12', label: '☀️ JAM 12:00', time: 'Dinas Pagi' },
-        { key: 'jam_18', label: '🌆 JAM 16 / 18 / 20', time: 'Dinas Sore' },
-        { key: 'jam_24', label: '🌙 JAM 24:00', time: 'Dinas Malam' },
-        { key: 'jam_06', label: '🌅 JAM 04 / 06', time: `Malam Tgl ${nextDateStr}` }
+        { key: 'jam_12', label: '12:00' },
+        { key: 'jam_18', label: '16/18/20' },
+        { key: 'jam_24', label: '24:00' },
+        { key: 'jam_06', label: '04/06' }
     ];
 
     const planMeds = (record?.planning || '').split('\n')
@@ -4543,17 +4974,22 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
             return /\d+\s*x/i.test(lower) || /\b(mg|gr|mcg|ml|iu|tts|amp|vial|tab|caps|syr|inj|iv|po|im|sc|drip|supp|prn|k\/p|gtt|fls|flash)\b/i.test(lower) || lower.startsWith('th') || lower.startsWith('rx') || /\/\s*\d+\s*jam/i.test(lower);
         });
 
-    const dayLogs = localLogs[selectedDate] || {};
-    
-    const logMeds = Object.keys(dayLogs).filter(medName => {
-        const shiftsObj = dayLogs[medName] || {}; 
-        return Object.values(shiftsObj).some(s => s && (s.checked || s.scheduled));
-    });
+    const safeLogs = localLogs || {};
+    const logMeds = Object.keys(safeLogs)
+        .filter(dateStr => displayDates.includes(dateStr))
+        .flatMap(dateStr => {
+            const shiftsObj = safeLogs[dateStr] || {}; 
+            return Object.keys(shiftsObj).filter(med => {
+                const shiftData = shiftsObj[med];
+                if (!shiftData) return false; 
+                return Object.values(shiftData).some(s => s && (s.checked || s.scheduled));
+            });
+        });
     
     const extractedMeds = Array.from(new Set([...planMeds, ...logMeds]));
 
-    const handleToggleShift = async (medName, shift) => {
-        const currentDayLogs = localLogs[selectedDate] || {};
+    const handleToggleShift = async (medName, dateStr, shift) => {
+        const currentDayLogs = safeLogs[dateStr] || {};
         const medLogs = currentDayLogs[medName] || {};
         const shiftLog = medLogs[shift] || { checked: false };
 
@@ -4567,85 +5003,80 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
         }
 
         const updatedLogs = {
-            ...localLogs,
-            [selectedDate]: { ...currentDayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
+            ...safeLogs,
+            [dateStr]: { ...currentDayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
         };
 
         setLocalLogs(updatedLogs);
-
         try {
-            const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`, record.id);
+            const safeAppId = firebaseConfig?.appId || 'SIMPAN_APP';
+            const docRef = doc(db, `artifacts/${safeAppId}/public/data/medicalRecords`, record.id);
             await updateDoc(docRef, { medicationLogs: updatedLogs });
         } catch (e) {}
     };
 
-    const handleTogglePattern = async (medName, shift) => {
-        const currentDayLogs = localLogs[selectedDate] || {};
+    const handleTogglePattern = async (medName, dateStr, shift) => {
+        const currentDayLogs = safeLogs[dateStr] || {};
         const medLogs = currentDayLogs[medName] || {};
         const shiftLog = medLogs[shift] || { checked: false };
 
         const updatedShiftLog = { ...shiftLog, scheduled: !shiftLog.scheduled };
         const updatedLogs = {
-            ...localLogs,
-            [selectedDate]: { ...currentDayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
+            ...safeLogs,
+            [dateStr]: { ...currentDayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
         };
 
         setLocalLogs(updatedLogs);
         try {
-            const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`, record.id);
+            const safeAppId = firebaseConfig?.appId || 'SIMPAN_APP';
+            const docRef = doc(db, `artifacts/${safeAppId}/public/data/medicalRecords`, record.id);
             await updateDoc(docRef, { medicationLogs: updatedLogs });
         } catch (e) {}
+    };
+
+    const changeDate = (offset) => {
+        const parts = selectedDate.split('-');
+        const d = new Date(parts[0], parts[1]-1, parts[2]);
+        d.setDate(d.getDate() + offset);
+        setSelectedDate(getSafeYMD(d));
     };
 
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 backdrop-blur-sm" style={{ zIndex: 9999 }}>
-            <div className="bg-slate-50 w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="bg-slate-50 w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden animate-in zoom-in-95 duration-300">
                 
                 <div className="bg-emerald-600 text-white px-5 py-4 flex justify-between items-center shrink-0">
                     <div>
                         <h2 className="text-lg font-black flex items-center gap-2">💊 Catatan Pemberian Obat (CPO)</h2>
-                        <p className="text-emerald-100 text-xs mt-0.5 font-medium">Bed {record?.roomNumber} - {record?.name}</p>
+                        <p className="text-emerald-100 text-xs mt-0.5 font-medium">Bed {record?.roomNumber || '-'} - {record?.name || 'Pasien'}</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-emerald-500 rounded-full transition-colors"><span className="text-xl leading-none">✖</span></button>
                 </div>
 
                 <div className="bg-white px-5 py-3 border-b border-slate-200 flex justify-between items-center shrink-0 shadow-sm z-10">
                     <div className="flex gap-2">
-                        <button type="button" onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); const n = d.toLocaleDateString('en-CA'); if (n >= minDateStr) setSelectedDate(n); }} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-extrabold rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition shadow-sm hidden sm:block">⬅️ Kemarin</button>
-                        <button type="button" onClick={() => setSelectedDate(todayStr)} className={`px-3 py-1.5 border text-xs font-extrabold rounded-lg transition shadow-sm hidden sm:block ${selectedDate === todayStr ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-emerald-600'}`}>🏠 Hari Ini</button>
+                        <button onClick={() => changeDate(-1)} className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-extrabold rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition shadow-sm">⬅️ Mundur</button>
+                        <button onClick={() => setSelectedDate(todayStr)} className={`px-4 py-1.5 border text-xs font-extrabold rounded-lg transition shadow-sm ${selectedDate === todayStr ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}>🏠 Hari Ini</button>
+                        <button onClick={() => changeDate(1)} className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-extrabold rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition shadow-sm">Maju ➡️</button>
                     </div>
                     
-                    <div className="relative inline-block">
-                        <div className="bg-white border-2 border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 text-sm focus:border-emerald-500 transition shadow-sm flex items-center justify-between w-[130px] cursor-pointer hover:border-emerald-500">
-                            <span>{selectedDate.split('-').reverse().join('/')}</span>
-                            <span className="text-slate-400 text-xs">📅</span>
-                        </div>
-                        <input type="date" value={selectedDate} min={minDateStr} max={todayStr} onChange={e => setSelectedDate(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                    <div className="bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 font-bold text-slate-500 text-sm shadow-inner flex items-center justify-between w-[130px]">
+                        <span>{selectedDate.split('-').reverse().join('/')}</span>
+                        <span className="text-slate-400 text-xs">📅</span>
                     </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
                     {extractedMeds.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                            <span className="text-5xl mb-3">📭</span>
-                            <p className="font-bold">Belum ada obat yang dijadwalkan.</p>
-                        </div>
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400"><span className="text-5xl mb-3">📭</span><p className="font-bold">Belum ada obat yang dijadwalkan.</p></div>
                     ) : (
                         <div className="space-y-4">
                             {extractedMeds.map((med, mIdx) => {
-                                const medLog = localLogs[selectedDate]?.[med] || {};
-                                const prevDateObj = new Date(selectedDate);
-                                prevDateObj.setDate(prevDateObj.getDate() - 1);
-                                const yMedLog = localLogs[prevDateObj.toLocaleDateString('en-CA')]?.[med] || {};
-                                const yCheckedShifts = Object.keys(yMedLog).filter(k => yMedLog[k].checked).map(k => ({ jam_12: '12', jam_18: '16/18/20', jam_24: '24', jam_06: '06' }[k] || k));
-                                
-                                const checkedShifts = Object.keys(medLog).filter(k => medLog[k].checked);
-
-                                const lowerMed = med.toLowerCase();
+                                const lowerMed = (med || '').toLowerCase();
                                 let freq = 1;
-                                const freqMatch = med.match(/(\d+)\s*x/i);
+                                const freqMatch = lowerMed.match(/(\d+)\s*x/i);
                                 if (freqMatch) freq = parseInt(freqMatch[1]);
                                 else if (/\/\s*8\s*jam/i.test(lowerMed)) freq = 3;
                                 else if (/\/\s*12\s*jam/i.test(lowerMed)) freq = 2;
@@ -4657,8 +5088,9 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                 const is48Jam = /\/\s*48\s*jam/i.test(lowerMed);
 
                                 const everCheckedShifts = [];
-                                Object.keys(localLogs).forEach(date => {
-                                    const dayData = localLogs[date] || {}; 
+                                Object.keys(safeLogs).forEach(date => {
+                                    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return; 
+                                    const dayData = safeLogs[date] || {}; 
                                     const medShifts = dayData[med] || {};  
                                     Object.keys(medShifts).forEach(sKey => {
                                         const s = medShifts[sKey];
@@ -4668,81 +5100,109 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                     });
                                 });
 
-                                let activeShifts = [];
+                                let baseActiveShifts = [];
                                 if (everCheckedShifts.length > 0) {
-                                    if (freq === 1) activeShifts = [...everCheckedShifts];
+                                    if (freq === 1) baseActiveShifts = [...everCheckedShifts];
                                     else if (freq === 2) {
                                         everCheckedShifts.forEach(sKey => {
-                                            if (!activeShifts.includes(sKey)) activeShifts.push(sKey);
+                                            if (!baseActiveShifts.includes(sKey)) baseActiveShifts.push(sKey);
                                             let partner = sKey === 'jam_12' ? 'jam_24' : sKey === 'jam_24' ? 'jam_12' : sKey === 'jam_18' ? 'jam_06' : 'jam_18';
-                                            if (partner && !activeShifts.includes(partner)) activeShifts.push(partner);
+                                            if (partner && !baseActiveShifts.includes(partner)) baseActiveShifts.push(partner);
                                         });
                                     } else if (freq === 3) {
                                         const hasStandard = everCheckedShifts.some(k => ['jam_12', 'jam_18', 'jam_06'].includes(k));
-                                        if (hasStandard) activeShifts = ['jam_12', 'jam_18', 'jam_06'];
-                                        everCheckedShifts.forEach(sKey => { if (!activeShifts.includes(sKey)) activeShifts.push(sKey); });
-                                    } else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+                                        if (hasStandard) baseActiveShifts = ['jam_12', 'jam_18', 'jam_06'];
+                                        everCheckedShifts.forEach(sKey => { if (!baseActiveShifts.includes(sKey)) baseActiveShifts.push(sKey); });
+                                    } else baseActiveShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
                                 } else {
-                                    if (lowerMed.includes('malam') || lowerMed.includes('24')) activeShifts = ['jam_24'];
-                                    else if (lowerMed.includes('pagi') || lowerMed.includes('12')) activeShifts = ['jam_12'];
-                                    else if (lowerMed.includes('sore') || lowerMed.includes('18') || lowerMed.includes('16') || lowerMed.includes('20')) activeShifts = ['jam_18'];
-                                    else {
-                                        if (freq === 1) activeShifts = ['jam_12'];
-                                        else if (freq === 2) activeShifts = ['jam_18', 'jam_06'];
-                                        else if (freq === 3) activeShifts = ['jam_12', 'jam_18', 'jam_06'];
-                                        else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+                                    // ✨ FIX V25: REGEX BOUNDARY UNTUK INJEKSI
+                                    const isInjeksi = /\b(inj|iv|im|sc|drip|vial|amp|inf)\b/i.test(lowerMed);
+
+                                    // ✨ FIX V25: JIKA OBAT 48 JAM ATAU INJEKSI, KOSONGKAN JADWAL AWAL AGAR PERAWAT SET SENDIRI
+                                    if (isInjeksi || is48Jam) {
+                                        baseActiveShifts = [];
+                                    } else {
+                                        const isMalam = /malam|\bjam\s*24\b|\b24[:.]00\b/i.test(lowerMed);
+                                        const isPagi = /pagi|\bjam\s*12\b|\b12[:.]00\b/i.test(lowerMed);
+                                        const isSore = /sore|\bjam\s*(16|18|20)\b|\b(16|18|20)[:.]00\b/i.test(lowerMed);
+
+                                        if (isMalam) baseActiveShifts = ['jam_24'];
+                                        else if (isPagi) baseActiveShifts = ['jam_12'];
+                                        else if (isSore) baseActiveShifts = ['jam_18'];
+                                        else {
+                                            // 1x1 dibiarkan KOSONG agar disetel manual oleh perawat
+                                            if (freq === 1) baseActiveShifts = [];
+                                            else if (freq === 2) baseActiveShifts = ['jam_18', 'jam_06'];
+                                            else if (freq === 3) baseActiveShifts = ['jam_12', 'jam_18', 'jam_06'];
+                                            else baseActiveShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+                                        }
                                     }
                                 }
 
-                                if (isStopOrTunda) {
-                                    activeShifts = [];
-                                } else if (is48Jam) {
-                                    const yLog = localLogs[prevDateObj.toLocaleDateString('en-CA')]?.[med] || {};
-                                    const givenYesterday = Object.values(yLog).some(s => s.checked);
-                                    if (givenYesterday) activeShifts = [];
-                                }
-
-                                const isRecommended = (shiftKey) => !checkedShifts.includes(shiftKey) && activeShifts.includes(shiftKey);
-
                                 return (
-                                    <div key={mIdx} className={`bg-white border rounded-xl overflow-hidden shadow-sm transition-shadow ${isStopOrTunda ? 'border-rose-200 bg-rose-50/20' : 'border-slate-200 hover:shadow-md'}`}>
-                                        <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <h4 className={`font-bold text-sm ${isStopOrTunda ? 'text-rose-500 line-through' : 'text-slate-800'}`}>📄 {med}</h4>
-                                                {isStopOrTunda && <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded font-black shadow-sm">🛑 DIHENTIKAN</span>}
-                                                {is48Jam && <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black shadow-sm">⏳ PER 48 JAM</span>}
-                                                {getAntibioticDay(med, localLogs) && !isStopOrTunda && (
-                                                    <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm">🚨 {getAntibioticDay(med, localLogs)}</span>
+                                    <div key={mIdx} className={`flex border rounded-xl overflow-x-auto shadow-sm custom-scrollbar transition-shadow ${isStopOrTunda ? 'border-rose-200 bg-rose-50/20' : 'border-slate-200 bg-white hover:shadow-md'}`}>
+                                        <div className="w-[180px] sm:w-[220px] flex-shrink-0 p-3 bg-white border-r border-slate-200 sticky left-0 z-10 flex flex-col justify-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                            <div className="flex items-start gap-1.5 flex-wrap">
+                                                <h4 className={`font-bold text-xs leading-snug mt-0.5 ${isStopOrTunda ? 'text-rose-500 line-through' : 'text-slate-800'}`}>📄 {med}</h4>
+                                                {isStopOrTunda && <span className="text-[9px] bg-rose-500 text-white px-2 py-0.5 rounded font-black shadow-sm mt-0.5">🛑 STOP</span>}
+                                                {is48Jam && <span className="text-[9px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black shadow-sm mt-0.5">⏳ 48 JAM</span>}
+                                                {typeof getAntibioticDay === 'function' && getAntibioticDay(med, safeLogs) && !isStopOrTunda && (
+                                                    <span className="text-[9px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm mt-0.5">🚨 {getAntibioticDay(med, safeLogs)}</span>
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                                            {shifts.map(s => {
-                                                const log = medLog[s.key] || { checked: false };
-                                                const recommendGlow = isRecommended(s.key);
+
+                                        <div className="flex bg-slate-50/50">
+                                            {displayDates.map((dateStr, dIdx) => {
+                                                const isToday = dateStr === todayStr;
+                                                const medLogForDate = safeLogs[dateStr]?.[med] || {};
+                                                const checkedShiftsForDate = Object.keys(medLogForDate).filter(k => medLogForDate[k] && medLogForDate[k].checked);
+                                                
+                                                let actShifts = [...baseActiveShifts];
+                                                if (isStopOrTunda) { actShifts = []; } 
+                                                else if (is48Jam) {
+                                                    const prevD = new Date(dateStr.split('-')[0], dateStr.split('-')[1]-1, dateStr.split('-')[2]);
+                                                    prevD.setDate(prevD.getDate() - 1);
+                                                    const givenYesterday = Object.values(safeLogs[getSafeYMD(prevD)]?.[med] || {}).some(sh => sh && sh.checked);
+                                                    if (givenYesterday) actShifts = [];
+                                                }
+
+                                                const isRecommended = (shiftKey) => !checkedShiftsForDate.includes(shiftKey) && actShifts.includes(shiftKey);
 
                                                 return (
-                                                    <button 
-                                                        key={s.key} type="button" 
-                                                        onClick={() => !isStopOrTunda && handleToggleShift(med, s.key)} 
-                                                        disabled={isStopOrTunda}
-                                                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all group h-[70px] relative overflow-hidden ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-2 ring-yellow-400/50 shadow-sm animate-pulse' : isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
-                                                        {log.checked && <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-100 rounded-bl-full -z-10"></div>}
-                                                        <div className="flex justify-between items-center w-full relative z-10">
-                                                            <span className={`text-[11px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-600'}`}>{s.label}</span>
-                                                            <div className="flex items-center gap-1.5">
-                                                                {!log.checked && !isStopOrTunda && (
-                                                                    <span onClick={(e) => { e.stopPropagation(); handleTogglePattern(med, s.key); }} className={`text-[12px] p-0.5 rounded hover:bg-slate-200 active:bg-slate-300 cursor-pointer ${log.scheduled ? 'bg-amber-400 text-slate-950 font-black scale-110 shadow-xs' : 'text-slate-300'}`} title="Set Pola Jadwal Jam Ini">🕒</span>
-                                                                )}
-                                                                <span className="text-[12px]">{log.checked ? '✅' : '⚪'}</span>
-                                                            </div>
+                                                    <div key={dateStr} className={`w-[220px] sm:w-[250px] p-2 flex-shrink-0 flex flex-col ${dIdx !== displayDates.length - 1 ? 'border-r border-slate-200' : ''}`}>
+                                                        <div className={`text-center text-[10px] font-bold py-1 mb-2 rounded shadow-sm ${isToday ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-200 text-slate-600 border border-slate-300'}`}>
+                                                            {formatDayHeader(dateStr)}
                                                         </div>
-                                                        {log.checked ? (
-                                                            <div className="text-[10px] font-bold text-emerald-700 mt-1 relative z-10">⏱️ {log.time} ({log.by?.split(' ')[0]})</div>
-                                                        ) : (
-                                                            <span className={`text-[9px] font-mono relative z-10 ${recommendGlow ? 'text-yellow-600 font-bold' : 'text-slate-400'}`}>{recommendGlow ? `NEXT ➔ ${s.time}` : s.time}</span>
-                                                        )}
-                                                    </button>
+                                                        
+                                                        <div className="grid grid-cols-4 gap-1 flex-1">
+                                                            {shifts.map(s => {
+                                                                const log = medLogForDate[s.key] || { checked: false, scheduled: false };
+                                                                const recommendGlow = isRecommended(s.key);
+                                                                
+                                                                return (
+                                                                    <button 
+                                                                        key={s.key} type="button" 
+                                                                        onClick={() => !isStopOrTunda && handleToggleShift(med, dateStr, s.key)}
+                                                                        disabled={isStopOrTunda}
+                                                                        className={`flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+                                                                    >
+                                                                        <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-500'}`}>{s.label}</span>
+                                                                        <div className="flex items-center justify-center w-full mt-0.5">
+                                                                            <span className="text-[12px] leading-none">{log.checked ? '✅' : '⚪'}</span>
+                                                                        </div>
+                                                                        <div className="w-full flex justify-between items-end mt-0.5">
+                                                                            {!log.checked && !isStopOrTunda ? (
+                                                                                <span onClick={(e) => { e.stopPropagation(); handleTogglePattern(med, dateStr, s.key); }} className={`text-[9px] p-0.5 rounded hover:bg-slate-200 active:bg-slate-300 cursor-pointer mx-auto ${log.scheduled ? 'bg-amber-400 text-slate-950 font-black shadow-xs scale-110' : 'text-slate-300'}`} title="Set Pola Jadwal">🕒</span>
+                                                                            ) : log.checked ? (
+                                                                                <span className="text-[7.5px] font-bold text-emerald-700 leading-none truncate w-full text-center">{log.time}</span>
+                                                                            ) : <span className="h-[14px] w-full"></span>}
+                                                                        </div>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
                                                 );
                                             })}
                                         </div>
@@ -4761,9 +5221,17 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
     );
 };
 
-// --- COMPONENT: MODE TROLI OBAT GLOBAL + AUTO REKAP SHIFT (BANGSAL V20 - SMART PARSER & STOP/TUNDA) ---
+// --- COMPONENT: MODE TROLI OBAT GLOBAL + AUTO REKAP SHIFT (BANGSAL V25 - STRICT BOUNDARY & FLEX 48H) ---
 const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEditPatient }) => {
-    const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('en-CA'));
+    const getSafeYMD = (d = new Date()) => {
+        if (isNaN(d)) d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+
+    const [selectedDate, setSelectedDate] = useState(getSafeYMD());
     const [localLogsMap, setLocalLogsMap] = useState({});
     const [isRecapMode, setIsRecapMode] = useState(false);
 
@@ -4773,57 +5241,38 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
         setLocalLogsMap(newLogsMap);
     }, [records]);
 
-    const todayStr = new Date().toLocaleDateString('en-CA');
+    const todayStr = getSafeYMD();
 
-    const minDateStr = useMemo(() => {
-        let startObj = new Date();
-        startObj.setHours(0,0,0,0);
-        if (records.length > 0) {
-            records.forEach(r => {
-                if (r.createdAt) {
-                    try {
-                        const d = typeof r.createdAt.toDate === 'function' ? r.createdAt.toDate() : new Date(r.createdAt);
-                        d.setHours(0,0,0,0);
-                        if (d < startObj) startObj = d;
-                    } catch(e) {}
-                }
-            });
-        }
-        const validDates = Object.keys(localLogsMap).flatMap(recordId => {
-            const pLogs = localLogsMap[recordId] || {};
-            return Object.keys(pLogs).filter(dateStr => {
-                const dayData = pLogs[dateStr] || {};
-                return Object.values(dayData).some(med => Object.values(med).some(shift => shift.checked || shift.scheduled));
-            });
-        }).sort();
+    const displayDates = useMemo(() => {
+        return [-1, 0, 1, 2].map(offset => {
+            const parts = selectedDate.split('-');
+            const d = new Date(parts[0], parts[1]-1, parts[2]);
+            d.setDate(d.getDate() + offset);
+            return getSafeYMD(d);
+        });
+    }, [selectedDate]);
 
-        if (validDates.length > 0) {
-            const firstLog = new Date(validDates[0]);
-            firstLog.setHours(0,0,0,0);
-            if (firstLog < startObj) startObj = firstLog;
-        }
-
-        const y = startObj.getFullYear();
-        const m = String(startObj.getMonth() + 1).padStart(2, '0');
-        const d = String(startObj.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-    }, [records, localLogsMap]);
-
-    const currentDateObj = new Date(selectedDate);
-    const nextDateObj = new Date(currentDateObj);
-    nextDateObj.setDate(currentDateObj.getDate() + 1);
-    const nextDateStr = `${String(nextDateObj.getDate()).padStart(2, '0')}/${String(nextDateObj.getMonth() + 1).padStart(2, '0')}`;
+    const formatDayHeader = (dateStr) => {
+        if (dateStr === todayStr) return `Hari Ini (${dateStr.split('-').reverse().join('/')})`;
+        const parts = dateStr.split('-');
+        const d = new Date(parts[0], parts[1]-1, parts[2]);
+        const yest = new Date(); yest.setDate(yest.getDate() - 1);
+        const tom = new Date(); tom.setDate(tom.getDate() + 1);
+        if (dateStr === getSafeYMD(yest)) return `Kemarin (${dateStr.split('-').reverse().join('/')})`;
+        if (dateStr === getSafeYMD(tom)) return `Besok (${dateStr.split('-').reverse().join('/')})`;
+        return dateStr.split('-').reverse().join('/');
+    };
 
     const shifts = [
-        { key: 'jam_12', label: '☀️ 12:00', time: 'Dinas Pagi' },
-        { key: 'jam_18', label: '🌆 JAM 16 / 18 / 20', time: 'Dinas Sore' },
-        { key: 'jam_24', label: '🌙 24:00', time: 'Dinas Malam' },
-        { key: 'jam_06', label: '🌅 04/06', time: `Malam Tgl ${nextDateStr}` }
+        { key: 'jam_12', label: '12:00' },
+        { key: 'jam_18', label: '16/18/20' },
+        { key: 'jam_24', label: '24:00' },
+        { key: 'jam_06', label: '04/06' }
     ];
 
-    const handleToggleShift = async (recordId, medName, shift) => {
+    const handleToggleShift = async (recordId, medName, dateStr, shift) => {
         const currentRecordLogs = localLogsMap[recordId] || {};
-        const dayLogs = currentRecordLogs[selectedDate] || {};
+        const dayLogs = currentRecordLogs[dateStr] || {};
         const medLogs = dayLogs[medName] || {};
         const shiftLog = medLogs[shift] || { checked: false };
 
@@ -4838,7 +5287,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
 
         const updatedRecordLogs = {
             ...currentRecordLogs,
-            [selectedDate]: { ...dayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
+            [dateStr]: { ...dayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
         };
 
         setLocalLogsMap(prev => ({ ...prev, [recordId]: updatedRecordLogs }));
@@ -4848,16 +5297,16 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
         } catch (e) {}
     };
 
-    const handleTogglePattern = async (recordId, medName, shift) => {
+    const handleTogglePattern = async (recordId, medName, dateStr, shift) => {
         const currentRecordLogs = localLogsMap[recordId] || {};
-        const dayLogs = currentRecordLogs[selectedDate] || {};
+        const dayLogs = currentRecordLogs[dateStr] || {};
         const medLogs = dayLogs[medName] || {};
         const shiftLog = medLogs[shift] || { checked: false };
 
         const updatedShiftLog = { ...shiftLog, scheduled: !shiftLog.scheduled };
         const updatedRecordLogs = {
             ...currentRecordLogs,
-            [selectedDate]: { ...dayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
+            [dateStr]: { ...dayLogs, [medName]: { ...medLogs, [shift]: updatedShiftLog } }
         };
 
         setLocalLogsMap(prev => ({ ...prev, [recordId]: updatedRecordLogs }));
@@ -4872,7 +5321,6 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
         
         return sorted.map(record => {
             const currentRecordLogs = localLogsMap[record.id] || {};
-            const dayLogs = currentRecordLogs[selectedDate] || {};
             
             const planMeds = (record.planning || '').split('\n')
                 .map(line => line.trim().replace(/^[-*\u2022\d.]+\s*/, ''))
@@ -4885,10 +5333,12 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                     return /\d+\s*x/i.test(lower) || /\b(mg|gr|mcg|ml|iu|tts|amp|vial|tab|caps|syr|inj|iv|po|im|sc|drip|supp|prn|k\/p|gtt|fls|flash)\b/i.test(lower) || lower.startsWith('th') || lower.startsWith('rx') || /\/\s*\d+\s*jam/i.test(lower);
                 });
 
-            const logMeds = Object.keys(dayLogs).filter(medName => {
-                const shiftsObj = dayLogs[medName] || {};
-                return Object.values(shiftsObj).some(s => s && (s.checked || s.scheduled));
-            });
+            const logMeds = Object.keys(currentRecordLogs)
+                .filter(dateStr => displayDates.includes(dateStr))
+                .flatMap(dateStr => {
+                    const shiftsObj = currentRecordLogs[dateStr] || {};
+                    return Object.keys(shiftsObj).filter(med => Object.values(shiftsObj[med]).some(s => s && (s.checked || s.scheduled)));
+                });
 
             const extractedMeds = Array.from(new Set([...planMeds, ...logMeds]));
             const medsConfig = {};
@@ -4896,8 +5346,6 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
             extractedMeds.forEach(med => {
                 const lowerMed = med.toLowerCase();
                 let freq = 1;
-                
-                // ✨ MESIN PINTAR BACA / 8 JAM DLL
                 const freqMatch = med.match(/(\d+)\s*x/i);
                 if (freqMatch) freq = parseInt(freqMatch[1]);
                 else if (/\/\s*8\s*jam/i.test(lowerMed)) freq = 3;
@@ -4911,6 +5359,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
 
                 const everCheckedShifts = [];
                 Object.keys(currentRecordLogs).forEach(date => {
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return; 
                     const dayData = currentRecordLogs[date] || {};
                     const medShifts = dayData[med] || {};
                     Object.keys(medShifts).forEach(sKey => {
@@ -4936,69 +5385,73 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                         everCheckedShifts.forEach(sKey => { if (!activeShifts.includes(sKey)) activeShifts.push(sKey); });
                     } else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
                 } else {
-                    if (lowerMed.includes('malam') || lowerMed.includes('24')) activeShifts = ['jam_24'];
-                    else if (lowerMed.includes('pagi') || lowerMed.includes('12')) activeShifts = ['jam_12'];
-                    else if (lowerMed.includes('sore') || lowerMed.includes('18') || lowerMed.includes('16') || lowerMed.includes('20')) activeShifts = ['jam_18'];
-                    else {
-                        if (freq === 1) activeShifts = ['jam_12'];
-                        else if (freq === 2) activeShifts = ['jam_18', 'jam_06'];
-                        else if (freq === 3) activeShifts = ['jam_12', 'jam_18', 'jam_06'];
-                        else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
-                    }
-                }
+                    // ✨ FIX V25: MENGGUNAKAN STRICT REGEX BOUNDARY UNTUK INJEKSI (ANTI-COMBIVENT CRASH)
+                    const isInjeksi = /\b(inj|iv|im|sc|drip|vial|amp|inf)\b/i.test(lowerMed);
 
-                // ✨ LOGIKA STOP DAN 48 JAM
-                if (isStopOrTunda) {
-                    activeShifts = []; 
-                } else if (is48Jam) {
-                    const prevDateObj = new Date(selectedDate);
-                    prevDateObj.setDate(prevDateObj.getDate() - 1);
-                    const yLog = currentRecordLogs[prevDateObj.toLocaleDateString('en-CA')]?.[med] || {};
-                    const givenYesterday = Object.values(yLog).some(s => s.checked);
-                    if (givenYesterday) activeShifts = []; // Kemarin dikasih, hari ini libur
+                    // ✨ FIX V25: JIKA OBAT 48 JAM ATAU INJEKSI, KOSONGKAN DEFAULT JAM AGAR TINGGAL KLIK JADWAL NYA
+                    if (isInjeksi || is48Jam) {
+                        activeShifts = [];
+                    } else {
+                        const isMalam = /malam|\bjam\s*24\b|\b24[:.]00\b/i.test(lowerMed);
+                        const isPagi = /pagi|\bjam\s*12\b|\b12[:.]00\b/i.test(lowerMed);
+                        const isSore = /sore|\bjam\s*(16|18|20)\b|\b(16|18|20)[:.]00\b/i.test(lowerMed);
+
+                        if (isMalam) activeShifts = ['jam_24'];
+                        else if (isPagi) activeShifts = ['jam_12'];
+                        else if (isSore) activeShifts = ['jam_18'];
+                        else {
+                        // 1x1 dibiarkan KOSONG agar disetel manual oleh perawat
+                            if (freq === 1) activeShifts = [];
+                            else if (freq === 2) activeShifts = ['jam_18', 'jam_06'];
+                            else if (freq === 3) activeShifts = ['jam_12', 'jam_18', 'jam_06'];
+                            else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+                        }
+                    }
                 }
 
                 medsConfig[med] = { freq, activeShifts, isStopOrTunda, is48Jam };
             });
 
-            const prevDateObj = new Date(selectedDate);
-            prevDateObj.setDate(prevDateObj.getDate() - 1);
-            const yesterdayLogs = currentRecordLogs[prevDateObj.toLocaleDateString('en-CA')] || {};
-
-            return { ...record, extractedMeds, dayLogs, currentRecordLogs, yesterdayLogs, medsConfig };
+            return { ...record, extractedMeds, currentRecordLogs, medsConfig };
         }).filter(r => r.extractedMeds.length > 0); 
-    }, [records, localLogsMap, selectedDate]);
+    }, [records, localLogsMap, displayDates]);
 
     const recapByShift = useMemo(() => {
         const structure = { jam_12: [], jam_18: [], jam_24: [], jam_06: [] };
-
         shifts.forEach(s => {
             recordsWithMeds.forEach(p => {
+                const dayLogs = p.currentRecordLogs[selectedDate] || {};
                 const medsInThisShift = p.extractedMeds.filter(med => {
-                    const config = p.medsConfig[med] || { activeShifts: [], isStopOrTunda: false };
-                    if (config.isStopOrTunda) return false; // Jangan tampilkan di rekap shift jika di-stop
-                    return p.dayLogs[med]?.[s.key]?.checked || config.activeShifts.includes(s.key);
+                    const config = p.medsConfig[med] || { activeShifts: [], isStopOrTunda: false, is48Jam: false };
+                    if (config.isStopOrTunda) return false; 
+                    
+                    let actShifts = [...config.activeShifts];
+                    if (config.is48Jam) {
+                        const prevD = new Date(selectedDate.split('-')[0], selectedDate.split('-')[1]-1, selectedDate.split('-')[2]);
+                        prevD.setDate(prevD.getDate() - 1);
+                        const givenYesterday = Object.values(p.currentRecordLogs[getSafeYMD(prevD)]?.[med] || {}).some(sh => sh.checked);
+                        if (givenYesterday) actShifts = [];
+                    }
+                    return dayLogs[med]?.[s.key]?.checked || actShifts.includes(s.key);
                 });
 
                 if (medsInThisShift.length > 0) {
                     structure[s.key].push({
-                        patientId: p.id,
-                        name: p.name,
-                        roomNumber: p.roomNumber,
-                        bpjsClass: p.bpjsClass,
-                        rmNumber: p.rmNumber,
-                        dpjpName: p.dpjpName,
-                        meds: medsInThisShift.map(medName => ({
-                            name: medName,
-                            log: p.dayLogs[medName]?.[s.key] || { checked: false }
-                        }))
+                        patientId: p.id, name: p.name, roomNumber: p.roomNumber, bpjsClass: p.bpjsClass, rmNumber: p.rmNumber, dpjpName: p.dpjpName,
+                        meds: medsInThisShift.map(medName => ({ name: medName, log: dayLogs[medName]?.[s.key] || { checked: false } }))
                     });
                 }
             });
         });
-
         return structure;
-    }, [recordsWithMeds]);
+    }, [recordsWithMeds, selectedDate]);
+
+    const changeDate = (offset) => {
+        const parts = selectedDate.split('-');
+        const d = new Date(parts[0], parts[1]-1, parts[2]);
+        d.setDate(d.getDate() + offset);
+        setSelectedDate(getSafeYMD(d));
+    };
 
     return (
         <div className="flex flex-col h-full bg-slate-50 animate-in fade-in duration-300">
@@ -5011,88 +5464,96 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                     </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                    <button type="button" onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); const n = d.toLocaleDateString('en-CA'); if (n >= minDateStr) setSelectedDate(n); }} className="px-2 py-1 bg-white border border-slate-200 rounded text-[9px] font-extrabold text-slate-600 hover:bg-slate-100 hover:text-indigo-600 shadow-sm transition hidden md:block">⬅️ Kemarin</button>
-                    <button type="button" onClick={() => setSelectedDate(todayStr)} className={`px-2 py-1 border rounded text-[9px] font-extrabold shadow-sm transition hidden md:block ${selectedDate === todayStr ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-emerald-600'}`}>🏠 Hari Ini</button>
-                    
-                    <div className="relative inline-block ml-1">
-                        <div className="bg-white border-2 border-slate-300 rounded-lg px-2 py-0.5 font-bold text-slate-700 text-[10px] focus:border-emerald-500 transition shadow-sm flex items-center justify-between min-w-[85px]">
-                            <span>{selectedDate.split('-').reverse().join('/')}</span>
-                            <span className="text-slate-400 text-[9px] ml-1">📅</span>
-                        </div>
-                        <input type="date" value={selectedDate} min={minDateStr} max={todayStr} onChange={e => setSelectedDate(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
-                    </div>
+                    <button onClick={() => changeDate(-1)} className="px-2 py-1 bg-white border border-slate-300 rounded text-[9px] font-extrabold text-slate-600 hover:bg-indigo-50 hover:border-indigo-300 transition shadow-sm">⬅️ Mundur</button>
+                    <button onClick={() => setSelectedDate(todayStr)} className={`px-2 py-1 border rounded text-[9px] font-extrabold shadow-sm transition ${selectedDate === todayStr ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}>🏠 Hari Ini</button>
+                    <button onClick={() => changeDate(1)} className="px-2 py-1 bg-white border border-slate-300 rounded text-[9px] font-extrabold text-slate-600 hover:bg-indigo-50 hover:border-indigo-300 transition shadow-sm">Maju ➡️</button>
                 </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
                 {!isRecapMode ? (
                     recordsWithMeds.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-40 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
-                            <span className="text-3xl mb-2">📭</span>
-                            <p className="text-xs font-bold">Tidak ada jadwal obat pasien di tanggal ini.</p>
-                        </div>
+                        <div className="flex flex-col items-center justify-center h-40 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400"><span className="text-3xl mb-2">📭</span><p className="text-xs font-bold">Tidak ada jadwal obat.</p></div>
                     ) : (
                         recordsWithMeds.map(record => (
-                            <div key={record.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col md:flex-row hover:shadow-md transition-shadow mb-3 last:mb-0">
-                                <div onClick={() => onEditPatient && onEditPatient(record)} className="bg-slate-50 md:w-64 p-3 border-b md:border-b-0 md:border-r border-slate-200 flex flex-col justify-center relative overflow-hidden cursor-pointer hover:bg-indigo-50/80 transition-colors group">
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <span className="bg-indigo-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded shadow-sm">BED {record.roomNumber}</span>
-                                        <span className="text-[9px] font-bold text-slate-500 bg-white border px-1.5 py-0.5 rounded">Kls: {record.bpjsClass || 'UMUM'}</span>
+                            <div key={record.id} className="bg-white border border-slate-300 rounded-xl shadow-sm overflow-hidden mb-4 last:mb-0">
+                                <div onClick={() => onEditPatient && onEditPatient(record)} className="bg-slate-100 p-2.5 border-b border-slate-300 flex justify-between items-center cursor-pointer hover:bg-indigo-50 transition-colors">
+                                    <div className="flex items-center gap-3">
+                                        <span className="bg-indigo-600 text-white text-[11px] font-black px-2 py-0.5 rounded shadow-sm">BED {record.roomNumber}</span>
+                                        <div><h3 className="font-black text-sm text-slate-800 leading-tight">{record.name} <span className="text-[10px] font-normal text-slate-500 font-mono">({record.rmNumber})</span></h3></div>
                                     </div>
-                                    <h3 className="font-black text-[14px] text-slate-800 leading-tight mb-0.5">{record.name}</h3>
-                                    <p className="text-[10px] font-mono font-bold text-slate-400 mb-1">RM: {record.rmNumber || '-'}</p>
+                                    <p className="text-[10px] text-slate-500 font-bold">DPJP: {record.dpjpName}</p>
                                 </div>
 
-                                <div className="flex-1 p-3 flex flex-col gap-2 bg-white">
+                                <div className="p-3 bg-white">
                                     {record.extractedMeds.map((med, mIdx) => {
-                                        const medLog = record.dayLogs[med] || {};
-                                        const yMedLog = record.yesterdayLogs[med] || {};
-                                        const yCheckedShifts = Object.keys(yMedLog).filter(k => yMedLog[k].checked).map(k => ({ jam_12: '12', jam_18: '16/18/20', jam_24: '24', jam_06: '06' }[k] || k));
-                                        
                                         const config = record.medsConfig[med] || { activeShifts: [], isStopOrTunda: false, is48Jam: false };
-                                        const checkedShifts = Object.keys(medLog).filter(k => medLog[k].checked);
-                                        const isRecommended = (shiftKey) => !checkedShifts.includes(shiftKey) && config.activeShifts.includes(shiftKey);
-
+                                        
                                         return (
-                                            <div key={mIdx} className={`bg-slate-50/50 border rounded-lg p-2 transition ${config.isStopOrTunda ? 'border-rose-200 bg-rose-50/30 opacity-70' : 'border-slate-100 hover:border-emerald-200'}`}>
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1.5 border-b border-slate-100 pb-1.5">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <p className={`text-[11px] font-bold ${config.isStopOrTunda ? 'text-rose-500 line-through' : 'text-indigo-900'}`}>📄 {med}</p>
-                                                        {config.isStopOrTunda && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black shadow-sm">🛑 DIHENTIKAN</span>}
-                                                        {config.is48Jam && <span className="text-[8px] bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded font-black shadow-sm">⏳ PER 48 JAM</span>}
+                                            <div key={mIdx} className={`flex border rounded-lg overflow-x-auto shadow-sm custom-scrollbar mb-2 last:mb-0 ${config.isStopOrTunda ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200 bg-slate-50/30 hover:border-emerald-200 transition-colors'}`}>
+                                                
+                                                <div className="w-[170px] sm:w-[200px] flex-shrink-0 p-2.5 bg-white border-r border-slate-200 sticky left-0 z-10 flex flex-col justify-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                                    <div className="flex items-start gap-1.5 flex-wrap">
+                                                        <h4 className={`font-bold text-[11px] leading-tight ${config.isStopOrTunda ? 'text-rose-500 line-through' : 'text-indigo-900'}`}>📄 {med}</h4>
+                                                        {config.isStopOrTunda && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">🛑 STOP</span>}
+                                                        {config.is48Jam && <span className="text-[8px] bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">⏳ 48 JAM</span>}
                                                         {getAntibioticDay(med, record.currentRecordLogs) && !config.isStopOrTunda && (
-                                                            <span className="text-[8px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm">🚨 {getAntibioticDay(med, record.currentRecordLogs)}</span>
+                                                            <span className="text-[8px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm mt-0.5">🚨 {getAntibioticDay(med, record.currentRecordLogs)}</span>
                                                         )}
                                                     </div>
                                                 </div>
 
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                                    {shifts.map(s => {
-                                                        const log = medLog[s.key] || { checked: false };
-                                                        const recommendGlow = isRecommended(s.key);
+                                                <div className="flex">
+                                                    {displayDates.map((dateStr, dIdx) => {
+                                                        const isToday = dateStr === todayStr;
+                                                        const medLogForDate = record.currentRecordLogs[dateStr]?.[med] || {};
+                                                        const checkedShiftsForDate = Object.keys(medLogForDate).filter(k => medLogForDate[k].checked);
+                                                        
+                                                        let actShifts = [...config.activeShifts];
+                                                        if (config.isStopOrTunda) { actShifts = []; } 
+                                                        else if (config.is48Jam) {
+                                                            const prevD = new Date(dateStr.split('-')[0], dateStr.split('-')[1]-1, dateStr.split('-')[2]);
+                                                            prevD.setDate(prevD.getDate() - 1);
+                                                            const givenYesterday = Object.values(record.currentRecordLogs[getSafeYMD(prevD)]?.[med] || {}).some(sh => sh.checked);
+                                                            if (givenYesterday) actShifts = [];
+                                                        }
+
+                                                        const isRecommended = (shiftKey) => !checkedShiftsForDate.includes(shiftKey) && actShifts.includes(shiftKey);
 
                                                         return (
-                                                            <button 
-                                                                key={s.key} type="button" 
-                                                                onClick={() => !config.isStopOrTunda && handleToggleShift(record.id, med, s.key)} 
-                                                                disabled={config.isStopOrTunda}
-                                                                className={`p-1.5 rounded-md border text-left flex flex-col justify-between transition-all group h-[44px] relative overflow-hidden ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-2 ring-yellow-400/50 shadow-sm animate-pulse' : config.isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
-                                                                {log.checked && <div className="absolute top-0 right-0 w-6 h-6 bg-emerald-100 rounded-bl-full -z-10"></div>}
-                                                                <div className="flex justify-between items-center w-full relative z-10">
-                                                                    <span className={`text-[8.5px] font-extrabold uppercase tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-600'}`}>{s.label}</span>
-                                                                    <div className="flex items-center gap-1">
-                                                                        {!log.checked && !config.isStopOrTunda && (
-                                                                            <span onClick={(e) => { e.stopPropagation(); handleTogglePattern(record.id, med, s.key); }} className={`text-[10px] p-0.5 rounded hover:bg-slate-200 active:bg-slate-300 cursor-pointer ${log.scheduled ? 'bg-amber-400 text-slate-950 font-black scale-110 shadow-xs' : 'text-slate-300'}`} title="Set Pola Jam Ini">🕒</span>
-                                                                        )}
-                                                                        <span className="text-[8px]">{log.checked ? '✅' : '⚪'}</span>
-                                                                    </div>
+                                                            <div key={dateStr} className={`w-[220px] sm:w-[250px] p-2 flex-shrink-0 flex flex-col ${dIdx !== displayDates.length - 1 ? 'border-r border-slate-200' : ''}`}>
+                                                                <div className={`text-center text-[10px] font-bold py-1 mb-2 rounded shadow-sm ${isToday ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-200 text-slate-600 border border-slate-300'}`}>
+                                                                    {formatDayHeader(dateStr)}
                                                                 </div>
-                                                                {log.checked ? (
-                                                                    <div className="text-[7.5px] font-bold text-emerald-700 leading-none truncate w-full mt-1 relative z-10">⏱️ {log.time} ({log.by?.split(' ')[0]})</div>
-                                                                ) : (
-                                                                    <span className={`text-[7px] font-mono relative z-10 ${recommendGlow ? 'text-yellow-600 font-bold' : 'text-slate-400'}`}>{recommendGlow ? `NEXT ➔ ${s.time}` : s.time}</span>
-                                                                )}
-                                                            </button>
+                                                                
+                                                                <div className="grid grid-cols-4 gap-1 flex-1">
+                                                                    {shifts.map(s => {
+                                                                        const log = medLogForDate[s.key] || { checked: false, scheduled: false };
+                                                                        const recommendGlow = isRecommended(s.key);
+                                                                        
+                                                                        return (
+                                                                            <button 
+                                                                                key={s.key} type="button" 
+                                                                                onClick={() => !config.isStopOrTunda && handleToggleShift(record.id, med, dateStr, s.key)}
+                                                                                disabled={config.isStopOrTunda}
+                                                                                className={`flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : config.isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+                                                                            >
+                                                                                <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-500'}`}>{s.label}</span>
+                                                                                <div className="flex items-center justify-center w-full mt-0.5">
+                                                                                    <span className="text-[12px] leading-none">{log.checked ? '✅' : '⚪'}</span>
+                                                                                </div>
+                                                                                <div className="w-full flex justify-between items-end mt-0.5">
+                                                                                    {!log.checked && !config.isStopOrTunda ? (
+                                                                                        <span onClick={(e) => { e.stopPropagation(); handleTogglePattern(record.id, med, dateStr, s.key); }} className={`text-[9px] p-0.5 rounded hover:bg-slate-200 active:bg-slate-300 cursor-pointer mx-auto ${log.scheduled ? 'bg-amber-400 text-slate-950 font-black shadow-xs scale-110' : 'text-slate-300'}`} title="Set Pola Jadwal">🕒</span>
+                                                                                    ) : log.checked ? (
+                                                                                        <span className="text-[7.5px] font-bold text-emerald-700 leading-none truncate w-full text-center">{log.time}</span>
+                                                                                    ) : <span className="h-[14px] w-full"></span>}
+                                                                                </div>
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
                                                         );
                                                     })}
                                                 </div>
@@ -5125,7 +5586,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                                     </div>
                                                     <div className="space-y-1">
                                                         {p.meds.map((m, idx) => (
-                                                            <div key={idx} onClick={() => handleToggleShift(p.patientId, m.name, s.key)} className={`w-full p-1.5 rounded text-left border text-[9.5px] font-bold flex justify-between items-center cursor-pointer transition ${m.log.checked ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
+                                                            <div key={idx} onClick={() => handleToggleShift(p.patientId, m.name, selectedDate, s.key)} className={`w-full p-1.5 rounded text-left border text-[9.5px] font-bold flex justify-between items-center cursor-pointer transition ${m.log.checked ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
                                                                 <span className="truncate pr-1">💊 {m.name}</span>
                                                                 <span className="text-[9px] shrink-0">{m.log.checked ? `✅ (${m.log.time})` : '⚪'}</span>
                                                             </div>
@@ -5205,8 +5666,41 @@ const InputSidePanel = ({
     showRaber1, setShowRaber1, showRaber2, setShowRaber2, historyLogs,
     pullDataForField, setShowTtvModal, appendText, handleDischarge, setSelectedRecordForPrint,
     setRecordForLapor, isFormReady, loading, ALL_PLANNING_OPTIONS, handleDeleteRecord, onPrintCPO,
-    onPrintLabel, masterLabs = [], masterRads = [], masterProcedures = [], masterMedications = [], archivedRecords = [], onOpenMarModal
+    onPrintLabel, masterLabs = [], masterRads = [], masterProcedures = [], masterMedications = [], 
+    archivedRecords = [], activeRecords = [], onOpenMarModal, db, currentUser, firebaseConfig
 }) => {
+    // 1. STATE BALON TIP
+    const [coEditors, setCoEditors] = useState([]);
+
+    // 2. EFEK BALON TIP (DILENGKAPI PELINDUNG ANTI-BLANK)
+    useEffect(() => {
+        // ✨ PERHATIKAN TANDA TANYA (?): Ini mencegah layar putih jika data terlambat masuk
+        if (showInputModal && currentRecordId && db && currentUser?.name && firebaseConfig?.appId) {
+            try {
+                const presenceRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords/${currentRecordId}/presence/${currentUser.name}`);
+                setDoc(presenceRef, { name: currentUser.name, activeAt: new Date().getTime() }).catch(() => {});
+
+                const q = collection(db, `artifacts/${firebaseConfig.appId}/public/data/medicalRecords/${currentRecordId}/presence`);
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const editors = [];
+                    snapshot.forEach((d) => {
+                        const data = d.data();
+                        if (data.name && data.name !== currentUser.name) {
+                            editors.push(data.name.split(' ')[0]); 
+                        }
+                    });
+                    setCoEditors(editors);
+                });
+
+                return () => {
+                    unsubscribe();
+                    deleteDoc(presenceRef).catch(() => {});
+                };
+            } catch (error) {
+                console.log("Error Balon Tip:", error); // Menangkap error agar layar tidak mati
+            }
+        }
+    }, [showInputModal, currentRecordId, currentUser?.name, db, firebaseConfig]);
     
     // 1. STATE & REF
     const [showSmartPaste, setShowSmartPaste] = useState(false);
@@ -5219,7 +5713,7 @@ const InputSidePanel = ({
     const [showRadModal, setShowRadModal] = useState(false);
     const [rawRadData, setRawRadData] = useState('');
     const [hideSuggestion, setHideSuggestion] = useState(false);
-    useEffect(() => { setHideSuggestion(false); }, [formData?.name]);
+    useEffect(() => { setHideSuggestion(false); }, [formData?.name]);    
     const archivedMatches = useMemo(() => {
         const currentName = formData?.name || '';
         const currentRm = formData?.rmNumber || '';
@@ -5363,19 +5857,16 @@ const InputSidePanel = ({
         // Helper: Bersihkan Teks
         const cleanCase = (str) => { if (!str) return ''; return str.toLowerCase().replace(/(^\s*\w|[\.\!\?]\s*\w|\n\s*\w)/g, c => c.toUpperCase()); };
 
-        // Helper Penting: GABUNGKAN TEKS (LAMA + BARU)
+        // Helper Penting: GABUNGKAN TEKS (BARU DI ATAS)
         const appendText = (fieldName, newText) => {
-            if (!newText || !newText.trim()) return; // Kalau kosong gak usah diproses
+            if (!newText || !newText.trim()) return; 
+            const currentText = formData[fieldName] || ''; 
             
-            const currentText = formData[fieldName] || ''; // Ambil teks yang sudah ada
-            
-            // Kalau kolom masih kosong, langsung isi.
             if (!currentText.trim()) {
                 handleInputChange({ target: { name: fieldName, value: newText.trim() } });
-            } 
-            // Kalau sudah ada isinya, tambahkan di bawahnya (kasih jarak 2 Enter)
-            else {
-                handleInputChange({ target: { name: fieldName, value: `${currentText.trim()}\n\n${newText.trim()}` } });
+            } else {
+                // ✨ PREPEND: Taruh di atas teks lama
+                handleInputChange({ target: { name: fieldName, value: `${newText.trim()}\n\n${currentText.trim()}` } });
             }
         };
 
@@ -5484,12 +5975,12 @@ const InputSidePanel = ({
         if (prescriptionList.length > 0) { resultP += `\n\n-- Terapi Obat --\n${prescriptionList.join('\n')}`; }
 
         // --- INI BAGIAN KUNCINYA (APPEND) ---
+        // --- INI BAGIAN KUNCINYA (PREPEND / TERBARU DI ATAS) ---
         const currentP = formData.planning || '';
         if (currentP.trim()) {
-            // Kalau sudah ada catatan operan, tambahkan di bawahnya
-            handleInputChange({ target: { name: 'planning', value: `${currentP.trim()}\n\n${resultP}` } });
+            // Kalau sudah ada catatan operan, tambahkan Rencana e-Cal di ATASNYA
+            handleInputChange({ target: { name: 'planning', value: `${resultP}\n\n${currentP.trim()}` } });
         } else {
-            // Kalau kosong, langsung isi
             handleInputChange({ target: { name: 'planning', value: resultP } });
         }
     };
@@ -5517,7 +6008,7 @@ const InputSidePanel = ({
             { key: 'Kalsium', reg: /(?:Kalsium|Calsium|\bCa\b)/i },
             { key: 'GDS', reg: /(?:Gula Darah Sewaktu|GDS|Glukosa Sewaktu|Kadar Gula)/i },
             { key: 'GDP', reg: /(?:Gula Darah Puasa|GDP|Glukosa Puasa)/i },
-            { key: '2JPP', reg: /(?:Gula Darah 2 Jam PP|GDP-2JPP|Glukosa 2 Jam PP)/i },
+            { key: '2JPP', reg: /(?:Gula Darah 2 Jam PP|GDP[- ]?2JPP|Glukosa 2 Jam PP|\b2\s?JPP\b)/i },
             { key: 'Ur', reg: /(?:Ureum|Ur|Urea)/i },
             { key: 'Cr', reg: /(?:Kreatinin|Creatinin|\bCr\b)/i },
             { key: 'Albumin', reg: /(?:Albumin|Alb)/i },
@@ -5758,11 +6249,19 @@ const InputSidePanel = ({
             
             {/* A. HEADER BARU */}
             <div className="px-3 py-2 border-b flex justify-between items-center bg-gray-50 shadow-sm z-20 flex-shrink-0 relative">
-                <div className="leading-tight overflow-hidden mr-2">
-                    <h2 className="font-bold text-xs text-gray-800 truncate max-w-[150px]">
-                        {isEditing ? formData.name : 'Pasien Baru'}
-                    </h2>
-                    <p className="text-[9px] text-gray-500 font-bold">{formData.roomNumber || 'Pilih Kamar'}</p>
+                <div className="leading-tight overflow-hidden mr-2 flex items-center gap-2">
+                    <div>
+                        <h2 className="font-bold text-xs text-gray-800 truncate max-w-[150px]">
+                            {isEditing ? formData.name : 'Pasien Baru'}
+                        </h2>
+                        <p className="text-[9px] text-gray-500 font-bold">{formData.roomNumber || 'Pilih Kamar'}</p>
+                    </div>
+                    {/* ✨ BALON TIP REAL-TIME MULTIUSER DI SINI */}
+                    {coEditors.length > 0 && (
+                        <div className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-amber-300 animate-pulse flex items-center shadow-sm">
+                            👀 {coEditors.join(', ')} sedang membuka ini
+                        </div>
+                    )}
                 </div>                
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                 {/* BAGIAN Tombol Edit (Hanya Muncul Jika isEditing true) */}
@@ -6087,8 +6586,16 @@ const InputSidePanel = ({
                                                     alert("⚠️ Silakan klik tombol '💾 Simpan' di bawah terlebih dahulu untuk mendaftarkan Pasien Baru ini, sebelum mengisi CPO.");
                                                     return;
                                                 }
-                                                onOpenMarModal({ ...formData, id: currentRecordId });
-                                            }}
+                                                if (typeof onOpenMarModal !== 'function') {
+                                                    alert("⚠️ Kabel onOpenMarModal belum terpasang di bawah App.jsx!");
+                                                    return;
+                                                }
+                                                // Pelindung jika activeRecords kosong/undefined
+                                                const safeActiveRecords = activeRecords || [];
+                                                const trueRecord = safeActiveRecords.find(r => r.id === currentRecordId);
+                                                
+                                                onOpenMarModal(trueRecord || { ...formData, id: currentRecordId });
+                                                }}
                                                 className={`text-[9px] px-2 py-0.5 rounded border font-bold shadow-sm transition relative z-10 ${abMeds.length > 0 ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100 ring-1 ring-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
                                                 title="Catatan Pemberian Obat"
                                             >
@@ -6110,7 +6617,11 @@ const InputSidePanel = ({
                                     onSelect={(cat, itemLabel) => {
                                         const found = ALL_PLANNING_OPTIONS.find(o => o.label === itemLabel);
                                         if (found && found.type === 'Protocol') {
-                                            appendText('planning', found.isi);
+                                            // ✨ FIX: Khusus protokol panjang, buat baris baru murni di atas teks lama
+                                            setFormData(prev => {
+                                                const current = prev.planning || '';
+                                                return { ...prev, planning: current.trim() ? `${found.isi.trim()}\n\n${current.trim()}` : found.isi.trim() };
+                                            });
                                         } else {
                                             const type = found ? found.type : 'Rx';
                                             let prefix = type === 'Lab' ? 'Lab. R/ ' : type === 'Rad' ? 'Rad. R/ ' : type === 'Med' ? 'TM. ' : 'Th. ';
@@ -6155,7 +6666,14 @@ const InputSidePanel = ({
                 <div className="bg-gray-100 border-t border-gray-300 flex-1 flex flex-col min-h-[300px]">
                      <div className="p-3 bg-gray-200 border-b border-gray-300 shadow-inner">
                         <h3 className="text-[10px] font-bold text-gray-600 uppercase flex justify-between items-center">
-                            <span>🕒 Riwayat Catatan ({historyLogs.length})</span>
+                            <div className="flex items-center gap-2">
+                                <span>🕒 Riwayat Catatan ({historyLogs.length})</span>
+                                {activeRecords.find(r => r.id === currentRecordId)?.contributors && (
+                                    <span className="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded shadow-sm normal-case font-extrabold tracking-tight">
+                                        Tim Hari Ini: [{activeRecords.find(r => r.id === currentRecordId).contributors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(', ')}]
+                                    </span>
+                                )}
+                            </div>
                             <span className="text-[9px] font-normal italic text-gray-500">Scroll untuk melihat yg lama ⬇</span>
                         </h3>
                      </div>
@@ -6346,7 +6864,7 @@ const InputSidePanel = ({
     );
 };
 
-// ✨ 2. MESIN PEMBACA & PEWARNA OTOMATIS (V2: DETEKSI ANGKA + TEKS KLINIS)
+// ✨ 2. MESIN PEMBACA & PEWARNA OTOMATIS (V3: ANTI SALAH BACA ANGKA DI NAMA LAB)
 const FormattedObjective = ({ text }) => {
     if (!text) return <span>-</span>;
     
@@ -6360,29 +6878,40 @@ const FormattedObjective = ({ text }) => {
                 
                 // --- STEP 1: DETEKSI ANGKA DARI KAMUS ---
                 for (const [key, range] of Object.entries(LAB_NORMAL_RANGES)) {
-                    if (lowerLine.startsWith(key.toLowerCase() + ' ')) {
-                        const match = line.match(/[\d.,]+/);
-                        if (match) {
-                            let valStr = match[0];
-                            let val = range.max > 1000 ? parseFloat(valStr.replace(/\./g, '').replace(/,/g, '')) : parseFloat(valStr.replace(',', '.'));
+                    const keyLower = key.toLowerCase();
+                    
+                    // Pastikan baris diawali dengan nama lab
+                    if (lowerLine.startsWith(keyLower)) {
+                        // Cek karakter setelahnya agar tidak tumpang tindih (misal Hb dan HbA1c)
+                        const nextChar = lowerLine.charAt(keyLower.length);
+                        if (nextChar === '' || /[\s:=]/.test(nextChar)) {
+                            
+                            // ✨ KUNCI PERBAIKAN: Potong nama lab dari kalimat!
+                            // Ini agar angka di dalam nama lab (spt "2" di 2JPP) tidak terbaca sebagai hasil
+                            const textAfterKey = line.substring(keyLower.length);
+                            
+                            // Cari angka pertama *setelah* nama lab dihapus
+                            const match = textAfterKey.match(/[-]?\d+[\.,]?\d*/);
+                            
+                            if (match) {
+                                let valStr = match[0];
+                                let val = range.max > 1000 ? parseFloat(valStr.replace(/\./g, '').replace(/,/g, '')) : parseFloat(valStr.replace(',', '.'));
 
-                            if (!isNaN(val)) {
-                                if (val > range.max) abnormalType = 'high';
-                                else if (val < range.min) abnormalType = 'low';
+                                if (!isNaN(val)) {
+                                    if (val > range.max) abnormalType = 'high';
+                                    else if (val < range.min) abnormalType = 'low';
+                                }
                             }
+                            break; 
                         }
-                        break; 
                     }
                 }
 
                 // --- STEP 2: DETEKSI TEKS (Uji Kualitatif spt TCM, Swab, Kultur) ---
                 if (!abnormalType) {
-                    // Cek kata-kata bahaya & kata aman
                     const isDanger = /(positif|reaktif|detected|ditemukan|resistan)/i.test(lowerLine);
                     const isSafe = /(negatif|non[- ]?reaktif|not detected|tidak ditemukan)/i.test(lowerLine);
                     
-                    // Logika Pintar: Jika ada kata bahaya DAN tidak disangkal oleh kata aman
-                    // (Contoh: "Not Detected" punya kata 'detected', tapi karena ada kata 'not', maka dia masuk isSafe)
                     if (isDanger && !isSafe) {
                         abnormalType = 'text-bad';
                     }
@@ -6400,10 +6929,9 @@ const FormattedObjective = ({ text }) => {
                     arrow = " ⬇️";
                 } else if (abnormalType === 'text-bad') {
                     spanClass = "text-red-600 font-bold bg-red-50 px-1 rounded inline-block shadow-sm"; 
-                    arrow = " ⚠️"; // Panah diganti ikon warning untuk teks
+                    arrow = " ⚠️"; 
                 }
 
-                // Cetak barisnya (<br /> aman di luar kotak warna)
                 return (
                     <span key={idx}>
                         <span className={spanClass}>
@@ -6417,28 +6945,32 @@ const FormattedObjective = ({ text }) => {
     );
 };
 
-// ✨ LOGIKA ANTIBIOTIK: MAZHAB BUKTI CENTANG (EVIDENCE-BASED)
+// ✨ FUNGSI ANTIBIOTIK: MAZHAB BUKTI CENTANG (EVIDENCE-BASED)
 const getAntibioticDay = (medName, medicationLogs = {}) => {
     if (!medName) return null;
     
-    // Cek apakah ini antibiotik (berdasarkan database atau ada tulisan H1/H2)
-    const isAntibiotic = ANTIBIOTICS_DB.some(ab => medName.toLowerCase().includes(ab.toLowerCase())) || /\bH\d+\b/i.test(medName);
+    // 1. Cek apakah obat ini masuk daftar antibiotik
+    const lowerMed = medName.toLowerCase();
+    const isAntibiotic = ANTIBIOTICS_DB.some(ab => lowerMed.includes(ab.toLowerCase())) || /\bH\d+\b/i.test(lowerMed);
     if (!isAntibiotic) return null;
 
     let checkedDaysCount = 0;
     
-    // Hitung hanya tanggal di mana obat ini BENAR-BENAR dicentang (diberikan)
+    // 2. Hitung jumlah HARI BERBEDA yang memiliki minimal 1 centangan
     Object.keys(medicationLogs).forEach(dateStr => {
+        // Pelindung: Abaikan jejak hantu tanggal yang rusak
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
+        
         const dayLog = medicationLogs[dateStr][medName];
         if (dayLog) {
-            const hasCheckedShift = Object.values(dayLog).some(shift => shift.checked);
+            const hasCheckedShift = Object.values(dayLog).some(shift => shift && shift.checked);
             if (hasCheckedShift) checkedDaysCount++;
         }
     });
 
-    // Jika sudah ada riwayat suntik, tampilkan total harinya. Jika belum, tetap H1.
-    if (checkedDaysCount > 0) return `H${checkedDaysCount}`;
-    return 'H1';
+    // 3. Tampilkan Label
+    if (checkedDaysCount === 0) return 'H1'; 
+    return `H${checkedDaysCount}`; 
 };
 
 const App = () => {
