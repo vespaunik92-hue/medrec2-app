@@ -1417,76 +1417,72 @@ const BukuCMTable = ({ records, updateRecord, onPrint, roomList = ROOM_LIST, onE
     );
 };
 
-// --- HELPER: Ekstrak tag [Nama][Jam] di awal baris & marker kolaborator ↔[Nama][Jam] di akhir ---
-// Mengembalikan: { author: 'Nama'|null, collaborators: ['Nama', ...], content: 'teks bersih tanpa tag' }
+// --- HELPER: Ekstrak tag [Nama, Tgl Jam] & marker kolaborator ↔ [Nama] di akhir ---
 const extractLineTags = (line) => {
     let content = line;
     let author = null;
     const collaborators = [];
 
-    // 1. Tag penulis di awal: [Nama][HH:MM]
-    const authorMatch = content.match(/^\[([^\]]+)\]\[[^\]]+\]\s*/);
-    if (authorMatch) {
-        author = authorMatch[1];
-        content = content.slice(authorMatch[0].length);
+    // Murni hanya membaca Tag Baru (inline mode): [Abi, 15/06/26 10:04]
+    const newTagMatch = content.match(/^\[([A-Za-z0-9\s]+),\s*\d{1,2}\/\d{1,2}[^\]]*\]\s*/);
+    if (newTagMatch) {
+        author = newTagMatch[1].trim();
+        content = content.slice(newTagMatch[0].length);
     }
 
-    // 2. Marker kolaborator di akhir (boleh lebih dari satu): [Nama][HH:MM]↔
-    const collabRegex = /\s*\[([^\]]+)\]\[[^\]]+\]↔/g;
-    content = content.replace(collabRegex, (_, name) => {
-        collaborators.push(name);
-        return '';
+    // Murni hanya membaca Marker Kolaborator Baru: [Nama]↔
+    content = content.replace(/\s*\[([^\]]+)\]↔/g, (_, name) => { 
+        collaborators.push(name); 
+        return ''; 
     });
 
     return { author, collaborators, content: content.trim() };
 };
 
-// --- HELPER UNTUK MEMISAHKAN PLANNING (DITAMBAH Th. UNTUK TERAPI) ---
-// ✨ MULTIUSER: tag [Nama][Jam] & marker kolaborator ↔ dilucuti sebelum dicocokkan
-// dengan prefiks Lab./Rad./TM./Th., sehingga item tetap masuk kategori & ter-highlight
-// meskipun sudah ditag oleh sistem merge multiuser.
-// Field labs/rads/tms/rxs/others tetap berupa array STRING (kompatibel dengan kode lama).
-// Tambahan field itemAuthors: Map dari teks item -> array nama kontributor (penulis + kolaborator),
-// dipakai untuk menampilkan badge "ditulis oleh siapa" pada tampilan yang mendukungnya.
 const parsePlanning = (text) => {
-    // Tambah 'rxs' untuk menampung Terapi/Obat
     if (!text) return { labs: [], rads: [], tms: [], rxs: [], others: [], itemAuthors: {} };
 
     const lines = text.split('\n').filter(line => line.trim() !== '');
     const res = { labs: [], rads: [], tms: [], rxs: [], others: [], itemAuthors: {} };
 
-    const addItem = (category, rawContent, prefixToStrip, authors) => {
-        const itemText = rawContent.replace(prefixToStrip, '').trim();
+    const addItem = (category, rawContent, prefixRegex, authors) => {
+        const itemText = rawContent.replace(prefixRegex, '').trim();
         if (!itemText) return;
-
-        // Hindari duplikasi item identik dalam kategori yang sama
-        if (!res[category].includes(itemText)) {
-            res[category].push(itemText);
-        }
-
-        // Gabungkan daftar kontributor untuk item ini (tanpa duplikat)
+        if (!res[category].includes(itemText)) res[category].push(itemText);
         if (authors.length > 0) {
             const existing = res.itemAuthors[itemText] || [];
             res.itemAuthors[itemText] = Array.from(new Set([...existing, ...authors]));
         }
     };
 
+    let currentBlockAuthor = null;
+
     lines.forEach(line => {
         const trimmed = line.trim();
-        const { author, collaborators, content } = extractLineTags(trimmed);
-        const authors = [author, ...collaborators].filter(Boolean);
+        
+        // Tangkap Header Murni
+        const pureHeaderMatch = trimmed.match(/^\[([A-Za-z0-9\s]+),\s*\d{1,2}\/\d{1,2}.*?\]$/);
+        if (pureHeaderMatch) {
+            currentBlockAuthor = pureHeaderMatch[1].trim();
+            res.others.push(`HEADER:${trimmed}`);
+            return;
+        }
 
-        if (content.startsWith('Lab. R/')) addItem('labs', content, 'Lab. R/', authors);
-        else if (content.startsWith('Rad. R/')) addItem('rads', content, 'Rad. R/', authors);
-        else if (content.startsWith('TM.')) addItem('tms', content, 'TM.', authors);
-        else if (content.startsWith('Th.')) addItem('rxs', content, 'Th.', authors);
-        else res.others.push(line);
+        const { author, collaborators, content } = extractLineTags(trimmed);
+        const effectiveAuthor = author || currentBlockAuthor;
+        const authors = [effectiveAuthor, ...collaborators].filter(Boolean);
+
+        const lower = content.toLowerCase();
+        // Regex super aman agar tidak memotong isi teks
+        if (lower.startsWith('lab. r/')) addItem('labs', content, /^Lab\.\s*R\/\s*/i, authors);
+        else if (lower.startsWith('rad. r/')) addItem('rads', content, /^Rad\.\s*R\/\s*/i, authors);
+        else if (lower.startsWith('tm.')) addItem('tms', content, /^TM\.\s*/i, authors);
+        else if (lower.startsWith('th.')) addItem('rxs', content, /^Th\.\s*/i, authors);
+        else if (content) res.others.push(content);
     });
     return res;
 };
 
-
-// --- UPDATE: RENDER PLANNING CELL (DENGAN INDIKATOR HARI ANTIBIOTIK) ---
 const renderPlanningCell = (text, medicationLogs = {}) => {
     if (!text) return '-';
     
@@ -1501,12 +1497,16 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
                 {items.map((item, idx) => {
                     const authors = itemAuthors[item] || [];
                     
-                    // ✨ FITUR BARU: Deteksi & Tampilkan Hari Antibiotik
                     let abBadge = null;
-                    if (isRx && typeof getAntibioticDay === 'function') {
-                        // Bersihkan teks obat (hilangkan dosis/rute) agar cocok dengan database antibiotik
-                        const cleanMedName = item.split(/\s+\d/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
-                        const hCode = getAntibioticDay(cleanMedName, medicationLogs);
+                    if (isRx) {
+                        const cleanMedName = item.split(/[\(\d]/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
+                        let hCode = null;
+                        if (typeof getAntibioticDay === 'function') {
+                            hCode = getAntibioticDay(cleanMedName, medicationLogs);
+                        }
+                        if (!hCode && typeof isAntibioticMedicationName === 'function' && isAntibioticMedicationName(cleanMedName)) {
+                            hCode = 'H1';
+                        }
                         if (hCode) {
                             abBadge = <span className="ml-1 text-[9px] bg-rose-100 text-rose-700 px-1 py-[1px] rounded border border-rose-200 font-bold shadow-sm animate-pulse">🚨 {hCode}</span>;
                         }
@@ -1517,6 +1517,7 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
                             {idx > 0 && '; '}
                             {item}
                             {abBadge}
+                            {/* Balon nama HANYA MUNCUL jika diedit > 1 orang (Saling mengingatkan) */}
                             {authors.length > 1 && (
                                 <span className="ml-1 font-normal text-[9px] opacity-70 normal-case">
                                     ({authors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' & ')})
@@ -1534,33 +1535,50 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
             {renderItem('Lab', labs, 'bg-red-100', 'border-red-300', 'text-red-500 animate-pulse')}
             {renderItem('Rad', rads, 'bg-blue-100', 'border-blue-400', 'text-blue-500')}
             {renderItem('Tndkn', tms, 'bg-emerald-100', 'border-emerald-400', 'text-emerald-500')}
-            {/* ✨ Kirim flag 'true' khusus untuk Terapi (Obat) agar dicek antibiotiknya */}
             {renderItem('Terapi', rxs, 'bg-fuchsia-200', 'border-fuchsia-400', 'text-fuchsia-500', true)}
             
             {others.map((line, idx) => {
+                if (line.startsWith('HEADER:')) {
+                    const headerText = line.replace('HEADER:', '');
+                    return (
+                        <div key={`other-${idx}`} className="block mb-1 text-[10px] font-extrabold text-indigo-500 border-b border-indigo-100 pb-0.5 mt-2 first:mt-0">
+                            🕒 {headerText}
+                        </div>
+                    );
+                }
+
                 const lower = line.toLowerCase();
                 if (lower.match(/\b(blpl|rblpl|pulang|boleh pulang)\b/)) {
-                    return (
-                        <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-black text-white">
-                            🎉 {line.toUpperCase()}
-                        </div>
-                    );
+                    return <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-black text-white">🎉 {line.toUpperCase()}</div>;
                 }
                 if (lower.match(/\b(lapor|konsul|konsultasi|ts|rawat gabung|alih rawat)\b/)) {
-                    return (
-                        <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-amber-100 border-amber-400 text-amber-900">
-                            👨‍⚕️ {line}
-                        </div>
-                    );
+                    return <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-amber-100 border-amber-400 text-amber-900">👨‍⚕️ {line}</div>;
                 }
                 if (lower.match(/\b(pindah|transfer|rujuk|pindah kamar)\b/)) {
-                    return (
-                        <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-indigo-100 border-indigo-400 text-indigo-900">
-                            🏥 {line}
-                        </div>
-                    );
+                    return <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-indigo-100 border-indigo-400 text-indigo-900">🏥 {line}</div>;
                 }
-                return <div key={`other-${idx}`} className="text-xs text-gray-700 whitespace-pre-wrap">{line}</div>;
+                
+                // ✨ Deteksi antibiotik di kategori lain untuk menampilkan badge H
+                let abBadge = null;
+                if (typeof isAntibioticMedicationName === 'function' && isAntibioticMedicationName(line)) {
+                    let hCode = null;
+                    if (typeof getAntibioticDay === 'function') {
+                        hCode = getAntibioticDay(line, medicationLogs);
+                    }
+                    if (!hCode) {
+                        hCode = 'H1';
+                    }
+                    if (hCode) {
+                        abBadge = <span className="ml-1 text-[9px] bg-rose-100 text-rose-700 px-1 py-[1px] rounded border border-rose-200 font-bold shadow-sm animate-pulse">🚨 {hCode}</span>;
+                    }
+                }
+                
+                return (
+                    <div key={`other-${idx}`} className="text-xs text-gray-700 whitespace-pre-wrap flex items-center flex-wrap">
+                        <span>{line}</span>
+                        {abBadge}
+                    </div>
+                );
             })}
         </div>
     );
@@ -2309,8 +2327,9 @@ const MedicalRecordApp = ({
           { type: 'link', label: '☕ Traktir Kopi?', href: 'https://trakteer.id/481nugroho' },
           { type: 'view', label: '🏠 Dashboard', value: 'dashboard' },
           { type: 'view', label: '📋 Daftar Pasien', value: 'patient-list' },
-          { type: 'view', label: '🗃️ Gudang Arsip Pasien', value: 'archived-list' },
-          { type: 'view', label: '⚙️ Setelan', value: 'settings' }
+          { type: 'view', label: '⚙️ Setelan', value: 'settings' },
+          // ✨ FIX: Gudang Arsip dipindah ke paling bawah kelompok menu utama
+          { type: 'view', label: '🗃️ Gudang Arsip Pasien', value: 'archived-list' }
       ];
       if (cashflowRole) items.push({ type: 'finance', label: 'Panel Keuangan' });
       if (currentUser?.role === 'SUPERADMIN' || currentUser?.name?.toLowerCase().includes('abi')) {
@@ -2410,7 +2429,6 @@ const MedicalRecordApp = ({
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
   const [settingsError, setSettingsError] = useState(null);      
 
-    // Combined planning options (prefer master lists when available)
     // Combined planning options (prefer master lists when available)
     const combinedPlanningOptions = useMemo(() => {
             const labs = Array.from(new Set([...(LAB_CHECKS || []), ...masterLabs])).map(i => ({ label: i, type: 'Lab' }));
@@ -2836,7 +2854,7 @@ const MedicalRecordApp = ({
     if (!userId) return;
     const ref = getCollectionRef();
     if (!ref) return;
-    const q = query(ref, orderBy('createdAt', 'desc'), limit (1000));
+    const q = query(ref, orderBy('createdAt', 'desc'), limit (750));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => {
           const docData = d.data();
@@ -2858,6 +2876,34 @@ const MedicalRecordApp = ({
           };
       });
       setRecords(data);
+
+      // =====================================================================
+      // 🔍 DIAGNOSTIK SEMENTARA (READ-ONLY): Cek field 'ward' di seluruh data
+      // yang sudah ter-load. Hapus blok ini setelah selesai dicek.
+      // =====================================================================
+      if (typeof window !== 'undefined' && !window.__wardCheckDone) {
+          window.__wardCheckDone = true;
+          let wardCounts = {};
+          let missingWard = [];
+          data.forEach(r => {
+              if (!r.ward) {
+                  missingWard.push({ id: r.id, name: r.name || '(tanpa nama)', roomNumber: r.roomNumber || '-', isDischarged: !!r.isDischarged });
+              } else {
+                  wardCounts[r.ward] = (wardCounts[r.ward] || 0) + 1;
+              }
+          });
+          console.log("=====================================================");
+          console.log(`🔍 CEK FIELD 'ward' — Total dokumen ter-load: ${data.length}`);
+          console.log("Dokumen DENGAN field 'ward':", wardCounts);
+          console.log(`Dokumen TANPA field 'ward': ${missingWard.length}`);
+          if (missingWard.length > 0) {
+              console.table(missingWard);
+              console.log("⚠️  Migrasi DIPERLUKAN sebelum mengubah query ke where('ward', ...).");
+          } else {
+              console.log("✅ Semua dokumen sudah punya field 'ward'. Migrasi TIDAK diperlukan.");
+          }
+          console.log("=====================================================");
+      }
               
               // ✨ FIX: MENDETEKSI NAMA RUANGAN (BANGSAL) TERLEBIH DAHULU
         const currentWard = currentUser?.ward || 'MELATI';
@@ -2980,20 +3026,17 @@ const MedicalRecordApp = ({
   // Ambang batas kemiripan: >= 0.75 dianggap "advis yang sama"
   const SIMILARITY_THRESHOLD = 0.75;
 
-  // --- Tambahkan tag [Nama][HH:MM] di depan baris-baris baru ---
-  // Hanya baris yang BELUM bertag akan ditag (mencegah double-tag saat merge berulang)
+  // --- FORMAT BARU: HEADER TUNGGAL DI ATAS, BUKAN STAMPEL PER BARIS ---
   const tagNewLines = (text, authorName) => {
       const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
-      const tag = `[${authorName.charAt(0).toUpperCase() + authorName.slice(1)}][${timeStr}]`;
-      return (text || '').split('\n').map(line => {
-          const trimmed = line.trim();
-          if (!trimmed) return line;
-          if (/^\[[^\]]+\]\[[^\]]+\]\s/.test(trimmed)) return line; // sudah bertag, biarkan
-          return `${tag} ${trimmed}`;
-      }).join('\n');
+      const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const tag = `[${authorName.charAt(0).toUpperCase() + authorName.slice(1)}, ${dateStr} ${timeStr}]`;
+      
+      const cleanText = (text || '').trim();
+      if (!cleanText) return '';
+      return `${tag}\n${cleanText}`;
   };
 
-  // --- Ambil hanya baris-baris yang BARU diketik perawat ini (dibandingkan snapshot awal) ---
   const getNewLines = (currentText, initialText) => {
       const cleanLines = (txt) => (txt || '').split('\n').map(l => l.trim()).filter(Boolean);
       const currentLines = cleanLines(currentText);
@@ -3001,10 +3044,6 @@ const MedicalRecordApp = ({
       return currentLines.filter(l => !initialSet.has(l));
   };
 
-  // --- Ambil baris-baris yang DIHAPUS perawat ini (ada di snapshot awal, tapi sudah
-  //     tidak ada lagi di teks lokal sekarang). Dipakai untuk membuang baris tersebut
-  //     dari hasil merge, supaya hapusan perawat ini tidak "muncul lagi" karena
-  //     baris itu masih ada di data DB terkini. ---
   const getRemovedLines = (currentText, initialText) => {
       const cleanLines = (txt) => (txt || '').split('\n').map(l => l.trim()).filter(Boolean);
       const currentSet = new Set(cleanLines(currentText));
@@ -3012,41 +3051,55 @@ const MedicalRecordApp = ({
       return initialLines.filter(l => !currentSet.has(l));
   };
 
-  // --- Gabungkan baris dari DB (terbaru) + baris baru dari form lokal ---
-  // - Baris yang DIHAPUS perawat ini (removedLines) -> dibuang dari hasil
-  // - Baris identik -> tidak diduplikasi
-  // - Baris MIRIP (>= threshold) -> tidak diduplikasi, tapi nama kontributor
-  //   baris lokal ditambahkan sebagai tag tambahan di baris DB ("juga dilaporkan oleh ...")
-  // - Baris baru yang unik -> ditambahkan di atas (terbaru di atas)
   const smartMergeLines = (dbText, localNewText, removedLines = []) => {
       const cleanLines = (txt) => (txt || '').split('\n').map(l => l.trim()).filter(Boolean);
-      const stripTagGlobal = (l) => l.replace(/^\[[^\]]+\]\[[^\]]+\]\s*/, '');
-      const removedSet = new Set(removedLines.map(stripTagGlobal));
+      
+      // Helper ringkas tanpa jejak tag lama
+      const stripTagsForCompare = (l) => {
+          if (/^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*\]$/.test(l)) return ''; // Murni header -> skip
+          return l
+              .replace(/^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*?\]\s*/, '') // Tag baru inline
+              .replace(/\s*\[[^\]]+\]↔/g, '') // Kolaborator baru
+              .trim();
+      };
 
-      const dbLines = cleanLines(dbText).filter(l => !removedSet.has(stripTagGlobal(l)));
+      const removedSet = new Set(removedLines.map(stripTagsForCompare).filter(Boolean));
+
+      const dbLines = cleanLines(dbText).filter(l => {
+          const comp = stripTagsForCompare(l);
+          return comp === '' || !removedSet.has(comp); 
+      });
+      
       const localLines = cleanLines(localNewText);
-
       const result = [...dbLines];
+      const newLinesToAdd = [];
+      let currentLocalHeader = '';
 
       localLines.forEach(localLine => {
-          // 1. Cek identik persis (tanpa tag) -> skip
-          const stripTag = (l) => l.replace(/^\[[^\]]+\]\[[^\]]+\]\s*/, '');
-          const localStripped = stripTag(localLine);
+          if (/^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*\]$/.test(localLine)) {
+              currentLocalHeader = localLine;
+              newLinesToAdd.push(localLine);
+              return;
+          }
 
-          const exactIdx = result.findIndex(r => stripTag(r) === localStripped);
-          if (exactIdx !== -1) return; // sudah ada, jangan duplikasi
+          const localStripped = stripTagsForCompare(localLine);
+          if (!localStripped) return;
 
-          // 2. Cek mirip dengan baris yang sudah ada
+          const exactIdx = result.findIndex(r => stripTagsForCompare(r) === localStripped);
+          if (exactIdx !== -1) return; 
+
           let mergedIntoExisting = false;
           for (let i = 0; i < result.length; i++) {
-              const sim = lineSimilarity(result[i], localLine);
-              if (sim >= SIMILARITY_THRESHOLD) {
-                  // Tambahkan tag kontributor lokal ke baris yang sudah ada
-                  // sebagai indikasi "advis serupa juga dilaporkan oleh X"
-                  const localTagMatch = localLine.match(/^\[[^\]]+\]\[[^\]]+\]/);
-                  const localTag = localTagMatch ? localTagMatch[0] : '';
-                  if (localTag && !result[i].includes(localTag)) {
-                      result[i] = `${result[i]} ${localTag}↔`; // ↔ = "advis serupa juga dicatat oleh"
+              const dbStripped = stripTagsForCompare(result[i]);
+              if (!dbStripped) continue;
+              
+              if (lineSimilarity(dbStripped, localStripped) >= SIMILARITY_THRESHOLD) {
+                  const headerMatch = currentLocalHeader.match(/^\[([A-Za-z0-9\s]+),/);
+                  if (headerMatch) {
+                      const authorName = headerMatch[1].trim();
+                      if (!result[i].includes(`[${authorName}]↔`)) {
+                          result[i] = `${result[i]} [${authorName}]↔`;
+                      }
                   }
                   mergedIntoExisting = true;
                   break;
@@ -3054,15 +3107,23 @@ const MedicalRecordApp = ({
           }
           if (mergedIntoExisting) return;
 
-          // 3. Baris baru & unik -> tambahkan di paling atas
-          result.unshift(localLine);
+          newLinesToAdd.push(localLine);
       });
 
-      return result.join('\n');
+      // Sapu bersih "Dangling Header" (Header kosong tanpa isi di bawahnya)
+      const finalResult = [...newLinesToAdd, ...result];
+      const cleanedResult = [];
+      for (let i = 0; i < finalResult.length; i++) {
+          const isHeader = /^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*\]$/.test(finalResult[i]);
+          if (isHeader) {
+              if (i === finalResult.length - 1) continue; 
+              if (/^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*\]$/.test(finalResult[i + 1])) continue; 
+          }
+          cleanedResult.push(finalResult[i]);
+      }
+
+      return cleanedResult.join('\n');
   };
-
-
-
   const handleSubmit = async (e) => { 
       e.preventDefault();
       if (!formData.name || !formData.roomNumber || !formData.dpjpName) {
@@ -3104,19 +3165,7 @@ const MedicalRecordApp = ({
           const docRef = doc(ref, currentRecordId);
           const myDisplayName = (currentUser?.name || 'Perawat').split(' ')[0];
 
-          try {
-              // ✨ FIX (Anti "Gagal menyimpan: konflik update bersamaan" & lemot saat save):
-              // runTransaction() SANGAT LAMBAT & SERING GAGAL/TIMEOUT bila dikombinasikan
-              // dengan experimentalForceLongPolling (dipakai di init Firebase untuk
-              // bypass blokir WiFi RS). Transaction butuh beberapa round-trip bolak-balik
-              // ke server untuk validasi commit, dan long-polling membuat tiap round-trip
-              // jauh lebih lambat -> sering timeout / retry berkali-kali -> akhirnya throw.
-              //
-              // Solusi: kembali ke getDoc (1x baca) + updateDoc (1x tulis) seperti versi
-              // lama, TAPI logika smart-merge/tagging/hapus-baris dari versi multiuser
-              // tetap dipakai. Race window antara getDoc & updateDoc jadi sedikit lebih
-              // lebar dibanding transaction, tapi jauh lebih cepat & reliable di jaringan
-              // RS, dan smart-merge berbasis baris sudah cukup mentolerir race kecil ini.
+          try {              
               const docSnap = await getDoc(docRef);
               let result = { ...baseData };
 
@@ -3134,21 +3183,14 @@ const MedicalRecordApp = ({
                       newContributors = [myName];
                   }
                   result.contributors = newContributors;
-
-                  // --- Smart Merge S/O/A/P ---
-                  // Ambil HANYA baris baru yang ditulis perawat ini di sesi edit sekarang,
-                  // beri tag [Nama][Jam], lalu gabungkan dengan data SOAP terkini di DB
-                  // (yang mungkin sudah diupdate perawat lain sejak form ini dibuka).
+                  
                   const fields = ['subjective', 'objective', 'analysis', 'planning'];
                   fields.forEach((field) => {
                       const initialField = `initial${field.charAt(0).toUpperCase()}${field.slice(1)}`;
                       const newLines = getNewLines(baseData[field], formData[initialField]);
                       const removedLines = getRemovedLines(baseData[field], formData[initialField]);
 
-                      if (newLines.length === 0 && removedLines.length === 0) {
-                          // Tidak ada perubahan baris dari perawat ini -> pakai data DB terkini
-                          // (mencegah perawat ini menimpa balik perubahan perawat lain
-                          // dengan versi lokalnya yang sudah usang)
+                      if (newLines.length === 0 && removedLines.length === 0) {                          
                           result[field] = (latestDbData[field] || '').trim();
                       } else {
                           const taggedNewLines = newLines.length > 0 ? tagNewLines(newLines.join('\n'), myDisplayName) : '';
@@ -4284,8 +4326,8 @@ const processDischarge = async (type) => {
                                 
                                 <button onClick={() => { setView('dashboard'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'dashboard') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>🏠 Dashboard</button>
                                 <button onClick={() => { setView('patient-list'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'patient-list') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>📋 Daftar Pasien</button>
-                                <button onClick={() => { setView('archived-list'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'archived-list') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>🗃️ Gudang Arsip Pasien</button>
                                 <button onClick={() => { setView('settings'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'settings') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>⚙️ Setelan</button>
+                                <button onClick={() => { setView('archived-list'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'archived-list') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>🗃️ Gudang Arsip Pasien</button>                                
                                 
                                 {/* MENU KEUANGAN (HANYA MUNCUL JIKA USER ADALAH PJ) */}
                                 {cashflowRole && (
@@ -5622,7 +5664,10 @@ const PlanningQuickTag = ({ onSelect }) => {
         { label: 'GDS', isi: 'Lab. R/ GDS', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'GDP-2JPP', isi: 'Lab. R/ GDP-2JPP', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'Ur-Cr', isi: 'Lab. R/ Ureum-Creatinin', warna: 'bg-red-100 text-red-700 border-red-200' },
-        { label: 'Elektrolit', isi: 'Lab. R/ Elektrolit (Na/K/Cl)', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'Ēlek', isi: 'Lab. R/ Elektrolit (Na/K/Cl)', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'AU', isi: 'Lab. R/ Asam Urat', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'Lipid', isi: 'Lab. R/ Profil Lipid (Kolesterol)', warna: 'bg-red-100 text-red-700 border-red-200' },
+        { label: 'OTPT', isi: 'Lab. R/ SGOT-SGPT', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'TCM', isi: 'Lab. R/ TCM TB', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'Sputum', isi: 'Lab. R/ Sputum', warna: 'bg-red-100 text-red-700 border-red-200' },
         { label: 'Urin', isi: 'Lab. R/ Urin', warna: 'bg-red-100 text-red-700 border-red-200' },
@@ -5639,6 +5684,10 @@ const PlanningQuickTag = ({ onSelect }) => {
         { label: 'Panto', isi: 'Th. Drip pantoprazole 8 mg/j', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Sliding Scale', isi: 'Th. Sliding Scale (SC tiap 4 jam):\n< 150 : 0 Unit\n150 - 200 : 4 Unit\n200 - 250 : 8 Unit\n250 - 300 : 12 Unit\n300 - 350 : 16 Unit\n350 - 400 : 20 Unit\n> 400 : 24 Unit', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Protokol GDS', isi: 'Th. Cek GDS per 2 jam:\n- Jika GDS > 200 ganti D5% 20 tpm\n- Jika dgn D5% 20 tpm GDS > 200, ganti dgn NaCl 0.9% 20 tpm', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        
+        //TAMBAHAN (Hijau)
+        { label: 'GB', isi: 'Ganti Balutan', warna: 'bg-green-100 text-green-700 border-green-200' },
+        { label: 'HD', isi: 'Hemodialisa (HD)', warna: 'bg-green-100 text-green-700 border-green-200' },
         
         // TAMBAHAN (Hitam)
         { label: 'BLPL', isi: 'Rencana BLPL', warna: 'bg-black text-white border-black' },
@@ -6175,11 +6224,11 @@ const InputSidePanel = ({
         const allLogs = [...historyLogs].reverse(); 
         allLogs.push(currentData); 
 
-        const trends = { 'Hb': [], 'Leu': [], 'Plt': [], 'Ht': [], 'GDS': [], 'GDP': [], '2JPP': [], 'Na': [], 'K': [], 'Cl': [], 'Alb': [], 'Cr': [], 'Ur': [] };
+        const trends = { 'Hb': [], 'Leu': [], 'Trombosit': [], 'Ht': [], 'GDS': [], 'GDP': [], '2JPP': [], 'Na': [], 'K': [], 'Cl': [], 'Albumin': [], 'Cr': [], 'Ur': [], 'SGOT': [], 'SGPT': [] };
         const patterns = {
             'Hb': /(?:Hb|Hemoglobin)[\s:.-]*(\d+(?:\.\d+)?)/i,
             'Leu': /(?:Leu|Leukosit)[\s:.-]*(\d{1,3}(?:\.?\d{3})*)/i,
-            'Plt': /(?:Plt|Trombosit|Trombo)[\s:.-]*(\d{1,3}(?:\.?\d{3})*)/i,
+            'Trombosit': /(?:Plt|Trombosit|Trombo)[\s:.-]*(\d{1,3}(?:\.?\d{3})*)/i,
             'Ht': /(?:Ht|Hematokrit)[\s:.-]*(\d+(?:\.\d+)?)/i,
             'GDS': /(?:GDS|Gula Darah)[\s:.-]*(\d{2,3})/i,
             'GDP': /(?:GDP|Glukosa Puasa)[\s:.-]*(\d{2,3})/i,
@@ -6189,7 +6238,9 @@ const InputSidePanel = ({
             'Cl': /(?:Cl|Clorida)[\s:.-]*(\d{2,3})/i,
             'Ur': /(?:Ur|Ureum)[\s:.-]*(\d{2,3})/i,
             'Cr': /(?:Cr|Kreatinin)[\s:.-]*(\d+(?:\.\d+)?)/i,
-            'Alb': /(?:Alb|Albumin)[\s:.-]*(\d+(?:\.\d+)?)/i,
+            'Albumin': /(?:Alb|Albumin)[\s:.-]*(\d+(?:\.\d+)?)/i,
+            'SGOT': /(?:SGOT|AST)[\s:.-]*(\d{1,4})/i,
+            'SGPT': /(?:SGPT|ALT)[\s:.-]*(\d{1,4})/i,
         };
 
         allLogs.forEach(log => {
@@ -6880,30 +6931,30 @@ const FormattedObjective = ({ text }) => {
     return (
         <div className="whitespace-pre-wrap">
             {lines.map((line, idx) => {
-                let abnormalType = null; 
-                const lowerLine = line.trim().toLowerCase();
+                const trimmedLine = line.trim();
+                const lowerLine = trimmedLine.toLowerCase();
                 
-                // --- STEP 1: DETEKSI ANGKA DARI KAMUS ---
-                for (const [key, range] of Object.entries(LAB_NORMAL_RANGES)) {
+                // ✨ LINDUNGI HEADER WAKTU AGAR TERLUKIS RAPI
+                if (/^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*\]$/.test(trimmedLine)) {
+                    return (
+                        <div key={idx} className="text-[10px] font-extrabold text-indigo-500 border-b border-indigo-100 pb-0.5 mt-1.5 mb-1 first:mt-0">
+                            🕒 {trimmedLine}
+                        </div>
+                    );
+                }
+
+                let abnormalType = null; 
+                
+                for (const [key, range] of Object.entries(LAB_NORMAL_RANGES || {})) {
                     const keyLower = key.toLowerCase();
-                    
-                    // Pastikan baris diawali dengan nama lab
                     if (lowerLine.startsWith(keyLower)) {
-                        // Cek karakter setelahnya agar tidak tumpang tindih (misal Hb dan HbA1c)
                         const nextChar = lowerLine.charAt(keyLower.length);
                         if (nextChar === '' || /[\s:=]/.test(nextChar)) {
-                            
-                            // ✨ KUNCI PERBAIKAN: Potong nama lab dari kalimat!
-                            // Ini agar angka di dalam nama lab (spt "2" di 2JPP) tidak terbaca sebagai hasil
                             const textAfterKey = line.substring(keyLower.length);
-                            
-                            // Cari angka pertama *setelah* nama lab dihapus
                             const match = textAfterKey.match(/[-]?\d+[\.,]?\d*/);
-                            
                             if (match) {
                                 let valStr = match[0];
                                 let val = range.max > 1000 ? parseFloat(valStr.replace(/\./g, '').replace(/,/g, '')) : parseFloat(valStr.replace(',', '.'));
-
                                 if (!isNaN(val)) {
                                     if (val > range.max) abnormalType = 'high';
                                     else if (val < range.min) abnormalType = 'low';
@@ -6914,17 +6965,12 @@ const FormattedObjective = ({ text }) => {
                     }
                 }
 
-                // --- STEP 2: DETEKSI TEKS (Uji Kualitatif spt TCM, Swab, Kultur) ---
                 if (!abnormalType) {
                     const isDanger = /(positif|reaktif|detected|ditemukan|resistan)/i.test(lowerLine);
                     const isSafe = /(negatif|non[- ]?reaktif|not detected|tidak ditemukan)/i.test(lowerLine);
-                    
-                    if (isDanger && !isSafe) {
-                        abnormalType = 'text-bad';
-                    }
+                    if (isDanger && !isSafe) abnormalType = 'text-bad';
                 }
 
-                // --- STEP 3: EKSEKUSI PEWARNAAN ---
                 let spanClass = "";
                 let arrow = "";
                 
@@ -6952,32 +6998,55 @@ const FormattedObjective = ({ text }) => {
     );
 };
 
-// ✨ FUNGSI ANTIBIOTIK: MAZHAB BUKTI CENTANG (EVIDENCE-BASED)
+// ✨ FUNGSI ANTIBIOTIK: MAZHAB CERDAS (MENDUKUNG EJAAN INDONESIA & MULTI-USER KONTEKS)
+const normalizeMedicationName = (name = '') => {
+    return name.toString().toLowerCase()
+        .replace(/\(.+?\)/g, ' ')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\b(?:tab|tablet|caps|kaps|kapsul|ml|mg|gr|g|mcg|iu|inj|injeksi|drip|inf|iv|im|sc|po|per|x|kali|bid|tid|q\d+h|jam)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+};
+
+const isAntibioticMedicationName = (name = '') => {
+    const normalized = normalizeMedicationName(name);
+    if (!normalized) return false;
+    if (/\bH\d+\b/i.test(name)) return true;
+    if (ANTIBIOTICS_DB.some(ab => normalized.includes(ab.toLowerCase()))) return true;
+    return /(?:seftri|ceftri|ceftriax|seftriax|cefix|sefix|levoflo|merope|cipro|sipro|metroni|amoxi|amoksi|ampici|ampisi|genta|azithro|cefaz|sefaz|ceftaz|seftaz|sulbactam|clavulanate|linezolid|fosfomycin|vancomycin)/i.test(normalized);
+};
+
 const getAntibioticDay = (medName, medicationLogs = {}) => {
     if (!medName) return null;
-    
-    // 1. Cek apakah obat ini masuk daftar antibiotik
-    const lowerMed = medName.toLowerCase();
-    const isAntibiotic = ANTIBIOTICS_DB.some(ab => lowerMed.includes(ab.toLowerCase())) || /\bH\d+\b/i.test(lowerMed);
-    if (!isAntibiotic) return null;
+
+    const normalizedMed = normalizeMedicationName(medName);
+    if (!normalizedMed || !isAntibioticMedicationName(normalizedMed)) return null;
 
     let checkedDaysCount = 0;
-    
-    // 2. Hitung jumlah HARI BERBEDA yang memiliki minimal 1 centangan
-    Object.keys(medicationLogs).forEach(dateStr => {
-        // Pelindung: Abaikan jejak hantu tanggal yang rusak
+    const safeLogs = medicationLogs || {};
+
+    // 2. Hitung jumlah HARI BERBEDA yang memiliki minimal 1 centangan dinas
+    Object.keys(safeLogs).forEach(dateStr => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
-        
-        const dayLog = medicationLogs[dateStr][medName];
-        if (dayLog) {
-            const hasCheckedShift = Object.values(dayLog).some(shift => shift && shift.checked);
-            if (hasCheckedShift) checkedDaysCount++;
-        }
+
+        const dayData = safeLogs[dateStr] || {};
+        let hasMatch = false;
+
+        Object.keys(dayData).forEach(key => {
+            const normalizedKey = normalizeMedicationName(key);
+            if (!normalizedKey) return;
+            if (normalizedKey.includes(normalizedMed) || normalizedMed.includes(normalizedKey)) {
+                const shiftLog = dayData[key] || {};
+                const hasCheckedShift = Object.values(shiftLog).some(shift => shift && shift.checked);
+                if (hasCheckedShift) hasMatch = true;
+            }
+        });
+
+        if (hasMatch) checkedDaysCount++;
     });
 
-    // 3. Tampilkan Label
-    if (checkedDaysCount === 0) return 'H1'; 
-    return `H${checkedDaysCount}`; 
+    // 3. Tampilkan Label Hari Antibiotik
+    return checkedDaysCount === 0 ? 'H1' : `H${checkedDaysCount}`;
 };
 
 const App = () => {

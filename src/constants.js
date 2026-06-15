@@ -224,9 +224,10 @@ export const LAB_CHECKS = [
 
 export const RADIOLOGY_CHECKS = [
     'Thorax', 'Thorax Lateral', 'BNO Polos', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
-    'USG Whole Abdomen', 'USG Hepatobilier/Upper Abdomen', 'USG Lower/Ginjal Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Kandung Empedu', 'USG Jantung/Echocardiography', 'USG Vaskular Doppler',
+    'USG Whole Abdomen', 'USG Hepatobilier/Upper Abdomen', 'USG Lower/Ginjal Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Kandung Empedu', 'USG Jantung', 'Echocardiography', 'USG Vaskular Doppler',
     'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Thorax non-Kontras', 'CT Scan Abdomen kontras',
     'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography', 'CT Scan Cardiac', 'CT Urografi kontras', 'CT Urografi non-kontras',
+    'CT Nasofaring kontras', 'CT Nasofaring non-kontras', 'CT Sinus',
     'MRI Kepala', 'MRI Vertebra', 'MRI Lutut', 'MRI Pelvis',
     'Endoskopi', 'Kolonoskopi', 'Bronkoskopi', 'Angiography Koroner'
 ];
@@ -249,7 +250,7 @@ export const MEDICATIONS = [
 
 // ✨ MASTER DATABASE ANTIBIOTIK (PPRA)
 export const ANTIBIOTICS_DB = [
-    'seftri', 'ceftri', 'broadced', 'terfacef', 
+    'seftriakson', 'ceftrixon', 'broadced', 'terfacef', 
     'meropenem', 'merosan', 
     'azitro', 'azithro', 'zithromax', 
     'levoflok', 'levoflox', 'cravit', 
@@ -262,5 +263,11 @@ export const ANTIBIOTICS_DB = [
     'amikasin', 'amikacin', 
     'ampisilin', 'ampicillin', 'viccillin',
     'klindamisin', 'clindamycin', 
-    'cefepim', 'cefspan', 'cefixim', 'sefiksim'
+    'cefepim', 'cefspan', 'cefixim', 'sefiksim', 'ceftriaxone', 'seftriaxon',
+    'vancomycin', 'vanco', 'vancocin',
+    'linezolid', 'zyvox',
+    'tigecycline', 'tygacil',
+    'colistin', 'colimycin',
+    'fosfomycin', 'monurol',
+    'daptomycin', 'cubicin'
 ];
