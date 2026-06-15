@@ -16,7 +16,6 @@ import {
     getDocs,
     getDoc,
     limit,
-    runTransaction,
 } from 'firebase/firestore';
 
 import Cashflow from './components/Cashflow';
@@ -3106,58 +3105,66 @@ const MedicalRecordApp = ({
           const myDisplayName = (currentUser?.name || 'Perawat').split(' ')[0];
 
           try {
-              const finalData = await runTransaction(db, async (transaction) => {
-                  const docSnap = await transaction.get(docRef);
-                  let result = { ...baseData };
+              // ✨ FIX (Anti "Gagal menyimpan: konflik update bersamaan" & lemot saat save):
+              // runTransaction() SANGAT LAMBAT & SERING GAGAL/TIMEOUT bila dikombinasikan
+              // dengan experimentalForceLongPolling (dipakai di init Firebase untuk
+              // bypass blokir WiFi RS). Transaction butuh beberapa round-trip bolak-balik
+              // ke server untuk validasi commit, dan long-polling membuat tiap round-trip
+              // jauh lebih lambat -> sering timeout / retry berkali-kali -> akhirnya throw.
+              //
+              // Solusi: kembali ke getDoc (1x baca) + updateDoc (1x tulis) seperti versi
+              // lama, TAPI logika smart-merge/tagging/hapus-baris dari versi multiuser
+              // tetap dipakai. Race window antara getDoc & updateDoc jadi sedikit lebih
+              // lebar dibanding transaction, tapi jauh lebih cepat & reliable di jaringan
+              // RS, dan smart-merge berbasis baris sudah cukup mentolerir race kecil ini.
+              const docSnap = await getDoc(docRef);
+              let result = { ...baseData };
 
-                  if (docSnap.exists()) {
-                      const latestDbData = docSnap.data();
+              if (docSnap.exists()) {
+                  const latestDbData = docSnap.data();
 
-                      // --- Tracking "Tim Perawat Hari Ini" (reset otomatis tiap hari) ---
-                      const lastUpdateDate = latestDbData.updatedAt?.toDate ? latestDbData.updatedAt.toDate() : new Date(0);
-                      const today = new Date();
-                      const myName = (currentUser?.name || 'perawat').split(' ')[0].toLowerCase();
-                      let newContributors = [];
+                  // --- Tracking "Tim Perawat Hari Ini" (reset otomatis tiap hari) ---
+                  const lastUpdateDate = latestDbData.updatedAt?.toDate ? latestDbData.updatedAt.toDate() : new Date(0);
+                  const today = new Date();
+                  let newContributors = [];
 
-                      if (lastUpdateDate.getDate() === today.getDate() && lastUpdateDate.getMonth() === today.getMonth() && lastUpdateDate.getFullYear() === today.getFullYear()) {
-                          newContributors = Array.from(new Set([...(latestDbData.contributors || []), myName]));
-                      } else {
-                          newContributors = [myName];
-                      }
-                      result.contributors = newContributors;
-
-                      // --- Smart Merge S/O/A/P ---
-                      // Ambil HANYA baris baru yang ditulis perawat ini di sesi edit sekarang,
-                      // beri tag [Nama][Jam], lalu gabungkan dengan data SOAP terkini di DB
-                      // (yang mungkin sudah diupdate perawat lain sejak form ini dibuka).
-                      const fields = ['subjective', 'objective', 'analysis', 'planning'];
-                      fields.forEach((field) => {
-                          const initialField = `initial${field.charAt(0).toUpperCase()}${field.slice(1)}`;
-                          const newLines = getNewLines(baseData[field], formData[initialField]);
-                          const removedLines = getRemovedLines(baseData[field], formData[initialField]);
-
-                          if (newLines.length === 0 && removedLines.length === 0) {
-                              // Tidak ada perubahan baris dari perawat ini -> pakai data DB terkini
-                              // (mencegah perawat ini menimpa balik perubahan perawat lain
-                              // dengan versi lokalnya yang sudah usang)
-                              result[field] = (latestDbData[field] || '').trim();
-                          } else {
-                              const taggedNewLines = newLines.length > 0 ? tagNewLines(newLines.join('\n'), myDisplayName) : '';
-                              result[field] = smartMergeLines(latestDbData[field], taggedNewLines, removedLines);
-                          }
-                      });
+                  if (lastUpdateDate.getDate() === today.getDate() && lastUpdateDate.getMonth() === today.getMonth() && lastUpdateDate.getFullYear() === today.getFullYear()) {
+                      newContributors = Array.from(new Set([...(latestDbData.contributors || []), myName]));
                   } else {
-                      const myName = (currentUser?.name || 'perawat').split(' ')[0].toLowerCase();
-                      result.contributors = [myName];
-                      // Dokumen baru: tag semua baris SOAP yang diisi sebagai milik perawat ini
-                      ['subjective', 'objective', 'analysis', 'planning'].forEach((field) => {
-                          if (result[field]) result[field] = tagNewLines(result[field], myDisplayName);
-                      });
+                      newContributors = [myName];
                   }
+                  result.contributors = newContributors;
 
-                  transaction.set(docRef, result, { merge: true });
-                  return result;
-              });
+                  // --- Smart Merge S/O/A/P ---
+                  // Ambil HANYA baris baru yang ditulis perawat ini di sesi edit sekarang,
+                  // beri tag [Nama][Jam], lalu gabungkan dengan data SOAP terkini di DB
+                  // (yang mungkin sudah diupdate perawat lain sejak form ini dibuka).
+                  const fields = ['subjective', 'objective', 'analysis', 'planning'];
+                  fields.forEach((field) => {
+                      const initialField = `initial${field.charAt(0).toUpperCase()}${field.slice(1)}`;
+                      const newLines = getNewLines(baseData[field], formData[initialField]);
+                      const removedLines = getRemovedLines(baseData[field], formData[initialField]);
+
+                      if (newLines.length === 0 && removedLines.length === 0) {
+                          // Tidak ada perubahan baris dari perawat ini -> pakai data DB terkini
+                          // (mencegah perawat ini menimpa balik perubahan perawat lain
+                          // dengan versi lokalnya yang sudah usang)
+                          result[field] = (latestDbData[field] || '').trim();
+                      } else {
+                          const taggedNewLines = newLines.length > 0 ? tagNewLines(newLines.join('\n'), myDisplayName) : '';
+                          result[field] = smartMergeLines(latestDbData[field], taggedNewLines, removedLines);
+                      }
+                  });
+              } else {
+                  result.contributors = [myName];
+                  // Dokumen baru: tag semua baris SOAP yang diisi sebagai milik perawat ini
+                  ['subjective', 'objective', 'analysis', 'planning'].forEach((field) => {
+                      if (result[field]) result[field] = tagNewLines(result[field], myDisplayName);
+                  });
+              }
+
+              await setDoc(docRef, result, { merge: true });
+              const finalData = result;
 
               // Simpan rekaman ke Sub-Koleksi Notes (Riwayat) di luar transaksi
               if (db) {
@@ -3170,8 +3177,8 @@ const MedicalRecordApp = ({
                   });
               }
           } catch (e) {
-              console.error("Gagal update & merge (transaction):", e);
-              alert("Gagal menyimpan: kemungkinan ada konflik update bersamaan. Silakan coba simpan ulang.");
+              console.error("Gagal update & merge:", e);
+              alert("Gagal menyimpan: " + (e.message || "periksa koneksi internet, lalu coba simpan ulang."));
               return;
           }
       } else {
