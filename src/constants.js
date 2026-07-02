@@ -2,8 +2,8 @@
 // KODE LAMA MELATI (BIARKAN SEPERTI ASLINYA)
 // ==========================================
 
-export const LEFT_ROOMS = ['K1A', 'K1B', 'K3A', 'K3B', 'K5A', 'K5B', 'K7A', 'K8A', 'K9A', 'K11A', 'K12A', 'K14A'];
-export const RIGHT_ROOMS = ['K2A', 'K2B', 'K4A', 'K4B', 'K6A', 'K6B', 'K10A', 'K10B', 'K13A', 'K13B', 'K15A', 'K15B'];
+export const LEFT_ROOMS = ['K1KM', 'K1P', 'K3KM', 'K3P', 'K5KM', 'K5P', 'K7', 'K8', 'K9', 'K11', 'K12', 'K14'];
+export const RIGHT_ROOMS = ['K2P', 'K2KM', 'K4P', 'K4KM', 'K6P', 'K6KM', 'K10P', 'K10KM', 'K13P', 'K13KM', 'K15P', 'K15KM'];
 export const ROOM_LIST = [...LEFT_ROOMS, ...RIGHT_ROOMS];
 
 // ==========================================
@@ -130,24 +130,25 @@ export const LAB_NORMAL_RANGES = {
     '2JPP': { min: 70, max: 140 },
     'HbA1c': { min: 4.0, max: 5.7 },
     'Ur': { min: 10, max: 50 },           
-    'Cr': { min: 0.5, max: 1.1 },         
+    'Cr': { min: 0.5, max: 1.1 },       
     'SGOT': { min: 0, max: 37 },
     'SGPT': { min: 0, max: 40 },
     'Alb': { min: 3.5, max: 5.0 },        
     'Globulin': { min: 2.0, max: 3.5 },
-    'Bil.Tot': { min: 0.1, max: 1.2 },    
-    'Bil.Dir': { min: 0.0, max: 0.3 },    
+    'Bil.Total': { min: 0.1, max: 1.2 },    
+    'Bil.Direk': { min: 0.0, max: 0.3 },
+    'Bil.Indirek': { min: 0.1, max: 0.9 },
     'Asam Urat': { min: 3.5, max: 7.2 },
 
     // --- ELEKTROLIT & GAS DARAH (AGD) ---
     'Na': { min: 135, max: 145 },
     'K': { min: 3.5, max: 5.5 },
     'Cl': { min: 96, max: 106 },
-    'Kalsium': { min: 8.5, max: 10.5 },   
+    'Ca': { min: 8.5, max: 10.5 },   
     'Lactate': { min: 0.5, max: 2.2 },
     'pH': { min: 7.35, max: 7.45 },
     'pCO2': { min: 35, max: 45 },
-    'pO2': { min: 80, max: 100 },
+    'pO2': { min: 75, max: 100 },
     'HCO3': { min: 22, max: 26 },
 
     // --- PANEL LIPID ---
@@ -172,8 +173,7 @@ export const LAB_NORMAL_RANGES = {
 };
 
 export const DEFAULT_DPJP_DATA = [
-    { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },
-    { name: 'dr. Susilo, Sp.PD', waNumber: '6282119395835' },
+    { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },    
     { name: 'dr. Dian Ekowati, Sp.PD', waNumber: '6281210680279' },
     { name: 'dr. Priyo, Sp.PD', waNumber: '62811220364' },
     { name: 'dr. Risa, Sp.PD', waNumber: '6281316198500' },
@@ -223,7 +223,7 @@ export const LAB_CHECKS = [
 ];
 
 export const RADIOLOGY_CHECKS = [
-    'Thorax', 'Thorax Lateral', 'BNO Polos', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas',
+    'Thorax', 'Thorax Lateral', 'BNO Polos', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas', 'Rontgen Cruris', 'Rontgen OA Genou',
     'USG Whole Abdomen', 'USG Hepatobilier/Upper Abdomen', 'USG Lower/Ginjal Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Kandung Empedu', 'USG Jantung', 'Echocardiography', 'USG Vaskular Doppler',
     'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Thorax non-Kontras', 'CT Scan Abdomen kontras',
     'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography', 'CT Scan Cardiac', 'CT Urografi kontras', 'CT Urografi non-kontras',
@@ -250,24 +250,230 @@ export const MEDICATIONS = [
 
 // ✨ MASTER DATABASE ANTIBIOTIK (PPRA)
 export const ANTIBIOTICS_DB = [
-    'seftriakson', 'ceftrixon', 'broadced', 'terfacef', 
-    'meropenem', 'merosan', 
-    'azitro', 'azithro', 'zithromax', 
-    'levoflok', 'levoflox', 'cravit', 
-    'cipro', 'baquinor', 
-    'amoksi', 'amoxi', 'amoxsan', 
-    'sefotaksim', 'cefotaxime', 
-    'cefoperazone', 'sulbactam', 'sulbaktam', 
-    'metronidazol', 'flagyl', 
-    'gentamisin', 'gentamicin', 
-    'amikasin', 'amikacin', 
+    'seftriakson', 'ceftriaxon', 'broadced', 'terfacef',
+    'meropenem', 'merosan',
+    'azitro', 'azithro', 'zithromax',
+    'levoflok', 'levoflox', 'cravit',
+    'cipro', 'baquinor',
+    'amoksi', 'amoxi', 'amoxsan',
+    'sefotaksim', 'cefotaxime',
+    'cefoperazone', 'sulbactam', 'sulbaktam',
+    'metronidazol', 'flagyl',
+    'gentamisin', 'gentamicin',
+    'amikasin', 'amikacin',
     'ampisilin', 'ampicillin', 'viccillin',
-    'klindamisin', 'clindamycin', 
-    'cefepim', 'cefspan', 'cefixim', 'sefiksim', 'ceftriaxone', 'seftriaxon',
+    'klindamisin', 'clindamycin',
+    'cefepim', 'cefspan', 'cefixim', 'sefiksim', 'ceftriaxone',
     'vancomycin', 'vanco', 'vancocin',
     'linezolid', 'zyvox',
     'tigecycline', 'tygacil',
     'colistin', 'colimycin',
     'fosfomycin', 'monurol',
-    'daptomycin', 'cubicin'
+    'daptomycin', 'cubicin',
+    // === ANTIBIOTIK BARU ===
+    'ceftazidime', 'fortum', 'cetazidim',
+    'bactrim', 'septra', 'tmp-smx', 'trimetoprim',
+    'rifampicin', 'rifampin', 'rifadin',
+    'polymyxin b',
+    'oxacillin', 'crystapen',
+    'tobramycin', 'nebcin', 'tobral',
+    'tetracycline', 'tetracyn',
+    'quinupristin', 'dalfopristin', 'synercid',
+    'piperacillin', 'tazobactam', 'zosyn', 'tazocin',
+    'nitrofurantoin', 'macrodantin', 'furadantin',
+    'moxifloxacin', 'avelox',
+    'erythromycin', 'ilosone',
+    'doxycycline', 'vibramycin', 'doxy',
+    'imipenem', 'tienam',
+    'cefoxitin', 'mefoxin',
+    'cefazolin', 'kefzol', 'ancef',
+    'aztreonam', 'azactam',
+    'ertapenem', 'invanz',
+    'doripenem', 'doribax',
+    'benzylpenicillin', 'penicillin g',
+    'amoxicillin', 'clavulanic', 'augmentin',
+    'ciprofloxacin',
+    'levofloxacin'
+];
+
+export const MEDICATION_TRANSLATOR = {
+    // ⚠️ KUNCI (KEY) SEBELAH KIRI WAJIB HURUF KECIL SEMUA AGAR TERBACA SISTEM!
+    "nasetil sisteine": "Nac",
+    "n-asetil sisteine": "Nac",
+    "n-acetylcysteine": "Nac",
+    "seftriakson": "Seftriakson",
+    "parasetamol": "Paracetamol",
+    "pantoprazol": "Pantoprazole",
+    "ketorolak": "Ketorolac",
+    "metronidazol": "Metronidazole",
+    "sefotaksim": "Sefotaksim",
+    "ceftriaxone": "Ceftriaxone",
+    "cefepim": "Cefepim",
+    "levofloxacin": "Levofloxacin",
+    "ciprofloxacin": "Ciprofloxacin",
+    "combiven": "Combiven",
+    "pulmicort": "Pulmicort",
+    "nacl 0.9%": "IVFD: NaCl 0.9%",
+    "dextrose 5%": "D5%",
+    "dextrose 10%": "D10%",
+    "ringer laktat": "IVFD: RL",
+    // === ANTIBIOTIK BARU ===
+    "ceftazidime": "Ceftazidime",
+    "trimethoprim/sulfamethoxazole": "TMP-SMX",
+    "tigecycline": "Tigecycline",
+    "rifampicin": "Rifampicin",
+    "polymyxin b": "Polymyxin B",
+    "oxacillin": "Oxacillin",
+    "vancomycin": "Vancomycin",
+    "tobramycin": "Tobramycin",
+    "tetracycline": "Tetracycline",
+    "quinupristin/dalfopristin": "Q-D",
+    "piperacillin/tazobactam": "Pip-Tazo",
+    "nitrofurantoin": "Nitrofurantoin",
+    "moxifloxacin": "Moxifloxacin",
+    "linezolid": "Linezolid",
+    "imipenem": "Imipenem",
+    "erythromycin": "Erythromycin",
+    "doxycycline": "Doxycycline",
+    "clindamycin": "Clindamycin",
+    "cefoxitin": "Cefoxitin",
+    "cefoperazone/sulbactam": "Cefoperazone/Sulbactam",
+    "cefazolin": "Cefazolin",
+    "aztreonam": "Aztreonam",
+    "ampicillin": "Ampicillin",
+    "amikacin": "Amikacin",
+    // === INJEKSI (IVFD) ===
+    "meropenem": "Meropenem",
+    "gentamicin": "Gentamicin",
+    "ertapenem": "Ertapenem",
+    "doripenem": "Doripenem",
+    "cefotaxime": "Cefotaxime",
+    "benzylpenicillin": "B-Penicillin",
+    "ampicillin/sulbactam": "Ampi/Sulb",
+    "amoxicillin/clavulanic acid": "Amoxi/Clav",
+};
+
+export const LAB_TRANSLATOR = {
+    "r/ dr": "Lab. R/ Darah Rutin",
+    "dr": "Lab. R/ Darah Rutin",
+    "tubex": "Lab. R/ Tubex",
+    "gds": "Lab. R/ GDS",    
+    // Tambahkan tes lab lain di sini...
+};
+
+// ✨ KAMUS PATTERN REGEX UNTUK PARSING LAB DARI TEKS
+export const LAB_PATTERNS = {
+    // Hematologi
+    'Hb': /(?:Hb|Hemoglobin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Leu': /(?:Leu|Leukosit|WBC)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Trmbsit': /(?:Plt|Trombosit|Trombo|Trmbsit|Platelets?)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Ht': /(?:Ht|Hematokrit)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Eritrosit': /(?:Eri|Eritrosit|RBC)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Retikulosit': /(?:Retikulosit)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'LED': /(?:LED|ESR|Laju Endap)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'BT': /(?:BT|Bleeding Time|Masa Perdarahan)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'CT': /(?:CT|Clotting Time|Masa Pembekuan)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'PT': /(?:PT)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'APTT': /(?:APTT)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'INR': /(?:INR)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+
+    // Kimia Klinik
+    'GDS': /(?:GDS|Gula Darah|Gula Darah Sewaktu|Sewaktu)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'GDP': /(?:GDP|Glukosa Puasa|Puasa)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    '2JPP': /(?:2JPP|2.?JPP|Jam PP|Post Prandial)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'HbA1c': /(?:HbA1c|Hemoglobin A1c|Glikohemoglobin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Ur': /(?:Ur|Ureum|BUN)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Cr': /(?:Cr|Kreatinin|Creatinin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'SGOT': /(?:SGOT|AST)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'SGPT': /(?:SGPT|ALT)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Alb': /(?:Alb|Albumin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Globulin': /(?:Globulin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Bil.Total': /(?:Bilirubin Total|Total Bil|Bil Total)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Bil.Direk': /(?:Bilirubin Direk|Direk|Bil Direk)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Bil.Indirek': /(?:Bilirubin Indirek|Indirek|Bil Indir)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Asam Urat': /(?:Asam Urat|Uric Acid)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+
+    // ==========================================
+// FIX ABSOLUT: KALIUM VS KALSIUM ANTI-BENTROK
+// ==========================================
+    'Na': /\b(?:Na|Natrium)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    
+    // 🔥 FIX: Kalium hanya mau menerima huruf 'K' tunggal atau kata 'Kalium', dan MENOLAK kata 'Kalsium'
+    'K': /\bK\b(?!alsium)[\s:.-]*(\d+(?:[.,]\d+)?)|(?:\bKalium)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    
+    'Cl': /\b(?:Cl|Clorida|Chloride|Klorida)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    
+    // Ca juga bisa menangkap penulisan Kalsium, Calcium, atau Ca
+    'Ca': /\b(?:Kalsium|Calcium|Ca)\b[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    
+    'Lactate': /\b(?:Lactate|Laktat)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+
+    // Gas Darah
+    'pH': /(?:pH)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'pCO2': /(?:pCO2|PCO2)[\s:.-]*(\d+(?:[.,]\d+)?)/i,    
+    'HCO3': /(?:HCO3)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+
+    // Panel Lipid
+    'Kolesterol': /(?:Kolesterol|Total Chol|Cholesterol)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'LDL': /(?:LDL)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'HDL': /(?:HDL)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Trigliserida': /(?:Trigliserida|Triglyceride|TG)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+
+    // Marker Spesifik
+    'Procalcitonin': /(?:Procalcitonin|PCT)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Ferritin': /(?:Ferritin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'D-Dimer': /(?:D-Dimer|DD)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'CRP': /(?:CRP|C-Reactive)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Troponin I': /(?:Troponin I|Trop-I|Troponin I)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'Troponin T': /(?:Troponin T|Trop-T|Troponin T)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'CK-MB': /(?:CK-MB|CKMB)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'ProBNP': /(?:ProBNP|BNP)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'TSH': /(?:TSH)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'FT4': /(?:FT4|Free T4)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'CA125': /(?:CA-125|CA125)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'CA19-9': /(?:CA-19-9|CA19-9)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'CD4': /(?:CD4)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+
+    // Lab Kualitatif (hasil kata-kata)
+    'Tubex': /(?:Tubex|Tube Agglutination)[\s:.-]*(.+?)(?:\n|$)/i,
+    'Gram/Sputum': /(?:(?:Gram|Sputum|BTA|Pewarnaan).*)/gi,  // Multi-line: capture semua baris Gram/Sputum/BTA
+    'TCM': /(?:TCM|GeneXpert|MTB)[\s:.-]*(.+?)(?:\n|$)/i,
+    'HIV': /(?:HIV)[\s:.-]*(.+?)(?:\n|$)/i,
+    'HBsAg': /(?:HBsAg|Hepatitis B)[\s:.-]*(.+?)(?:\n|$)/i,
+    'Anti-HCV': /(?:Anti-HCV|Hepatitis C)[\s:.-]*(.+?)(?:\n|$)/i,
+    'Widal': /(?:Widal|Typhoid)[\s:.-]*(.+?)(?:\n|$)/i,
+    'Kultur': /(?:Kultur|Culture)[\s:.-]*(.+?)(?:\n|$)/i,
+    'MDT': /(?:MDT|Morfologi Darah Tepi|Apusan Darah)[\s:.-]*(.+?)(?:\n|$)/i,
+};
+
+// ✨ LOW IS BAD - lab yang rendahnya yang berbahaya
+export const LAB_LOW_IS_BAD = [
+    'Hb', 'Trmbsit', 'Ht', 'Eritrosit', 'Alb', 'Globulin',
+    'Ferritin', 'Fe', 'TSAT', 'CD4', 'HDL'
+];
+
+// ✨ TUBEX KHUSUS - >= 4 = positif (merah)
+export const LAB_TUBEX_POSITIVE_THRESHOLD = 4;
+
+export const LAB_DICTIONARY = [
+    { name: "Hb", keywords: ["hb", "hemoglobin", "hgb"] },
+    { name: "Ht", keywords: ["ht", "hematokrit", "hct"] },
+    { name: "Leukosit", keywords: ["leukosit", "leu", "wbc"] },
+    { name: "Trombosit", keywords: ["trombosit", "trombo", "plt", "trmbsit"] },
+    { name: "Eritrosit", keywords: ["eritrosit", "rbc"] },
+    { name: "GDS", keywords: ["gula darah sewaktu", "gds"] },
+    { name: "GDP", keywords: ["gula darah puasa", "gdp"] },
+    { name: "2JPP", keywords: ["2jpp", "post prandial", "pp"] },
+    { name: "SGOT", keywords: ["sgot", "ast"] },
+    { name: "SGPT", keywords: ["sgpt", "alt"] },
+    { name: "Bil.Total", keywords: ["bilirubin total", "bil total", "bil.total"] },
+    { name: "Bil.Indirek", keywords: ["bilirubin indirek", "bil indirek", "indirek"] },
+    { name: "Bil.Direk", keywords: ["bilirubin direk", "bil direk", "direk"] },
+    { name: "Ureum", keywords: ["ureum", "bun"] },
+    { name: "Kreatinin", keywords: ["kreatinin", "krea", "cr"] },
+    { name: "Na", keywords: ["natrium", "\\bna\\b"] },
+    { name: "K", keywords: ["kalium", "\\bk\\b"] },
+    { name: "Cl", keywords: ["klorida", "\\bcl\\b"] },
+    // ✨ FIX: Menambahkan \\b pada Ca agar tidak keliru mendeteksi kata "cara" atau "campur"
+    { name: "Ca", keywords: ["kalsium", "calcium", "\\bca\\b"] }
 ];
