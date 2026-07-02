@@ -488,14 +488,14 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                         const isSore = /sore|\bjam\s*(16|18|20)\b|\b(16|18|20)[:.]00\b/i.test(lowerMed);
 
                         if (isMalam) activeShifts = ['jam_24'];
-                        else if (isPagi) activeShifts = ['jam_12'];
-                        else if (isSore) activeShifts = ['jam_18'];
-                        else {
-                        // ✨ FIX MANUAL MODE: 1x1 dan 2x1 dipaksa KOSONG sejak awal agar disetel manual oleh perawat
-                            if (freq === 1 || freq === 2) baseActiveShifts = [];
-                            else if (freq === 3) baseActiveShifts = ['jam_12', 'jam_18', 'jam_06'];
-                            else baseActiveShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
-                        }
+                                        else if (isPagi) activeShifts = ['jam_12'];
+                                        else if (isSore) activeShifts = ['jam_18'];
+                                        else {
+                                        // ✨ FIX MANUAL MODE: 1x1 dan 2x1 dipaksa KOSONG sejak awal agar disetel manual oleh perawat
+                                            if (freq === 1 || freq === 2) activeShifts = []; //  SINKRON
+                                            else if (freq === 3) activeShifts = ['jam_12', 'jam_18', 'jam_06']; //  SINKRON
+                                            else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06']; //  SINKRON
+                                        }
                     }
                 }
 
