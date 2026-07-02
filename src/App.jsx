@@ -26,7 +26,7 @@ import PatientTable from './components/PatientTable';
 import BukuCMTable from './components/BukuCMTable'; // 👈 Taruh di deretan komponen lain
 import { GlobalMedicationBoard, MedicationMarModal } from './components/MedicationBoard';
 import PatientForm from './components/PatientForm';
-import { formatDateCM, hitungHariCM, getAntibioticDay, parsePlanning, parseDateCM, renderLacakTtv, renderObjectiveCell, renderPlanningCell, CustomInput, extractLabSnapshot } from './utils/helpers';
+import { formatDateCM, hitungHariCM, getAntibioticDay, parsePlanning, parseDateCM, renderLacakTtv, renderObjectiveCell, renderPlanningCell, CustomInput, extractLabSnapshot, generateShiftReport } from './utils/helpers';
 import {
     LEFT_ROOMS, RIGHT_ROOMS, ROOM_LIST,
     DEFAULT_DPJP_DATA, LAB_CHECKS, RADIOLOGY_CHECKS,
@@ -906,7 +906,7 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                     
                     {/* ✨ BLOK INI YANG KITA GANTI: Ditambah tombol Tukar di sebelah ikon Gender */}
                     <div className="flex justify-between items-center mb-0.5 border-b border-white/60 pb-0.5">
-                        <span className={`font-extrabold text-[11px] ${isMale ? 'text-blue-900' : 'text-rose-900'}`}>{roomNumber}</span>
+                        <span className={`font-extrabold text-[11px] ${isMale ? 'text-blue-900' : 'text-rose-900'}`}>{roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2')}</span>
                         
                         <div className="flex gap-1 items-center">
                             <button 
@@ -952,7 +952,7 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
         // 3. RENDER: KOSONG / SISA BED
         return (
             <div key={roomNumber} onClick={() => onSelectRoom(roomNumber)} className={`relative flex flex-col items-center justify-center p-1 rounded-lg border-2 border-dashed cursor-pointer transition-all ${statusColor}`}>
-                <span className="font-extrabold text-[11px] mb-0.5">{roomNumber}</span>
+                <span className="font-extrabold text-[11px] mb-0.5">{roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2')}</span>
                 <span className="text-[9px] font-bold px-1.5 py-px rounded-full bg-white/80 shadow-sm">{statusText}</span>
             </div>
         );
@@ -1486,7 +1486,33 @@ const MedicalRecordApp = ({
       };
   }, [getConfigRef, userId]);
 
-  const dpjpOptions = useMemo(() => dpjpProfiles.map(p => p.name), [dpjpProfiles]);
+  // ✨ FIX DROPDOWN: Mengurutkan filter utama Dashboard berdasarkan Dokter Prioritas Ruangan (Sesuai image_7e06b0.png)
+  const dpjpOptions = useMemo(() => {
+      const names = dpjpProfiles.map(p => p.name);
+      
+      // Daftar dokter utama/prioritas di ruangan (dr. Susilo sudah dihapus karena pensiun)
+      const priorityDocs = [
+          "dr. Delvi, Sp.PD", 
+          "dr. Dian Ekowati, Sp.PD",           
+          "dr. Priyo, Sp.PD", 
+          "dr. Risa, Sp.PD",
+          "dr. Evan, Sp.P",
+      ];
+      
+      return [...names].sort((a, b) => {
+          const idxA = priorityDocs.indexOf(a);
+          const idxB = priorityDocs.indexOf(b);
+          
+          // Jika keduanya adalah dokter prioritas, urutkan sesuai index priorityDocs
+          if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+          // Jika hanya A yang prioritas, naikkan ke atas
+          if (idxA !== -1) return -1;
+          // Jika hanya B yang prioritas, naikkan ke atas
+          if (idxB !== -1) return 1;
+          // Sisa dokter konsul lainnya diurutkan alfabetis biasa (A-Z)
+          return a.localeCompare(b);
+      });
+  }, [dpjpProfiles]);
 
   // Generic save helper for settings (merges keys) - dengan localStorage backup
   const saveSettings = async (partial) => {
@@ -3449,7 +3475,7 @@ const processDischarge = async (type) => {
                                             <div className="flex-1 min-w-0">
                                                 <div className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-2">
                                                     <span className="text-[10px] font-black border-2 border-black px-1.5 py-0.5 bg-slate-50 text-black"> 
-                                                        {rec.roomNumber ? rec.roomNumber.replace(/[AB]$/, '') : ''}
+                                                        {rec.roomNumber ? rec.roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2') : ''}
                                                     </span>
                                                     <span className="truncate group-hover:text-indigo-600 transition-colors">{rec.name}</span>
                                                 </div>
@@ -3820,8 +3846,38 @@ const processDischarge = async (type) => {
                             <div className="bg-sky-100 border border-sky-300 text-sky-900 rounded p-2 text-center"><span className="text-[9px] font-bold">SISA LK</span><div className="text-xl font-extrabold">{stats.emptyMale}</div></div>
                             <div className="bg-purple-100 border border-purple-300 text-purple-900 rounded p-2 text-center"><span className="text-[9px] font-bold">SISA PR</span><div className="text-xl font-extrabold">{stats.emptyFemale}</div></div>
                         </div>
-                        <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-3 text-xs uppercase">Pasien per DPJP</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{Object.entries(stats.dpjpCounts).sort((a,b)=>b[1]-a[1]).map(([n,c])=>(<div key={n} className="flex justify-between items-center text-[10px] p-2 bg-gray-50 rounded border hover:bg-indigo-50 group"><span className="truncate font-medium">{n}</span><div className="flex items-center gap-1"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{c}</span><button onClick={()=>handleReportDpjpCount(n,c)} className="text-[9px] bg-green-100 text-green-700 p-1 rounded-full opacity-80 group-hover:opacity-100">📱</button></div></div>))}</div>
+                        {/* 📊 SEKSI STATISTIK BEBAN DOKTER BERDASARKAN PRIORITAS (SINKRON 100%) */}
+                        <div className="bg-white rounded p-3 border">
+                            <h3 className="font-bold text-gray-700 border-b pb-2 mb-3 text-xs uppercase">Pasien per DPJP</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                {Object.entries(stats.dpjpCounts).sort((a, b) => {
+                                    // Sesuai susunan prioritas di dpjpOptions utama
+                                    const priorityDocs = [
+                                        "dr. Delvi, Sp.PD", 
+                                        "dr. Dian Ekowati, Sp.PD",           
+                                        "dr. Priyo, Sp.PD", 
+                                        "dr. Risa, Sp.PD",
+                                        "dr. Evan, Sp.P"
+                                    ];
+                                    
+                                    // a[0] dan b[0] berisi nama string dokter
+                                    const idxA = priorityDocs.indexOf(a[0]);
+                                    const idxB = priorityDocs.indexOf(b[0]);
+                                    
+                                    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                                    if (idxA !== -1) return -1;
+                                    if (idxB !== -1) return 1;
+                                    return a[0].localeCompare(b[0]);
+                                }).map(([n, c]) => (
+                                    <div key={n} className="flex justify-between items-center text-[10px] p-2 bg-gray-50 rounded border hover:bg-indigo-50 group">
+                                        <span className="truncate font-medium">{n}</span>
+                                        <div className="flex items-center gap-1">
+                                            <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{c}</span>
+                                            <button onClick={() => handleReportDpjpCount(n, c)} className="text-[9px] bg-green-100 text-green-700 p-1 rounded-full opacity-80 group-hover:opacity-100">📱</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                         <div className="bg-white rounded p-3 border"><h3 className="font-bold text-gray-700 border-b pb-2 mb-2 text-xs uppercase flex justify-between"><span>🤝 Raber/Konsul</span><span className="bg-yellow-100 px-2 rounded-full">{Object.keys(stats.raberData).length} Dr</span></h3>
                             <div className="space-y-2">{Object.entries(stats.raberData).length===0?<div className="text-[10px] text-gray-400 text-center">Nihil.</div>:Object.entries(stats.raberData).map(([d,p])=>(<div key={d} className="text-[10px] bg-yellow-50 p-2 rounded border flex justify-between group"><div className="flex-1"><div className="font-bold text-indigo-800">{d}</div><div className="text-gray-600">({p.join(', ')})</div></div><button onClick={()=>handleReportRaber(d,p)} className="ml-2 bg-green-100 text-green-700 px-2 py-1 rounded opacity-80 group-hover:opacity-100">📱</button></div>))}</div>

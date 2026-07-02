@@ -945,7 +945,8 @@ const PatientForm = ({
                             onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('planning') : null} 
                             pullLabel="Tarik P"                            
                         >
-                            <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-10">
+                            {/* ✨ PANGKAT DINAMIS: Default z-20, tapi saat diklik ngetik naik pangkat ke z-50 agar list dropdown di image_7a01a5.png tidak tertutup */}
+                            <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-20 focus-within:z-50 transition-all">
                                 <PlanningQuickTag onSelect={(text) => appendText('planning', text)} />
 
                                 <TagSelector 
@@ -999,9 +1000,9 @@ const PatientForm = ({
 
                         {/* ============================================================ */}
                         {/* 💊 SUB-PLANNING KHUSUS RESEP OBAT (PERSISTEN / TIDAK DIRESET) */}
-                        {/* ============================================================ */}
-                        {/* ✨ FIX UI: Mengganti 'overflow-hidden' dengan 'relative z-30' agar balon tip bisa melayang keluar bebas */}
-                        <div className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm relative z-30">
+                        {/* ============================================================ */}                        
+                        {/* ✨ PANGKAT DINAMIS: Default z-10 di bawah planning, tapi saat di-hover/diklik naik pangkat ke z-40 agar balon CPO bisa terbang ke atas bebas */}
+                        <div className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm relative z-10 hover:z-40 focus-within:z-40 transition-all">
                             
                             {/* ✨ FIX UI: Menambahkan 'rounded-t-lg' di sini agar sudut header tetap melengkung rapi */}
                             <div className="flex items-center justify-between px-3 py-1.5 bg-rose-100 border-b border-rose-200 rounded-t-lg">
