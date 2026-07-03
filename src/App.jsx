@@ -901,18 +901,64 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
         // 1. RENDER: TERISI (PASIEN)
         if (record) {
             const isMale = record.gender === 'L';
+            
+            // 🕒 DETEKSI HARI INI (Bahasa Indonesia: 'senin', 'selasa', dll)
+            const hariIni = new Date().toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
+            
+            // 🤖 SENSOR HANTU: Otomatis mendeteksi pasien CKD on HD
+            const gabunganTeksSOAP = `${record.analysis || ''} ${record.planning || ''}`.toLowerCase();
+            const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP);
+
+            // ⚡ MESIN JADWAL PINTAR
+            let isHDMenyalaHariIni = false;
+            if (isHD) {
+                if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
+                    isHDMenyalaHariIni = ['senin', 'kamis'].includes(hariIni);
+                } else if (gabunganTeksSOAP.includes('selasa-jumat') || gabunganTeksSOAP.includes('selasa jumat')) {
+                    isHDMenyalaHariIni = ['selasa', 'jumat'].includes(hariIni);
+                } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
+                    isHDMenyalaHariIni = ['rabu', 'sabtu'].includes(hariIni);
+                } else {
+                    isHDMenyalaHariIni = true; // Nyala default sebagai peringatan jika perawat lupa nulis hari
+                }
+            }
+
+            // 👨‍⚕️ SUNTIKAN OTOMATIS dr. Edi di Layar
+            let raberArray = [record.raberName, record.raber2Name].filter(Boolean);
+            if (isHD && !raberArray.some(r => r.toLowerCase().includes('edi'))) {
+                raberArray.push('dr. Edi');
+            }
+            const raberTextDisplay = raberArray.join(', ');
+
             return (
-                <div key={roomNumber} onClick={() => onEditRoom(record)} className={`relative flex flex-col p-1.5 rounded-lg border-2 cursor-pointer shadow-sm transition-all hover:shadow-md ${isMale ? 'bg-blue-200 border-blue-400' : 'bg-rose-100 border-rose-400'}`}>
+                <div 
+                    key={roomNumber} 
+                    onClick={() => onEditRoom(record)} 
+                    // ✨ Hanya pasang bingkai hitam tebal kalau hari ini adalah jadwalnya
+                    className={`relative flex flex-col p-1.5 rounded-lg border-2 cursor-pointer transition-all hover:shadow-md ${
+                        isHDMenyalaHariIni 
+                            ? 'border-slate-950 border-[3px] shadow-md ring-2 ring-slate-950/10' 
+                            : (isMale ? 'border-blue-400 shadow-sm' : 'border-rose-400 shadow-sm')
+                    } ${isMale ? 'bg-blue-200' : 'bg-rose-100'}`}
+                >
                     
-                    {/* ✨ BLOK INI YANG KITA GANTI: Ditambah tombol Tukar di sebelah ikon Gender */}
                     <div className="flex justify-between items-center mb-0.5 border-b border-white/60 pb-0.5">
-                        <span className={`font-extrabold text-[11px] ${isMale ? 'text-blue-900' : 'text-rose-900'}`}>{roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2')}</span>
+                        <span className={`font-extrabold text-[11px] ${isHDMenyalaHariIni ? 'text-slate-950 font-black' : (isMale ? 'text-blue-900' : 'text-rose-900')}`}>
+                            {roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2')}
+                        </span>
                         
                         <div className="flex gap-1 items-center">
+                            {/* ✨ Lampion hanya muncul di hari H */}
+                            {isHDMenyalaHariIni && (
+                                <span className="text-[8px] bg-slate-950 text-white font-black px-1.5 py-0.5 rounded shadow-sm animate-pulse flex items-center gap-0.5 tracking-tighter">
+                                    🩸 HD
+                                </span>
+                            )}
+                            
                             <button 
                                 type="button" 
                                 onClick={(e) => { 
-                                    e.stopPropagation(); // Biar pas diklik tidak membuka form SOAP
+                                    e.stopPropagation();
                                     if(onSwapBed) onSwapBed(record); 
                                 }} 
                                 className="text-[9px] bg-white/60 hover:bg-white/90 rounded px-1 shadow-sm transition cursor-pointer" 
@@ -925,8 +971,9 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                     <div className="flex-1 flex flex-col justify-center">
                         <span className="font-bold text-xs text-gray-800 leading-none truncate mb-0.5">{record.name}</span>
                         <span className="text-[9px] text-gray-600 font-medium truncate">{record.dpjpName}</span>
-                        {(record.raberName || record.raber2Name) && (
-                            <span className="text-[7px] bg-yellow-200 text-yellow-800 px-1 rounded w-fit mt-0.5">Raber: {record.raberName || record.raber2Name}</span>
+                        {/* Menampilkan Raber yang sudah disuntik dr. Edi */}
+                        {raberArray.length > 0 && (
+                            <span className="text-[7px] bg-yellow-200 text-yellow-800 px-1 rounded w-fit mt-0.5">Raber: {raberTextDisplay}</span>
                         )}
                     </div>
                 </div>
@@ -2736,13 +2783,21 @@ const processDischarge = async (type) => {
   };
 
   const handleReportRaber = (drName, patientNames) => {
-      const profile = dpjpProfiles.find(p => p.name === drName);
-      const phone = normalizePhone(profile?.waNumber);
+      let phone = '';
+      
+      // 🤖 SENSOR HANTU: Bypass nomor dr. Edi tanpa perlu disetting di master data
+      if (drName === 'dr. Edi') {
+          phone = '6283817014059'; 
+      } else {
+          const profile = dpjpProfiles.find(p => p.name === drName);
+          phone = normalizePhone(profile?.waNumber);
+      }
+      
       if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
       const salam = getDoctorGreeting(drName);
       
       // ✨ Nama perawat disisipkan tanpa cetak tebal
-      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin mengingatkan hari ini ada pasien Raber ya dok a.n ${patientNames.join(', ')}. Terima kasih.`;
+      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin mengingatkan hari ini ada pasien HD / Raber ya dok a.n ${patientNames.join(', ')}. Terima kasih.`;
       
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
@@ -3226,18 +3281,125 @@ const processDischarge = async (type) => {
       });
 
       // 3. Hitung jumlah beban pasien per dokter spesialis di bangsal aktif (KODE LAMA YANG TERPUTUS)
+      const hariIniStats = new Date().toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
+
       wardActiveRecords.forEach(rec => {
           s.dpjpCounts[rec.dpjpName] = (s.dpjpCounts[rec.dpjpName] || 0) + 1;
+          
+          // a. Raber manual dari form
           [rec.raberName, rec.raber2Name].forEach(dr => { 
               if(dr) { 
                   if(!s.raberData[dr]) s.raberData[dr]=[]; 
-                  s.raberData[dr].push(rec.name); 
+                  if(!s.raberData[dr].includes(rec.name)) s.raberData[dr].push(rec.name); 
               } 
           });
+
+          // b. SENSOR HANTU: Auto-rekap dr. Edi untuk Jadwal HD Hari Ini
+          const gabunganTeksSOAP = `${rec.analysis || ''} ${rec.planning || ''}`.toLowerCase();
+          const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP);
+
+          if (isHD) {
+              let isJadwalHariIni = false;
+              if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
+                  isJadwalHariIni = ['senin', 'kamis'].includes(hariIniStats);
+              } else if (gabunganTeksSOAP.includes('selasa-jumat') || gabunganTeksSOAP.includes('selasa jumat')) {
+                  isJadwalHariIni = ['selasa', 'jumat'].includes(hariIniStats);
+              } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
+                  isJadwalHariIni = ['rabu', 'sabtu'].includes(hariIniStats);
+              } else {
+                  isJadwalHariIni = true; // Nyala default jika tidak ditulis jadwal
+              }
+
+              if (isJadwalHariIni) {
+                  const namaDrEdi = "dr. Edi";
+                  if (!s.raberData[namaDrEdi]) s.raberData[namaDrEdi] = [];
+                  const hasManualEdi = [rec.raberName, rec.raber2Name].some(dr => dr && dr.toLowerCase().includes('edi'));
+                  
+                  if (!hasManualEdi && !s.raberData[namaDrEdi].includes(rec.name)) {
+                      s.raberData[namaDrEdi].push(rec.name);
+                  }
+              }
+          }
       });
 
       return s;
   }, [records, activeRecords, archivedRecords, currentUser]);
+
+  // ✨ FITUR BARU: MESIN PEMINDAI AGENDA HARI INI (Support Polosan & Kurung)
+  const agendaHariIni = useMemo(() => {
+      const agendas = [];
+      const today = new Date();
+      
+      // 1. Siapkan kata kunci hari ini
+      const namaHariIni = today.toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase(); // misal: 'jumat'
+      const d = today.getDate();
+      const m = today.getMonth() + 1;
+      const y2 = today.getFullYear().toString().slice(-2); // misal: '26'
+      const y4 = today.getFullYear(); // misal: '2026'
+      
+      // 2. Siapkan berbagai variasi format tanggal polosan (3/7, 03/07, 3/7/26, dll)
+      const tglVariasi = [
+          `${d}/${m}`, `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`,
+          `${d}/${m}/${y2}`, `${d}/${m}/${y4}`
+      ];
+
+      // 3. Sapu bersih semua data pasien aktif
+      activeRecords.forEach(rec => {
+          if (!rec.planning) return;
+          
+          // Pecah planning jadi array (Lab, Rad, Tindakan) menggunakan fungsi bawaan SIMPAN
+          const { labs, rads, tms } = parsePlanning(rec.planning);
+          const allActions = [...labs, ...rads, ...tms];
+
+          // Cek kapan data ini terakhir disimpan (untuk melacak kata "besok" atau "sore ini")
+          const lastUpdate = rec.updatedAt?.toDate ? rec.updatedAt.toDate() : (rec.updatedAt ? new Date(rec.updatedAt) : new Date());
+          const isUpdatedToday = lastUpdate.getDate() === today.getDate() && lastUpdate.getMonth() === today.getMonth();
+          
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          const isUpdatedYesterday = lastUpdate.getDate() === yesterday.getDate() && lastUpdate.getMonth() === yesterday.getMonth();
+
+          allActions.forEach(action => {
+              const lowerAction = action.toLowerCase();
+              let isTargetToday = false;
+
+              // A. Deteksi Nama Hari (Contoh polosan: "CT Scan jumat")
+              if (lowerAction.includes(namaHariIni)) isTargetToday = true;
+
+              // B. Deteksi Tanggal (Contoh polosan: "CT Scan 3/7" atau "[03/07/26]")
+              if (tglVariasi.some(tgl => lowerAction.includes(tgl))) isTargetToday = true;
+
+              // C. Deteksi Waktu Jangka Pendek (sore, malam, nanti) JIKA ditulis hari ini
+              if (isUpdatedToday && (lowerAction.includes('sore') || lowerAction.includes('malam') || lowerAction.includes('nanti'))) {
+                  isTargetToday = true;
+              }
+
+              // D. Deteksi kata "Besok" JIKA ditulisnya kemarin!
+              if (isUpdatedYesterday && (lowerAction.includes('besok') || lowerAction.includes('bsk'))) {
+                  isTargetToday = true;
+              }
+
+              // Jika masuk radar hari ini, dorong ke daftar alarm!
+              if (isTargetToday) {
+                  // Coba deteksi ini kategori apa untuk ikonnya
+                  let icon = '📋';
+                  if (rads.includes(action)) icon = '🩻';
+                  else if (labs.includes(action)) icon = '🩸';
+                  else if (tms.includes(action)) icon = '💉';
+
+                  agendas.push({
+                      id: rec.id,
+                      room: rec.roomNumber,
+                      name: rec.name,
+                      dpjp: rec.dpjpName,
+                      action: action,
+                      icon: icon
+                  });
+              }
+          });
+      });
+      return agendas;
+  }, [activeRecords]);
 
   // --- RENDER DASHBOARD ---
   const renderDashboard = () => (
@@ -3383,6 +3545,32 @@ const processDischarge = async (type) => {
                                 <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${soapMode === 'ruangan' ? 'translate-x-5' : 'translate-x-0'}`} />
                             </button>
                         </div>
+                        {/* ========================================================= */}
+                        {/* 🔔 ALARM AGENDA PENUNJANG HARI INI (PASANG DI SINI)       */}
+                        {/* ========================================================= */}
+                        {agendaHariIni.length > 0 && (
+                            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+                                <h3 className="text-xs font-black text-amber-900 uppercase flex items-center gap-1.5 mb-2 border-b border-amber-200 pb-1.5">
+                                    <span className="animate-bounce">🔔</span> Agenda Penunjang Terjadwal Hari Ini!
+                                </h3>
+                                <div className="space-y-1.5">
+                                    {agendaHariIni.map((agenda, i) => (
+                                        <div key={i} className="flex items-start gap-2 bg-white px-2 py-1.5 rounded border border-amber-200 shadow-sm cursor-pointer hover:bg-amber-100 transition" onClick={() => handleEdit(activeRecords.find(r => r.id === agenda.id))}>
+                                            <span className="text-sm shrink-0 leading-none pt-0.5">{agenda.icon}</span>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-[11px] font-bold text-slate-800 leading-tight">
+                                                    {agenda.action}
+                                                </div>
+                                                <div className="text-[9px] text-slate-500 font-medium mt-0.5">
+                                                    {agenda.room ? agenda.room.replace(/^(K\d+)(KM|P)$/, '$1•$2') : ''} a.n <span className="font-bold text-amber-700">{agenda.name}</span> ({agenda.dpjp})
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {/* ========================================================= */}
                         {filteredActiveRecords.length === 0 ? (
                             <div className="p-6 text-center text-gray-400 italic text-xs bg-white rounded-lg border">Tidak ada pasien aktif untuk ditampilkan.</div>
                         ) : (

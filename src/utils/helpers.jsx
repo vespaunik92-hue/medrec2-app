@@ -224,8 +224,13 @@ const CustomSelect = ({ label, value, onChange, options, placeholder, disabled, 
     );
 };
 
-// --- PLANNING QUICK TAG ---
+// --- PLANNING QUICK TAG (UPGRADED: HYBRID SMART INPUT) ---
 const PlanningQuickTag = ({ onSelect }) => {
+    // State untuk mengontrol Popover Jadwal
+    const [activeTag, setActiveTag] = useState(null);
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [customDate, setCustomDate] = useState('');
+
     const tags = [
         // LAB (Merah)
         { label: 'DR', isi: 'Lab. R/ Darah Rutin (DR)', warna: 'bg-red-100 text-red-700 border-red-200' },
@@ -245,21 +250,24 @@ const PlanningQuickTag = ({ onSelect }) => {
         { label: 'Whole Abd', isi: 'Rad. R/ USG Whole Abdomen', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
         { label: 'Upper Abd', isi: 'Rad. R/ USG Hepatobilier/Upper Abdomen', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
         { label: 'Lower Abd', isi: 'Rad. R/ USG Lower/Ginjal Abdomen', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
+        { label: 'CT Abd', isi: 'Rad. R/ CT Scan Abdomen kontras', warna: 'bg-blue-100 text-blue-700 border-blue-200' },
 
         // TERAPI (Ungu)
         { label: 'PRC', isi: 'Th. Trnfs  PRC, on ke , post ke , premed: , Postmed: ', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Nicardipin', isi: 'Th. Drip Perdipine/Nicardipine  mcg, Kec.  cc/j, Bb  kg', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Vascon', isi: 'Th. Drip vascon/Norepinephrine mcg, Kec.  cc/j, Bb  kg', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        { label: 'KCL', isi: 'Th. Koreksi KCL  mEq +  500 ml/8 Jam,  siklus on ke', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
+        { label: 'CaGluconas', isi: 'Th. Koreksi CaGluconas  gr + D5 100ml, Bolus Novorapid 10 iu + D40 2 flash', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Panto', isi: 'Th. Drip pantoprazole 8 mg/j', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Sliding Scale', isi: 'Th. Sliding Scale (SC tiap 4 jam):\n< 150 : 0 Unit\n150 - 200 : 4 Unit\n200 - 250 : 8 Unit\n250 - 300 : 12 Unit\n300 - 350 : 16 Unit\n350 - 400 : 20 Unit\n> 400 : 24 Unit', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
         { label: 'Protokol GDS', isi: 'Th. Cek GDS per 2 jam:\n- Jika GDS > 200 ganti D5% 20 tpm\n- Jika dgn D5% 20 tpm GDS > 200, ganti dgn NaCl 0.9% 20 tpm', warna: 'bg-purple-100 text-purple-700 border-purple-200' },
 
-        //TAMBAHAN (Hijau)
+        // TAMBAHAN (Hijau)
         { label: 'GB', isi: 'TM. Ganti Balutan', warna: 'bg-green-100 text-green-700 border-green-200' },
         { label: 'HD', isi: 'TM. Hemodialisa (HD)', warna: 'bg-green-100 text-green-700 border-green-200' },
         { label: 'Pungsi', isi: 'TM. Pungsi Ascites/Parasintesis', warna: 'bg-green-100 text-green-700 border-green-200' },
 
-        // TAMBAHAN (Hitam)
+        // BLPL (Hitam)
         { label: 'BLPL', isi: 'Rencana BLPL', warna: 'bg-black text-white border-black' },
 
         // KONSUL (Amber/Emas)
@@ -267,21 +275,120 @@ const PlanningQuickTag = ({ onSelect }) => {
         { label: 'Lapor', isi: 'Lapor (+)', warna: 'bg-amber-100 text-amber-900 border-amber-400' }
     ];
 
+    // Fungsi Pembantu: Menghitung tanggal ke depan secara otomatis
+    const getFutureDate = (daysToAdd) => {
+        const d = new Date();
+        d.setDate(d.getDate() + daysToAdd);
+        return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(-2)}`;
+    };
+
+    // Fungsi 1: Menangani Klik Tag Awal
+    const handleSelectTag = (tag) => {
+        // Cek pakai regex: Jika ini penunjang (Lab, Rad, TM), cegat dan buka Popover Jadwal!
+        if (/^(Lab\.|Rad\.|TM\.)/i.test(tag.isi)) {
+            setActiveTag(tag);
+            setShowDatePicker(false);
+            setCustomDate('');
+        } else {
+            // Kalau obat, konsul, atau BLPL, langsung tulis tanpa jadwal
+            onSelect(tag.isi);
+        }
+    };
+
+    // Fungsi 2: Menggabungkan Jadwal dan Menulis ke Kolom Planning
+    const confirmSchedule = (scheduleText) => {
+        if (!activeTag) return;
+        
+        let finalText = activeTag.isi;
+        if (scheduleText) {
+            finalText = `${activeTag.isi} [${scheduleText}]`;
+        } else {
+            // Opsi Ketik Manual (Kurung Siku Kosong)
+            finalText = `${activeTag.isi} [   ]`; 
+        }
+        
+        onSelect(finalText);
+        setActiveTag(null); // Tutup Popover
+    };
+
     return (
-        <div className="flex flex-wrap gap-1.5 mb-2">
-            {tags.map((tag, idx) => (
-                <button
-                    key={idx}
-                    type="button"
-                    onClick={() => onSelect(tag.isi)}
-                    className={tag.label === 'BLPL'
-                        ? `px-2 py-1 rounded text-[11px] font-bold border shadow-sm transition hover:opacity-80 ${tag.warna}`
-                        : `px-2 py-1 border rounded text-[9px] font-bold transition shadow-sm hover:opacity-80 ${tag.warna}`
-                    }
-                >
-                    {tag.label}
-                </button>
-            ))}
+        <div className="relative mb-2">
+            {/* 1. KUMPULAN TOMBOL TAG NORMAL */}
+            <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag, idx) => (
+                    <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSelectTag(tag)}
+                        className={tag.label === 'BLPL'
+                            ? `px-2 py-1 rounded text-[11px] font-bold border shadow-sm transition hover:opacity-80 ${tag.warna}`
+                            : `px-2 py-1 border rounded text-[9px] font-bold transition shadow-sm hover:opacity-80 ${tag.warna}`
+                        }
+                    >
+                        {tag.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* 2. POPOVER MELAYANG (HYBRID SMART INPUT) */}
+            {activeTag && (
+                <div className="absolute left-0 top-full mt-2 w-full max-w-sm bg-white border border-indigo-200 rounded-xl shadow-2xl z-[150] p-3 animate-in zoom-in-95 fade-in duration-200">
+                    <div className="flex justify-between items-center border-b pb-2 mb-2">
+                        <span className="text-[10px] font-black text-indigo-900 uppercase">
+                            🕒 Kapan <span className="text-indigo-600 bg-indigo-50 px-1 rounded">{activeTag.label}</span> dilakukan?
+                        </span>
+                        <button type="button" onClick={() => setActiveTag(null)} className="text-gray-400 hover:text-red-500 font-bold text-lg leading-none">×</button>
+                    </div>
+                    
+                    {/* OPSI 2: RAPID DATE TOKENS (Paling Sering Dipakai) */}
+                    <div className="grid grid-cols-2 gap-1.5 mb-2.5">
+                        <button type="button" onClick={() => confirmSchedule('Sore Ini')} className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 py-1.5 rounded text-[10px] font-bold transition shadow-sm">Sore Ini</button>
+                        <button type="button" onClick={() => confirmSchedule('Nanti Malam')} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-1.5 rounded text-[10px] font-bold transition shadow-sm">Nanti Malam</button>
+                        <button type="button" onClick={() => confirmSchedule(`Besok, ${getFutureDate(1)}`)} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-1.5 rounded text-[10px] font-bold transition shadow-sm">Besok Pagi</button>
+                        <button type="button" onClick={() => confirmSchedule(`Lusa, ${getFutureDate(2)}`)} className="bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 py-1.5 rounded text-[10px] font-bold transition shadow-sm">Lusa</button>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                        {/* OPSI 1: KALENDER ASLI (HTML Date Picker) */}
+                        <div className="flex-1 relative">
+                            {!showDatePicker ? (
+                                <button type="button" onClick={() => setShowDatePicker(true)} className="w-full bg-gray-50 hover:bg-gray-200 text-gray-700 border border-gray-300 py-1.5 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition shadow-sm">
+                                    📅 Pilih Kalender...
+                                </button>
+                            ) : (
+                                <div className="flex gap-1 animate-in slide-in-from-left-2">
+                                    <input 
+                                        type="date" 
+                                        value={customDate}
+                                        onChange={(e) => setCustomDate(e.target.value)}
+                                        className="w-full text-[10px] p-1.5 border border-indigo-300 rounded outline-none focus:ring-1 focus:ring-indigo-500 font-bold text-indigo-900"
+                                    />
+                                    <button 
+                                        type="button" 
+                                        onClick={() => {
+                                            if (customDate) {
+                                                const [y, m, d] = customDate.split('-');
+                                                // Convert format YYYY-MM-DD ke DD/MM/YY
+                                                confirmSchedule(`${d}/${m}/${y.slice(-2)}`);
+                                            } else {
+                                                setShowDatePicker(false);
+                                            }
+                                        }}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded text-[10px] font-bold transition shadow-sm"
+                                    >
+                                        OK
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        
+                        {/* OPSI 3: SMART BRACKET (Ketik Manual) */}
+                        <button type="button" onClick={() => confirmSchedule('')} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white border border-slate-700 py-1.5 rounded text-[10px] font-bold transition shadow-sm">
+                            ⌨️ Ketik Manual [ ]
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -877,11 +984,15 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     const now = new Date();
     const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
     
-    // Penentuan Kategori Shift Dinas
+    // ✨ LOGIKA SHIFT DENGAN TOLERANSI 1 JAM
     const hours = now.getHours();
-    let shift = 'Pagi';
-    if (hours >= 14 && hours < 21) shift = 'Siang';
-    else if (hours >= 21 || hours < 7) shift = 'Malam';
+    let shift = 'Pagi'; 
+
+    // Jika jam 15:00 s/d 21:59 -> Shift Siang
+    if (hours >= 15 && hours < 22) shift = 'Siang';
+    // Jika jam 22:00 s/d 08:59 -> Shift Malam
+    else if (hours >= 22 || hours < 9) shift = 'Malam';
+    // Jika di luar itu (09:00 - 14:59) -> Shift Pagi (Default)
 
     const snow = '❄️'; const rs = '🏥'; const woman = '👩🏼'; const man = '👨';
 
@@ -889,9 +1000,9 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     const currentRooms = roomList && roomList.length > 0 ? roomList : ROOM_LIST;
     const totalBed = currentRooms.length;
     
-    // ✨ FIX ISOLASI: Multi-Bangsal
+    // ✨ FIX ISOLASI: Multi-Bangsal (Disesuaikan dengan format P, KM, & Murni Kamar Melati)
     let isoRooms = [];
-    if (wardName.toLowerCase().includes('melati')) isoRooms = ['K14A', 'K15A', 'K15B'];
+    if (wardName.toLowerCase().includes('melati')) isoRooms = ['K14', 'K15P', 'K15KM']; // ✨ K14 murni, K15 pakai P & KM
     else if (wardName.toLowerCase().includes('teratai')) isoRooms = ['K7A', 'K7B'];
     else if (wardName.toLowerCase().includes('anyelir')) isoRooms = ['ISO-A', 'ISO-B'];
     else if (wardName.toLowerCase().includes('anggrek')) isoRooms = ['ISO-A', 'ISO-B'];
@@ -902,19 +1013,20 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     let emptyCount = 0; let emptyMale = 0; let emptyFemale = 0;
     let emptyIso = 0; let emptyIsoMale = 0; let emptyIsoFemale = 0;
 
-    // ✨ HITUNG BEBAN BED KOSONG SECARA PRESISI
+    // ✨ HITUNG BEBAN BED KOSONG SECARA PRESISI (FORMAT BARU)
     currentRooms.forEach(room => {
         if (!occupiedRooms.includes(room)) {
             const isIso = isoRooms.includes(room);
-            const match = room.match(/^(K\d+)([AB])$/);
+            // 🔍 REGEX BARU: Menerawang akhiran P atau KM, jika tidak ada berarti kamar murni/sendiri
+            const match = room.match(/^(K\d+)(P|KM)$/);
 
             if (isIso) {
                 if (!match) {
-                    emptyIso++;
+                    emptyIso++; // Masuk sini jika K14 murni kosong
                 } else {
                     const roomCode = match[1];
                     const bedCode = match[2];
-                    const neighborBed = bedCode === 'A' ? 'B' : 'A';
+                    const neighborBed = bedCode === 'P' ? 'KM' : 'P'; // Saklar tukar P ↔ KM
                     const neighborRoom = `${roomCode}${neighborBed}`;
                     const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
 
@@ -927,14 +1039,14 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
                     }
                 }
             } else {
-                // Kamar Tanpa Suffix A/B (Sifat Kamar Tunggal milik Ruang Dahlia '1', '2', dst)
+                // Kamar Umum Tanpa Suffix (Sifat Kamar Tunggal murni tanpa akhiran)
                 if (!match) {
                     emptyCount++;
                 } else {
-                    // Kamar Dengan Suffix A/B (Sifat Kamar Berpasangan milik Ruang Melati 'K1A', 'K1B')
+                    // Kamar Umum Dengan Suffix P/KM (Sifat Kamar Berpasangan Melati)
                     const roomCode = match[1];
                     const bedCode = match[2];
-                    const neighborBed = bedCode === 'A' ? 'B' : 'A';
+                    const neighborBed = bedCode === 'P' ? 'KM' : 'P'; // Saklar tukar P ↔ KM
                     const neighborRoom = `${roomCode}${neighborBed}`;
                     const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
 
@@ -967,27 +1079,82 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     const meninggalCount = todayRecords.filter(r => r.isDischarged && r.dischargeType === 'meninggal').length;
     const newPatientCount = activeRecords.filter(r => r.createdAt && getSafeDate(r.createdAt) >= startOfToday).length;
 
-    // --- HITUNG STATISTIK BEBAN DPJP ---
+    // --- HITUNG STATISTIK BEBAN DPJP (URUTAN PRIORITAS MELATI) ---
     const dpjpCounts = {};
     activeRecords.forEach(r => {
         if (r.dpjpName) dpjpCounts[r.dpjpName] = (dpjpCounts[r.dpjpName] || 0) + 1;
     });
+
     const dpjpStats = Object.keys(dpjpCounts).length > 0
-        ? Object.entries(dpjpCounts).map(([name, count]) => `- ${name} : ${count} pasien`).join('\n')
+        ? Object.entries(dpjpCounts).sort((a, b) => {
+            // Master urutan dokter prioritas tetap Melati (dr. Susilo sudah dihapus)
+            const priorityDocs = [
+                "dr. Delvi, Sp.PD", 
+                "dr. Dian Ekowati, Sp.PD",           
+                "dr. Priyo, Sp.PD", 
+                "dr. Risa, Sp.PD",
+                "dr. Evan, Sp.P"
+            ];
+            
+            // a[0] dan b[0] adalah string Nama Dokter
+            const idxA = priorityDocs.indexOf(a[0]);
+            const idxB = priorityDocs.indexOf(b[0]);
+            
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB; // Urutkan sesama dokter utama
+            if (idxA !== -1) return -1; // Naikkan dokter utama ke atas
+            if (idxB !== -1) return 1;  // Naikkan dokter utama ke atas
+            return a[0].localeCompare(b[0]); // Sisa dokter konsul lainnya diurutkan A-Z biasa
+        }).map(([name, count]) => `• ${name} : ${count} pasien`).join('\n') // Menggunakan Bullet Point '•' sesuai format wa-mu
         : '-';
 
-    // --- HITUNG STATISTIK RAWAT BERSAMA (RABER) ---
+    // --- HITUNG STATISTIK RAWAT BERSAMA (RABER) & SENSOR OTOMATIS dr. EDI ---
     const raberMap = {};
+    const hariIniLapor = now.toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
+
     activeRecords.forEach(r => {
+        // 1. Raber manual bawaan form
         [r.raberName, r.raber2Name].forEach(dr => {
             if (dr) {
                 if (!raberMap[dr]) raberMap[dr] = [];
-                raberMap[dr].push(r.name);
+                // Mencegah duplikasi nama jika perawat nulis dr. Edi manual
+                if (!raberMap[dr].includes(r.name)) raberMap[dr].push(r.name);
             }
         });
+
+        // 2. SENSOR HANTU: Auto-rekap dr. Edi untuk laporan shift
+        const gabunganTeksSOAP = `${r.analysis || ''} ${r.planning || ''}`.toLowerCase();
+        const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP);
+
+        if (isHD) {
+            let isJadwalHariIni = false;
+            
+            if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
+                isJadwalHariIni = ['senin', 'kamis'].includes(hariIniLapor);
+            } else if (gabunganTeksSOAP.includes('selasa-jumat') || gabunganTeksSOAP.includes('selasa jumat')) {
+                isJadwalHariIni = ['selasa', 'jumat'].includes(hariIniLapor);
+            } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
+                isJadwalHariIni = ['rabu', 'sabtu'].includes(hariIniLapor);
+            } else {
+                isJadwalHariIni = true; // Jika jadwal kosong, default masuk agar tidak ada pasien tertinggal
+            }
+
+            // Jika jadwalnya cocok dengan hari ini, masukkan ke kantong dr. Edi
+            if (isJadwalHariIni) {
+                const namaDrEdi = "dr. Edi";
+                if (!raberMap[namaDrEdi]) raberMap[namaDrEdi] = [];
+                
+                // Pastikan tidak dobel kalau perawat ternyata sudah pilih nama beliau di form
+                const hasManualEdi = [r.raberName, r.raber2Name].some(dr => dr && dr.toLowerCase().includes('edi'));
+                
+                if (!hasManualEdi && !raberMap[namaDrEdi].includes(r.name)) {
+                    raberMap[namaDrEdi].push(r.name);
+                }
+            }
+        }
     });
+
     const raberText = Object.keys(raberMap).length > 0
-    ? Object.entries(raberMap).map(([dr, pts]) => `- ${dr} : ${pts.length} pasien (${pts.join(', ')})`).join('\n')
+    ? Object.entries(raberMap).map(([dr, pts]) => `• ${dr} : ${pts.length} pasien (${pts.join(', ')})`).join('\n')
     : '-';
 
     // --- REKAP PASIEN KASUS DHF ---
