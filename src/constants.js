@@ -186,7 +186,6 @@ export const DEFAULT_DPJP_DATA = [
     { name: 'dr. Agam, Sp.B', waNumber: '6282218321999' },
     { name: 'dr. Daniel, Sp.B', waNumber: '6281398906655' },
     { name: 'dr. Synthia, Sp.B', waNumber: '628122004566' },
-    { name: 'dr. Irwan, Sp.B', waNumber: '6285721483198' },
     { name: 'dr. Eka, Sp.OT', waNumber: '6281380733477' },
     { name: 'dr. Gamal, Sp.OT', waNumber: '6281312208478' },
     { name: 'dr. Andre, Sp.BS', waNumber: '6287822462203' },
@@ -207,10 +206,11 @@ export const DEFAULT_DPJP_DATA = [
     { name: 'dr. Dede Lia Marlia, Sp. A', waNumber: '628121280535'},
     { name: 'dr. Tommy Nugrahadi, Sp.A', waNumber: '6282115159220' },
     { name: 'dr. Yogi Agustian, Sp.A', waNumber: '6281320033339' },
+    { name: 'dr. Edi', waNumber: '6283817014059' }
 ];
 
 export const LAB_CHECKS = [
-    'Darah Rutin (DR)', 'HJL', 'Masa Pendarahan (BT/CT)', 'CA125', 'CA19-9', 'PT/APTT/INR',
+    'Darah Rutin (DR)', 'HJL', 'Masa Pendarahan (CT/BT)', 'CA125', 'CA19-9', 'PT/APTT/INR',
     'GDS', 'GDP-2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer', 'Retikulosit',
     'Ureum-Creatinin', 'SGOT-SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
     'Elektrolit (Na/K/Cl)', 'Kalsium (Cal)', 'Analisa Gas Darah (AGD)', 'Lactate', 'igG-igM Cikungunya',
@@ -235,7 +235,7 @@ export const RADIOLOGY_CHECKS = [
 export const PROCEDURES = [
     'Pasang Infus', 'Pasang Kateter', 'Pasang NGT', 'Nebulizer', 'Oksigenasi', 'Pemasangan Ventilator',
     'EKG', 'Ganti Balutan', 'Suction', 'Injeksi Extra', 'Syringe Pump', 'Hemodialisa (HD)', 'Fisioterapi',
-    'Rawat Luka', 'Angkat Jahitan', 'Spooling NGT', 'Spooling Kateter', 'Bladder Training', 'Biopsi Sumsum Tulang',
+    'Rawat Luka', 'Angkat Jahitan', 'Feeding Test', 'Spooling NGT', 'Spooling Kateter', 'Bladder Training', 'Biopsi Sumsum Tulang',
     'Torakosintesis', 'Pungsi Efusi Pleura', 'Pungsi Ascites/Parasintesis', 'Pungsi Lumbal', 'Aspirasi Sendi',
     'Nefrostomi', 'Trakeostomi', 'Debridemen', 'Monitor UOP', 'Balance Cairan', 'Pasang/Repair CDL', 'Phlebotomi'
 ];
@@ -363,8 +363,8 @@ export const LAB_TRANSLATOR = {
 
 // ✨ KAMUS PATTERN REGEX UNTUK PARSING LAB DARI TEKS
 export const LAB_PATTERNS = {
-    // Hematologi
-    'Hb': /(?:Hb|Hemoglobin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    // Hematologi (Ditambahkan \b agar tidak membaca HBsAg)
+    'Hb': /\b(?:Hb|Hemoglobin)\b[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Leu': /(?:Leu|Leukosit|WBC)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Trmbsit': /(?:Plt|Trombosit|Trombo|Trmbsit|Platelets?)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Ht': /(?:Ht|Hematokrit)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
@@ -413,10 +413,10 @@ export const LAB_PATTERNS = {
     'pCO2': /(?:pCO2|PCO2)[\s:.-]*(\d+(?:[.,]\d+)?)/i,    
     'HCO3': /(?:HCO3)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
-    // Panel Lipid
-    'Kolesterol': /(?:Kolesterol|Total Chol|Cholesterol)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    'LDL': /(?:LDL)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    'HDL': /(?:HDL)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    // Panel Lipid (Diperbaiki agar tidak saling curi angka)
+    'Kolesterol': /(?:Total Cholesterol|Kolesterol Total|Total Chol|Kolesterol)(?!.*(?:HDL|LDL))[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'LDL': /(?:LDL(?:[\s-]*Cholesterol)?)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    'HDL': /(?:HDL(?:[\s-]*Cholesterol)?)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Trigliserida': /(?:Trigliserida|Triglyceride|TG)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
     // Marker Spesifik
@@ -456,11 +456,12 @@ export const LAB_LOW_IS_BAD = [
 export const LAB_TUBEX_POSITIVE_THRESHOLD = 4;
 
 export const LAB_DICTIONARY = [
-    { name: "Hb", keywords: ["hb", "hemoglobin", "hgb"] },
+    { name: "Hb", keywords: ["\\bhb\\b", "hemoglobin", "hgb"] },
     { name: "Ht", keywords: ["ht", "hematokrit", "hct"] },
     { name: "Leukosit", keywords: ["leukosit", "leu", "wbc"] },
     { name: "Trombosit", keywords: ["trombosit", "trombo", "plt", "trmbsit"] },
     { name: "Eritrosit", keywords: ["eritrosit", "rbc"] },
+    { name: "HBsAg", keywords: ["hbsag", "hepatitis b"] },
     { name: "GDS", keywords: ["gula darah sewaktu", "gds"] },
     { name: "GDP", keywords: ["gula darah puasa", "gdp"] },
     { name: "2JPP", keywords: ["2jpp", "post prandial", "pp"] },

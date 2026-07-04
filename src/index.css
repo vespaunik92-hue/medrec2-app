@@ -17,3 +17,13 @@
     padding: 0 !important;
   }
 }
+
+/* ✨ Animasi Khusus Garis Denah Pasien HD Berkedip */
+@keyframes borderBlink {
+  0%, 100% { border-color: #000000; box-shadow: 0 0 4px rgba(0,0,0,0.2); }
+  50% { border-color: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); } /* Berkedip ke Merah Alert */
+}
+
+.animate-border-hd {
+  animation: borderBlink 1.5s infinite ease-in-out;
+}

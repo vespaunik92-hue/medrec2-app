@@ -26,7 +26,9 @@ import PatientTable from './components/PatientTable';
 import BukuCMTable from './components/BukuCMTable'; // 👈 Taruh di deretan komponen lain
 import { GlobalMedicationBoard, MedicationMarModal } from './components/MedicationBoard';
 import PatientForm from './components/PatientForm';
-import { formatDateCM, hitungHariCM, getAntibioticDay, parsePlanning, parseDateCM, renderLacakTtv, renderObjectiveCell, renderPlanningCell, CustomInput, extractLabSnapshot, generateShiftReport } from './utils/helpers';
+import { formatDateCM, hitungHariCM, getAntibioticDay, parsePlanning, parseDateCM,
+    renderLacakTtv, renderObjectiveCell, renderPlanningCell, CustomInput, extractLabSnapshot,
+    generateShiftReport, getLabInfo } from './utils/helpers';
 import {
     LEFT_ROOMS, RIGHT_ROOMS, ROOM_LIST,
     DEFAULT_DPJP_DATA, LAB_CHECKS, RADIOLOGY_CHECKS,
@@ -869,6 +871,9 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
         return combined;
     }, [leftRooms, rightRooms]);
 
+    // =================================================================================
+    // ✨ AREA REVISI FINAL: IMPLEMENTASI KEDIP BORDER (2.1) & SVG GINJAL + BALON TIP (2.2)
+    // =================================================================================
     const renderRoom = (roomNumber) => {
         const record = activeRecords.find(r => r.roomNumber === roomNumber);
         const booked = waitingList?.find(w => w.plannedRoom === roomNumber);
@@ -880,7 +885,7 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
         let statusText = 'Kosong';
         let statusColor = 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'; 
         
-        // ✨ FIX SENSOR: Menyesuaikan deteksi tetangga kasur format KM dan P
+        // ✨ SENSOR TETANGGA: Menyesuaikan deteksi tetangga kasur format KM dan P
         const match = roomNumber.match(/^(K\d+)(KM|P)$/);
         if (!record && !booked && match) {
             const roomCode = match[1];
@@ -919,7 +924,7 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                 } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
                     isHDMenyalaHariIni = ['rabu', 'sabtu'].includes(hariIni);
                 } else {
-                    isHDMenyalaHariIni = true; // Nyala default sebagai peringatan jika perawat lupa nulis hari
+                    isHDMenyalaHariIni = true; // Nyala default jika perawat lupa nulis hari
                 }
             }
 
@@ -934,27 +939,36 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                 <div 
                     key={roomNumber} 
                     onClick={() => onEditRoom(record)} 
-                    // ✨ Hanya pasang bingkai hitam tebal kalau hari ini adalah jadwalnya
+                    // ✨ Bingkai berkedip HANYA menyala di jadwal HD-nya
                     className={`relative flex flex-col p-1.5 rounded-lg border-2 cursor-pointer transition-all hover:shadow-md ${
                         isHDMenyalaHariIni 
-                            ? 'border-slate-950 border-[3px] shadow-md ring-2 ring-slate-950/10' 
+                            ? 'animate-border-hd border-[2.5px] shadow-md ring-2 ring-slate-950/5' 
                             : (isMale ? 'border-blue-400 shadow-sm' : 'border-rose-400 shadow-sm')
                     } ${isMale ? 'bg-blue-200' : 'bg-rose-100'}`}
                 >
                     
+                    {/* ========================================================================= */}
+                    {/* ✨ BALON TIP MELAYANG (ABSOLUTE) ALA CEFTRIAXONE CPO */}
+                    {/* ========================================================================= */}
+                    {isHDMenyalaHariIni && (
+                        <div className="absolute -top-3 -right-2 bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-md flex items-center gap-1 z-30 animate-in zoom-in-95 duration-200">
+                            {/* Ikon Ginjal Medis Putih */}
+                            <svg className="w-2.5 h-2.5 fill-current text-white animate-pulse shrink-0" viewBox="0 0 24 24">
+                                <path d="M12 2c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 17.2c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l.59-.59C7.93 19.26 9.88 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 14c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/>
+                            </svg>
+                            HD
+                            {/* Ekor Balon Tip (Segitiga Mungil Merah ke Bawah) */}
+                            <div className="absolute -bottom-[5px] right-2.5 border-l-[4px] border-r-[4px] border-t-[6px] border-l-transparent border-r-transparent border-t-rose-600 drop-shadow-sm"></div>
+                        </div>
+                    )}
+                    {/* ========================================================================= */}
+
                     <div className="flex justify-between items-center mb-0.5 border-b border-white/60 pb-0.5">
                         <span className={`font-extrabold text-[11px] ${isHDMenyalaHariIni ? 'text-slate-950 font-black' : (isMale ? 'text-blue-900' : 'text-rose-900')}`}>
                             {roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2')}
                         </span>
                         
                         <div className="flex gap-1 items-center">
-                            {/* ✨ Lampion hanya muncul di hari H */}
-                            {isHDMenyalaHariIni && (
-                                <span className="text-[8px] bg-slate-950 text-white font-black px-1.5 py-0.5 rounded shadow-sm animate-pulse flex items-center gap-0.5 tracking-tighter">
-                                    🩸 HD
-                                </span>
-                            )}
-                            
                             <button 
                                 type="button" 
                                 onClick={(e) => { 
@@ -968,6 +982,7 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                             <span className="text-[9px] bg-white/50 rounded px-1">{isMale ? '🚹' : '🚺'}</span>
                         </div>
                     </div>
+                    
                     <div className="flex-1 flex flex-col justify-center">
                         <span className="font-bold text-xs text-gray-800 leading-none truncate mb-0.5">{record.name}</span>
                         <span className="text-[9px] text-gray-600 font-medium truncate">{record.dpjpName}</span>
@@ -1380,10 +1395,23 @@ const MedicalRecordApp = ({
     return () => unsub();
   }, [db, appId]);
 
-  // --- PENCARIAN & FILTER + SORTIR KAMAR (ATURAN DR. DELVI) ---
+  // --- PENCARIAN & FILTER + SORTIR KAMAR (ATURAN DR. DELVI DI DASHBOARD) ---
   const filteredActiveRecords = useMemo(() => {
+    
+    // 1. Cek apakah dr. Delvi sedang dipilih di dropdown filter atas
+    const isDelviSelected = dpjpFilter.some(dr => dr.toLowerCase().includes('delvi'));
+
     const filtered = activeRecords.filter(rec => {
-        const matchesDpjp = dpjpFilter.length === 0 || dpjpFilter.includes(rec.dpjpName);
+        // Sensor deteksi pasien HD
+        const textScan = `${rec.diagnosis || ''} ${rec.analysis || ''} ${rec.planning || ''}`.toLowerCase();
+        const isHD = textScan.includes('hd') || textScan.includes('ckd') || textScan.includes('hemodialisa');
+
+        // ✨ LOGIKA FILTER DASHBOARD
+        // Loloskan pasien jika: Tidak ada filter DPJP, ATAU namanya cocok, ATAU (dr. Delvi dipilih DAN pasien ini HD)
+        const matchesDpjp = dpjpFilter.length === 0 || 
+                            dpjpFilter.includes(rec.dpjpName) || 
+                            (isDelviSelected && isHD);
+
         const matchesRoom = selectedRoomFilter.length === currentWardConfig.roomList.length || selectedRoomFilter.includes(rec.roomNumber);
         const term = searchTerm.toLowerCase();
         const matchesSearch = !searchTerm || 
@@ -1391,20 +1419,22 @@ const MedicalRecordApp = ({
             (rec.analysis && rec.analysis.toLowerCase().includes(term)) ||
             (rec.dpjpName && rec.dpjpName.toLowerCase().includes(term)) ||
             (rec.rmNumber && rec.rmNumber.includes(term)); 
+
         return matchesDpjp && matchesRoom && matchesSearch;
     });
 
-    // ✨ FIX 1: Terapkan aturan urutan kamar
-    const isDelviOnly = filtered.length > 0 && filtered.every(r => r.dpjpName === 'dr. Delvi, Sp.PD');
+    // ✨ FIX 1: Terapkan aturan urutan kamar rute U
+    // Hanya aktif jika filter DPJP spesifik memilih dr. Delvi saja (agar rapi saat visit)
+    const isDelviOnly = dpjpFilter.length === 1 && dpjpFilter[0].toLowerCase().includes('delvi');
 
     if (isDelviOnly) {
-        // Aturan Letter-U khusus dr. Delvi
+        // Aturan Letter-U khusus dr. Delvi (Mundur dari K6 Kiri, Lanjut K7 Kanan)
         const uShapeBase = ['K6', 'K4', 'K2', 'K1', 'K3', 'K5', 'K7', 'K8', 'K9', 'K11', 'K12', 'K14', 'K15', 'K13', 'K10'];
         
-        // ✨ FIX MUTAKHIR: Menerjemahkan uShapeBase ke nama kamar baru (P, KM, atau tanpa akhiran) secara dinamis sesuai ROOM_LIST
+        // Menerjemahkan uShapeBase ke nama kamar baru (P, KM) secara dinamis
         const uShapeOrder = uShapeBase.flatMap(k => {
             const regex = new RegExp('^' + k + '(P|KM)?$');
-            return ROOM_LIST.filter(r => regex.test(r));
+            return currentWardConfig.roomList.filter(r => regex.test(r));
         });
         
         return filtered.sort((a, b) => {
@@ -1416,7 +1446,7 @@ const MedicalRecordApp = ({
         });
     }
 
-    // Urutan default (A-Z / Numerik normal)
+    // Urutan default (A-Z / Numerik normal dari Kamar 1 sampai Ujung)
     return filtered.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' }));
 
   }, [activeRecords, dpjpFilter, selectedRoomFilter, searchTerm, currentWardConfig]);
@@ -2770,34 +2800,58 @@ const processDischarge = async (type) => {
   };
 
 
+  // --- FUNGSI 1: LAPOR JUMLAH KE DPJP (DENGAN FILTER TOLERANSI SALAM) ---
   const handleReportDpjpCount = (drName, count) => {
       const profile = dpjpProfiles.find(p => p.name === drName);
-      const phone = normalizePhone(profile?.waNumber);
+      const phone = profile ? normalizePhone(profile.waNumber) : '';
       if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
-      const salam = getDoctorGreeting(drName);
       
-      // ✨ Nama perawat disisipkan tanpa cetak tebal
-      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin melaporkan jumlah pasien dokter pagi ini ada ${count} pasien ya dok. Terima kasih.`;
+      // 🤖 Pembangkit Salam Waktu Lokal
+      const h = new Date().getHours();
+      let salam = "Selamat Malam";
+      if (h >= 4 && h < 10) salam = "Selamat Pagi";
+      else if (h >= 10 && h < 15) salam = "Selamat Siang";
+      else if (h >= 15 && h < 18) salam = "Selamat Sore";
+
+      // ✨ LOGIKA SALAM KHUSUS (Toleransi Agama)
+      const nonMuslimDoctors = ['dr. Dian Ekowati', 'dr. Synthia', 'dr. Daniel'];
+      const isNonMuslim = nonMuslimDoctors.some(name => drName.toLowerCase().includes(name.toLowerCase()));
+      const prefixSalam = isNonMuslim ? salam : `Assalamualaikum, ${salam}`;
+      
+      const text = `${prefixSalam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin melaporkan jumlah pasien dokter hari ini ada ${count} pasien ya dok. Terima kasih.`;
       
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
+  // --- FUNGSI 2: LAPOR KE RABER / KONSUL (DENGAN FILTER TOLERANSI SALAM & PESAN DR. EDI) ---
   const handleReportRaber = (drName, patientNames) => {
-      let phone = '';
+      const profile = dpjpProfiles.find(p => p.name === drName);
+      const phone = profile ? normalizePhone(profile.waNumber) : '';
       
-      // 🤖 SENSOR HANTU: Bypass nomor dr. Edi tanpa perlu disetting di master data
-      if (drName === 'dr. Edi') {
-          phone = '6283817014059'; 
-      } else {
-          const profile = dpjpProfiles.find(p => p.name === drName);
-          phone = normalizePhone(profile?.waNumber);
+      if (!phone) return alert(`Nomor WA ${drName} belum disetting di Master Data.`);
+      
+      // 🤖 Pembangkit Salam Waktu Lokal
+      const h = new Date().getHours();
+      let salam = "Selamat Malam";
+      if (h >= 4 && h < 10) salam = "Selamat Pagi";
+      else if (h >= 10 && h < 15) salam = "Selamat Siang";
+      else if (h >= 15 && h < 18) salam = "Selamat Sore";
+
+      // ✨ LOGIKA SALAM KHUSUS (Toleransi Agama)
+      const nonMuslimDoctors = ['dr. Dian Ekowati', 'dr. Synthia', 'dr. Daniel'];
+      const isNonMuslim = nonMuslimDoctors.some(name => drName.toLowerCase().includes(name.toLowerCase()));
+      const prefixSalam = isNonMuslim ? salam : `Assalamualaikum, ${salam}`;
+      
+      let text = '';
+
+      // ✨ LOGIKA PESAN KHUSUS DR. EDI
+      if (drName.toLowerCase().includes('edi')) {
+          text = `Assalamualaikum dokter, ini ${currentUser?.name} dari Ruang ${currentWardConfig.name}, mengingatkan ada pasien HD atas nama: ${patientNames.join(', ')}`;
+      } 
+      // Logika pesan untuk dokter raber lainnya
+      else {
+          text = `${prefixSalam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin mengingatkan hari ini ada pasien Raber ya dok a.n ${patientNames.join(', ')}. Terima kasih.`;
       }
-      
-      if (!phone) return alert(`Nomor WA ${drName} belum disetting.`);
-      const salam = getDoctorGreeting(drName);
-      
-      // ✨ Nama perawat disisipkan tanpa cetak tebal
-      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin mengingatkan hari ini ada pasien HD / Raber ya dok a.n ${patientNames.join(', ')}. Terima kasih.`;
       
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
   };
@@ -3481,26 +3535,48 @@ const processDischarge = async (type) => {
             
             {/* 1. TOMBOL SAKLAR */}
             <div className="flex bg-white p-1 rounded-lg border border-indigo-200 mb-3 shrink-0 shadow-sm">
-                
-                {/* 📝 TAB 1: E-ONTANG ANTING + TOMBOL PRINT (Disatukan agar tidak jadi 3 tab terpisah) */}
-                <div className={`flex-1 flex items-center relative rounded-md transition ${rightDashboardTab === 'soap-apo' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50'}`}>
-                    <button 
-                        onClick={() => setRightDashboardTab('soap-apo')}
-                        className="flex-1 py-1.5 text-xs font-bold w-full h-full text-center"
-                    >
-                        📝 E-Ontang-Anting
-                    </button>
-                    
-                    {/* Tombol Print ini nyempil di dalam tab, dan HANYA muncul jika tab ini diklik */}
-                    {rightDashboardTab === 'soap-apo' && (
-                        <button 
-                            onClick={() => window.print()}
-                            className="no-print absolute right-1.5 bg-white text-indigo-700 hover:bg-indigo-50 px-2 py-1 rounded text-[9px] font-extrabold shadow-sm flex items-center gap-1 transition"
-                            title="Cetak Seluruh Kartu E-Ontang-Anting"
+    
+                {/* 📝 TAB 1: E-ONTANG ANTING (KOMPAK TRIPLE-SECTION) */}
+                <div 
+                    onClick={() => setRightDashboardTab('soap-apo')}
+                    className={`flex-1 flex items-center justify-between px-2 rounded-md transition cursor-pointer select-none ${
+                        rightDashboardTab === 'soap-apo' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50'
+                    }`}
+                >
+                    {/* SISI KIRI: Micro Toggle Mode (Locker e.stopPropagation agar tidak bentrok klik tab) */}
+                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <span className={`text-[8px] font-black tracking-tighter ${rightDashboardTab === 'soap-apo' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            {soapMode === 'personal' ? '🙋 Pribadi' : '🏥 Ruangan'}
+                        </span>
+                        <button
+                            onClick={() => setSoapMode(m => m === 'personal' ? 'ruangan' : 'personal')}
+                            className={`relative inline-flex h-3.5 w-6 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                soapMode === 'ruangan' ? 'bg-emerald-400' : 'bg-slate-300'
+                            }`}
+                            role="switch"
+                            aria-checked={soapMode === 'ruangan'}
                         >
-                            🖨️ Cetak Semua
+                            <span className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition duration-200 ease-in-out ${soapMode === 'ruangan' ? 'translate-x-2.5' : 'translate-x-0'}`} />
                         </button>
-                    )}
+                    </div>
+
+                    {/* SISI TENGAH: Judul Tab Utama */}
+                    <span className="text-xs font-black text-center flex-1 py-1.5">
+                        📝 E-Ontang-Anting
+                    </span>
+                    
+                    {/* SISI KANAN: Tombol Cetak Sel (Diberi width pengunci agar judul tengah tetap presisi simetris) */}
+                    <div className="w-14 flex justify-end" onClick={(e) => e.stopPropagation()}>
+                        {rightDashboardTab === 'soap-apo' && (
+                            <button 
+                                onClick={() => window.print()}
+                                className="no-print bg-white text-indigo-700 hover:bg-indigo-50 px-1.5 py-0.5 rounded text-[8px] font-black shadow-sm flex items-center gap-0.5 transition animate-in fade-in zoom-in-95 duration-150"
+                                title="Cetak Seluruh Kartu E-Ontang-Anting"
+                            >
+                                🖨️ Cetak
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* 📊 TAB 2: STATISTIK */}
@@ -3513,7 +3589,6 @@ const processDischarge = async (type) => {
                         <span className="bg-rose-500 text-white px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">{waitingList.length}</span>
                     )}
                 </button>
-
             </div>
 
             {/* 2. AREA KONTEN BAWAH */}
@@ -3524,27 +3599,6 @@ const processDischarge = async (type) => {
                     /* --- SUB-TAB 1: LIVE SOAP (APO) MINI PRINT PREVIEW STYLE --- */
                     <div className="space-y-3">
 
-                        {/* ✨ TOGGLE MODE SOAP: Personal ↔ Ruangan */}
-                        <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
-                            <div className="flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-700">
-                                    {soapMode === 'personal' ? '🙋 Mode Perawat (Pribadi)' : '🏥 Mode Ruangan (Gabungan)'}
-                                </span>
-                                <span className="text-[9px] text-slate-400 mt-0.5">
-                                    {soapMode === 'personal'
-                                        ? 'Hanya catatan kamu sendiri yang tampil & diedit'
-                                        : 'Catatan gabungan semua perawat (final)'}
-                                </span>
-                            </div>
-                            <button
-                                onClick={() => setSoapMode(m => m === 'personal' ? 'ruangan' : 'personal')}
-                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${soapMode === 'ruangan' ? 'bg-indigo-600' : 'bg-slate-300'}`}
-                                role="switch"
-                                aria-checked={soapMode === 'ruangan'}
-                            >
-                                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${soapMode === 'ruangan' ? 'translate-x-5' : 'translate-x-0'}`} />
-                            </button>
-                        </div>
                         {/* ========================================================= */}
                         {/* 🔔 ALARM AGENDA PENUNJANG HARI INI (PASANG DI SINI)       */}
                         {/* ========================================================= */}
@@ -3601,55 +3655,6 @@ const processDischarge = async (type) => {
                                 const safeAnalysis   = stripAuthorTags(rawAna);
                                 
                                 const hasSubjective = safeSubjective && safeSubjective !== '-' && safeSubjective !== '';
-
-                                // Fungsi untuk dapat indicator dan warna - gunakan LAB_NORMAL_RANGES dari constants.js
-                                const getLabInfo = (key, val) => {
-                                    // Handle Tubex khusus: jika mengandung "positif" = merah, jika "negatif" = hijau
-                                    if (key === 'Tubex') {
-                                        const lowerVal = val.toLowerCase();
-                                        // Cek jika mengandung kata "positif"
-                                        if (lowerVal.includes('positif')) {
-                                            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold' };
-                                        }
-                                        // Cek jika angka >= 4
-                                        const num = parseFloat(val);
-                                        if (!isNaN(num) && num >= 4) {
-                                            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold' };
-                                        }
-                                        return { indicator: '', colorClass: 'text-green-600' };
-                                    }
-
-                                    // Cek apakah hasil kualitatif
-                                    const isQualitative = /^[a-zA-Z]/.test(val) || /^(positif|negatif|reaktif|non|detected|neg|pos)/i.test(val);
-
-                                    if (isQualitative) {
-                                        const lowerVal = val.toLowerCase();
-                                        if (/(positif|reaktif|detected|pos)/.test(lowerVal)) {
-                                            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold' };
-                                        }
-                                        if (/(negatif|non.?reaktif|not.?detected|neg)/.test(lowerVal)) {
-                                            return { indicator: '', colorClass: 'text-green-600' };
-                                        }
-                                        return { indicator: '', colorClass: 'text-slate-600' };
-                                    }
-
-                                    // Hasil numerik - gunakan LAB_NORMAL_RANGES dari constants.js
-                                    const range = LAB_NORMAL_RANGES[key];
-                                    if (!range) return { indicator: '', colorClass: 'text-slate-700' };
-                                    const num = parseFloat(val);
-                                    if (isNaN(num)) return { indicator: '', colorClass: 'text-slate-700' };
-
-                                    if (num < range.min) {
-                                        if (LAB_LOW_IS_BAD.includes(key)) {
-                                            return { indicator: '↓ ⚠️', colorClass: 'text-red-600 font-bold' };
-                                        }
-                                        return { indicator: '↓', colorClass: 'text-blue-600' };
-                                    }
-                                    if (num > range.max) {
-                                        return { indicator: '↑ ⚠️', colorClass: 'text-red-600 font-bold' };
-                                    }
-                                    return { indicator: '', colorClass: 'text-green-600' };
-                                };
 
                                 return (
                                     <div 
@@ -3755,7 +3760,7 @@ const processDischarge = async (type) => {
                                             {/* Kolom Kiri: A (Analisa) & P (Planning) */}
                                             <div className="border-r border-slate-200 pr-2 flex flex-col justify-between gap-2">
                                                 <div>
-                                                    <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">A (ANALISA)</div>
+                                                    <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">DX / A (ANALISA)</div>
                                                     <div className="whitespace-pre-wrap pl-1 text-slate-800 leading-tight text-[11px] font-medium">{safeAnalysis || '-'}</div>
                                                 </div>
 
@@ -4743,20 +4748,31 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
 
     // LOGIKA DOT WARNA DROPDOWN
     const getRoomOptionStatus = (roomName) => {
-        const SINGLE_BED_ROOMS = ['K7A', 'K8A', 'K9A', 'K11A', 'K12A', 'K14A'];
+        const SINGLE_BED_ROOMS = ['K7', 'K8', 'K9', 'K11', 'K12', 'K14'];
+        
         const patient = activeRecords.find(r => r.roomNumber === roomName);
-        if (patient) return { dot: '🔴', label: 'Terisi', colorClass: 'text-red-600 font-bold' };
+        if (patient) {
+            // ✨ FIX FINAL: Bedakan ikon & warna untuk bed yang sudah TERISI sesuai gender
+            if (patient.gender === 'L') {
+                return { dot: '🚹', label: 'Terisi Lk', colorClass: 'text-blue-700 font-bold' };
+            } else {
+                // Default ke Perempuan (Atau jika kosong anggap merah/perempuan)
+                return { dot: '🚺', label: 'Terisi Pr', colorClass: 'text-rose-700 font-bold' };
+            }
+        }
 
         const booking = waitingList?.find(w => w.plannedRoom === roomName);
-        if (booking) return { dot: '🟡', label: 'Antre', colorClass: 'text-yellow-700 font-bold' };
+        if (booking) return { dot: '⏳', label: 'Antre', colorClass: 'text-yellow-700 font-bold' };
 
         if (SINGLE_BED_ROOMS.includes(roomName)) return { dot: '🟢', label: 'Kosong', colorClass: 'text-green-700 font-bold' };
 
-        const match = roomName.match(/^(K\d+)([AB])$/);
+        const match = roomName.match(/^(K\d+)(KM|P)$/);
         if (match) {
             const roomCode = match[1];
-            const neighborBed = match[2] === 'A' ? 'B' : 'A';
+            // Jika bed saat ini KM, cari tetangganya yang P, begitu sebaliknya
+            const neighborBed = match[2] === 'KM' ? 'P' : 'KM';
             const neighborRoomName = `${roomCode}${neighborBed}`;
+            
             const neighbor = activeRecords.find(r => r.roomNumber === neighborRoomName);
             if (neighbor) {
                 if (neighbor.gender === 'L') return { dot: '🔵', label: 'Sisa Lk', colorClass: 'text-sky-600 font-bold' };

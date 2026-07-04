@@ -1,5 +1,6 @@
 import React from 'react';
 import { LAB_PATTERNS, LAB_NORMAL_RANGES, LAB_LOW_IS_BAD } from '../constants';
+import { getLabInfo } from '../utils/helpers';
 
 const LabHistoryTable = ({ record }) => {
     // 🧠 SETUP DATA LAB SAMA PERSIS DENGAN APP.JSX ASLI
@@ -23,55 +24,6 @@ const LabHistoryTable = ({ record }) => {
         : (fallbackValues ? Object.keys(fallbackValues) : []);
 
     const dateColumns = hasHistory ? labHistory.map(e => e.date) : ['Terkini'];
-
-    // 🎨 ENGINE WARNA-WARNI DAN INDIKATOR SAKTI (getLabInfo)
-    const getLabInfo = (key, val) => {
-        if (!val) return { indicator: '', colorClass: 'text-slate-700' };
-
-        // Handle Tubex khusus
-        if (key === 'Tubex') {
-            const lowerVal = val.toLowerCase();
-            if (lowerVal.includes('positif')) {
-                return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-            }
-            const num = parseFloat(val);
-            if (!isNaN(num) && num >= 4) {
-                return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-            }
-            return { indicator: '', colorClass: 'text-green-600 font-medium' };
-        }
-
-        // Cek hasil kualitatif (teks huruf/kata)
-        const isQualitative = /^[a-zA-Z]/.test(val) || /^(positif|negatif|reaktif|non|detected|neg|pos)/i.test(val);
-
-        if (isQualitative) {
-            const lowerVal = val.toLowerCase();
-            if (/(positif|reaktif|detected|pos)/.test(lowerVal)) {
-                return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-            }
-            if (/(negatif|non.?reaktif|not.?detected|neg)/.test(lowerVal)) {
-                return { indicator: '', colorClass: 'text-green-600 font-medium' };
-            }
-            return { indicator: '', colorClass: 'text-slate-600' };
-        }
-
-        // Hasil Numerik (Angka) - Sesuai LAB_NORMAL_RANGES
-        const range = LAB_NORMAL_RANGES[key];
-        if (!range) return { indicator: '', colorClass: 'text-slate-700' };
-        const num = parseFloat(val);
-        if (isNaN(num)) return { indicator: '', colorClass: 'text-slate-700' };
-
-        if (num < range.min) {
-            if (LAB_LOW_IS_BAD.includes(key)) {
-                return { indicator: '↓ ⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-            }
-            return { indicator: '↓', colorClass: 'text-blue-600 font-bold bg-blue-50 px-1 rounded' };
-        }
-        if (num > range.max) {
-            return { indicator: '↑ ⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-        }
-        return { indicator: '', colorClass: 'text-green-600 font-medium' };
-    };
 
     // Jika bener-bener kosong melompong, tampilkan pesan ramah
     if (allKeys.length === 0) {

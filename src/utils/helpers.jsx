@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { MEDICATIONS, MEDICATION_TRANSLATOR, LAB_PATTERNS, PROCEDURES, ANTIBIOTICS_DB, LAB_NORMAL_RANGES, ROOM_LIST } from '../constants';
+import { MEDICATIONS, MEDICATION_TRANSLATOR, LAB_PATTERNS, PROCEDURES, ANTIBIOTICS_DB, LAB_NORMAL_RANGES, LAB_LOW_IS_BAD, ROOM_LIST } from '../constants';
 
 // --- COMPONENTS UI (DEFINED GLOBALLY) ---
 
@@ -1218,9 +1218,60 @@ Wassalamu'alaikum Wr. Wb`;
     return encodeURIComponent(text);
 };
 
+// ✨ PUSAT OTAK PEWARNAAN & INDIKATOR LAB UNIVERSAL (ANTI-BENTROK)
+export const getLabInfo = (key, val) => {
+    if (!val) return { indicator: '', colorClass: 'text-slate-700' };
+    
+    // Handle Tubex khusus
+    if (key === 'Tubex') {
+        const lowerVal = val.toLowerCase();
+        if (lowerVal.includes('positif')) {
+            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        }
+        const num = parseFloat(val);
+        if (!isNaN(num) && num >= 4) {
+            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        }
+        return { indicator: '', colorClass: 'text-green-600 font-semibold' };
+    }
+
+    // Cek apakah hasil kualitatif (HBsAg, HIV, dll)
+    const isQualitative = /^[a-zA-Z]/.test(val) || /^(positif|negatif|reaktif|non|detected|neg|pos)/i.test(val);
+
+    if (isQualitative) {
+        const lowerVal = val.toLowerCase();
+        // 🟢 Cek yang aman duluan
+        if (/(negatif|non[- ]?reaktif|not.?detected|neg)/.test(lowerVal)) {
+            return { indicator: '', colorClass: 'text-green-600 font-semibold' };
+        }
+        // 🔴 Cek yang bahaya belakangan
+        if (/(positif|reaktif|detected|pos)/.test(lowerVal)) {
+            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        }
+        return { indicator: '', colorClass: 'text-slate-600' };
+    }
+
+    // Hasil numerik kuantitatif (Hb, Leu, Trombosit, dll)
+    const range = LAB_NORMAL_RANGES[key];
+    if (!range) return { indicator: '', colorClass: 'text-slate-700' };
+    const num = parseFloat(val);
+    if (isNaN(num)) return { indicator: '', colorClass: 'text-slate-700' };
+
+    if (num < range.min) {
+        if (LAB_LOW_IS_BAD.includes(key)) {
+            return { indicator: '↓ ⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        }
+        return { indicator: '↓', colorClass: 'text-blue-600 font-bold bg-blue-50 px-1 rounded' };
+    }
+    if (num > range.max) {
+        return { indicator: '↑ ⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+    }
+    return { indicator: '', colorClass: 'text-green-600 font-semibold' };
+};
+
 export { CustomInput, CustomTextArea, CustomSelect, TagSelector, FormattedObjective, PlanningQuickTag,
     formatDateCM, parseDateCM, hitungHariCM,
     isAntibioticMedicationName, getAntibioticDay,
     renderPlanningCell, renderObjectiveCell, renderLacakTtv,
     getLabBadges, extractLabSnapshot, parsePlanning,
-    getDoctorGreeting, generateShiftReport };
+    getDoctorGreeting, generateShiftReport,};
