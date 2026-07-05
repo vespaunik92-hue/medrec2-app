@@ -1007,7 +1007,7 @@ const PatientForm = ({
                             {/* ✨ FIX UI: Menambahkan 'rounded-t-lg' di sini agar sudut header tetap melengkung rapi */}
                             <div className="flex items-center justify-between px-3 py-1.5 bg-rose-100 border-b border-rose-200 rounded-t-lg">
                                 <span className="text-[10px] font-bold text-rose-800 flex items-center gap-1.5">
-                                    💊 Resep Obat saat Ini
+                                    💊 Resep Obat
                                     <span className="bg-rose-600 text-white text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide">
                                         PERSISTEN
                                     </span>

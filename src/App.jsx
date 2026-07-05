@@ -636,7 +636,7 @@ const PrintLayout = ({ record, historyLogs = [] }) => {
                     </div>
                 </div>
                 
-                {/* ✨ FIX: Posisi Kanan Sejajar (Tanggal & Singkatan Ns Perawat) */}
+                {/* ✨ FIX 3: NAMA PERAWAT DIHILANGKAN (Sisa Info Durasi Hari Rawat Saja) */}
                 <div className="text-right flex flex-col items-end justify-start">
                     {record.admissionDate && (
                         <div className="text-[10px] text-gray-700 font-bold">
@@ -654,11 +654,6 @@ const PrintLayout = ({ record, historyLogs = [] }) => {
                             })()}
                         </div>
                     )}
-                    {record.contributors && record.contributors.length > 0 && (
-                        <div className="text-[10px] text-gray-700 font-bold mt-1 uppercase tracking-tight">
-                            Ns: {record.contributors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(', ')}
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -666,7 +661,8 @@ const PrintLayout = ({ record, historyLogs = [] }) => {
             <div className="grid grid-cols-2 gap-4 flex-1 items-stretch">
                 <div className="border-r-2 border-gray-300 pr-2 flex flex-col">
                     <div className="mb-2">
-                        <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">A (ANALISA)</div>
+                        {/* ✨ FIX 1: JUDUL A DITAMBAHKAN "Dx :" */}
+                        <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">A (ANALISA) / Dx :</div>
                         <div className="whitespace-pre-wrap font-sans mb-1 pl-1">{safeAnalysis || '-'}</div>
                     </div>
 
@@ -680,28 +676,29 @@ const PrintLayout = ({ record, historyLogs = [] }) => {
                             )}
                             {(labs.length > 0 || rads.length > 0 || tms.length > 0 || rxs.length > 0) && (
                                 <div className="space-y-1 mt-2 border-t border-dotted border-gray-400 pt-2 text-xs"> 
+                                    {/* ✨ FIX 2: WARNA-WARNI KATEGORI PLANNING DI KERTAS CETAK */}
                                     {labs.length > 0 && (
-                                        <div className="flex items-start bg-gray-100 border border-black px-1 py-0.5 rounded w-fit max-w-full leading-tight">
+                                        <div className="flex items-start bg-rose-100 border border-rose-300 text-rose-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
                                             <span className="font-bold w-10 flex-shrink-0 uppercase">Lab.</span>
                                             <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(labs, itemAuthors)}</span>
                                         </div>
                                     )}
                                     {rads.length > 0 && (
-                                        <div className="flex items-start bg-gray-100 border border-black px-1 py-0.5 rounded w-fit max-w-full leading-tight">
+                                        <div className="flex items-start bg-sky-100 border border-sky-300 text-sky-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
                                             <span className="font-bold w-10 flex-shrink-0 uppercase">Rad.</span>
                                             <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(rads, itemAuthors)}</span>
                                         </div>
                                     )}
                                     {tms.length > 0 && (
-                                        <div className="flex items-start bg-gray-100 border border-black px-1 py-0.5 rounded w-fit max-w-full leading-tight">
+                                        <div className="flex items-start bg-emerald-100 border border-emerald-300 text-emerald-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
                                             <span className="font-bold w-12 flex-shrink-0 uppercase">Tndkn.</span>
-                                            <span className="flex-1">: {renderItemsWithAuthors(tms, itemAuthors)}</span>
+                                            <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(tms, itemAuthors)}</span>
                                         </div>
                                     )}
                                     {rxs.length > 0 && (
-                                        <div className="flex items-start bg-gray-100 border border-black px-1 py-0.5 rounded w-fit max-w-full leading-tight">
+                                        <div className="flex items-start bg-amber-100 border border-amber-300 text-amber-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
                                             <span className="font-bold w-12 flex-shrink-0 uppercase">Terapi.</span>
-                                            <span className="flex-1">: {renderItemsWithAuthors(rxs, itemAuthors, true)}</span>
+                                            <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(rxs, itemAuthors, true)}</span>
                                         </div>
                                     )}
                                 </div>
@@ -716,7 +713,7 @@ const PrintLayout = ({ record, historyLogs = [] }) => {
                                 className="font-bold underline mb-1 inline-block px-1 text-xs text-rose-900 bg-rose-100 border border-rose-300 rounded"
                                 style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
                             >
-                                💊 RESEP OBAT SAAT INI
+                                💊 RESEP OBAT
                             </div>
                             
                             {/* ✨ FIX PRINT: Membaca baris demi baris resep obat untuk memunculkan Badge Antibiotik di kertas cetak */}
@@ -2897,20 +2894,26 @@ const processDischarge = async (type) => {
 
   const handleLapor = async (rec, type) => {
       let targetNumber = '';
-      let salam = 'Dokter'; 
+      let salam = ''; 
       
+      // 1. BUAT SALAM OTOMATIS BERDASARKAN WAKTU
+      const h = new Date().getHours();
+      let salamWaktu = "Selamat Malam";
+      if (h >= 4 && h < 10) salamWaktu = "Selamat Pagi";
+      else if (h >= 10 && h < 15) salamWaktu = "Selamat Siang";
+      else if (h >= 15 && h < 18) salamWaktu = "Selamat Sore";
+
       if (type === 'DPJP') {
           const profile = dpjpProfiles.find(p => p.name === rec.dpjpName);
           targetNumber = normalizePhone(profile?.waNumber);
           if (!targetNumber) return alert(`Nomor WA ${rec.dpjpName} belum disetting.`);
-          salam = getDoctorGreeting(rec.dpjpName);
+          
+          // ✨ FIX 1: Hapus getDoctorGreeting yang bikin error! Kita pakai logika array pintar
+          const nonMuslimDoctors = ['dr. Dian Ekowati', 'dr. Synthia', 'dr. Daniel'];
+          const isNonMuslim = nonMuslimDoctors.some(name => (rec.dpjpName || '').toLowerCase().includes(name.toLowerCase()));
+          salam = isNonMuslim ? salamWaktu : `Assalamualaikum, ${salamWaktu}`;
       } else {
-          // ✨ UPDATE FORWARD: Menambahkan Assalamualaikum di depan sapaan waktu grup/jaga
-          const h = new Date().getHours();
-          if (h >= 4 && h < 10) salam = "Assalamualaikum, Selamat Pagi";
-          else if (h >= 10 && h < 15) salam = "Assalamualaikum, Selamat Siang";
-          else if (h >= 15 && h < 18) salam = "Assalamualaikum, Selamat Sore";
-          else salam = "Assalamualaikum, Selamat Malam";
+          salam = `Assalamualaikum, ${salamWaktu}`;
       }
       
       // ✨ MESIN PEMILAH GENDER & USIA (MEMBACA TEKS NAMA)
@@ -2918,31 +2921,19 @@ const processDischarge = async (type) => {
           const nameStr = String(pRecord?.name || '').toLowerCase().trim();
           const genderStr = String(pRecord?.gender || '').toLowerCase().trim();
           
-          // 1. CEGAH GELAR GANDA: Jika perawat sudah ngetik "Tn.", "Ny.", "An.", "Nn.", "By." di awal nama
-          if (/^(tn\.|ny\.|an\.|nn\.|by\.|sdr\.)\s/i.test(nameStr)) {
-              return ""; // Biarkan kosong, karena namanya sudah pakai gelar
-          }
+          // 1. CEGAH GELAR GANDA
+          if (/^(tn\.|ny\.|an\.|nn\.|by\.|sdr\.)\s/i.test(nameStr)) return ""; 
 
-          // 2. DETEKSI BAYI/BALITA dari kurung nama (misal: "Bilqis (8 bln)" atau "Arka (12 hari)")
-          if (nameStr.includes('bln') || nameStr.includes('bulan') || nameStr.includes('hari') || nameStr.includes('by')) {
-              return "An. ";
-          }
+          // 2. DETEKSI BAYI/BALITA
+          if (nameStr.includes('bln') || nameStr.includes('bulan') || nameStr.includes('hari') || nameStr.includes('by')) return "An. ";
           
-          // 3. DETEKSI ANAK DARI ANGKA TAHUN (misal: "Adit (5 thn)" atau "Rara 12 th")
+          // 3. DETEKSI ANAK DARI ANGKA TAHUN
           const ageMatch = nameStr.match(/(?:^|\(|\s)(\d+)\s*(?:th|tahun|thn)/i);
-          if (ageMatch) {
-              const age = parseInt(ageMatch[1]);
-              if (age < 15) return "An. ";
-          }
+          if (ageMatch && parseInt(ageMatch[1]) < 15) return "An. ";
           
           // 4. DEFAULT DEWASA BERDASARKAN GENDER
-          if (genderStr === 'l' || genderStr.includes('laki')) {
-              return "Tn. ";
-          }
-          if (genderStr === 'p' || genderStr.includes('perempuan') || genderStr.includes('wanita')) {
-              return "Ny. ";
-          }
-          
+          if (genderStr === 'l' || genderStr.includes('laki')) return "Tn. ";
+          if (genderStr === 'p' || genderStr.includes('perempuan') || genderStr.includes('wanita')) return "Ny. ";
           return ""; 
       };
 
@@ -2953,20 +2944,24 @@ const processDischarge = async (type) => {
       
       // Bersihkan Planning sebelum dipecah
       const { labs, rads, tms, others } = parsePlanning(cleanForWA(rec.planning)); 
-      const planningText = [...others.filter(Boolean), labs.length > 0 ? `Lab: ${labs.join(', ')}` : null, rads.length > 0 ? `Rad: ${rads.join(', ')}` : null, tms.length > 0 ? `Tndkn: ${tms.join(', ')}` : null].filter(Boolean).join('\n');
+      let planningText = [...others.filter(Boolean), labs.length > 0 ? `Lab: ${labs.join(', ')}` : null, rads.length > 0 ? `Rad: ${rads.join(', ')}` : null, tms.length > 0 ? `Tndkn: ${tms.join(', ')}` : null].filter(Boolean).join('\n');
+      
+      // =====================================================================
+      // ✨ FIX 2: SUNTIKKAN RESEP OBAT (CPO) KEMBALI KE DALAM TEKS WA (P)
+      // =====================================================================
+      if (rec.currentPrescription && rec.currentPrescription.trim()) {
+          planningText += `\n\n*Terapi / Obat saat ini:*\n${cleanForWA(rec.currentPrescription)}`;
+      }
+
       const dpjpInfo = type === 'Forward' ? `\nDPJP: ${rec.dpjpName || '-'}` : '';
       
-      // ✨ FORMAT BARU: Teks ke dokter sudah 100% mulus tanpa stempel!
-      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin lapor pasien:\n\n${patientTitle}${rec.name} ${dpjpInfo}\n\n*S:*\n${cleanForWA(rec.subjective) || '-'}\n\n*O:*\n${cleanForWA(rec.objective) || '-'}\n\n*A:*\n${cleanForWA(rec.analysis) || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis dok,\nTerima kasih.`;
+      // ✨ FORMAT BARU (Nama Pasien Dibold Biar Elegan)
+      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin lapor pasien:\n\n*${patientTitle}${rec.name}* ${dpjpInfo}\n\n*S:*\n${cleanForWA(rec.subjective) || '-'}\n\n*O:*\n${cleanForWA(rec.objective) || '-'}\n\n*A:*\n${cleanForWA(rec.analysis) || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis dok,\nTerima kasih.`;
 
       try {
-          // 1. Salin Teks Laporan
           await navigator.clipboard.writeText(text);
-          
-          // 2. Proses Gambar Lampiran
           if (rec.evidenceImages && rec.evidenceImages.length > 0) {
               const combinedImg = await combineImages(rec.evidenceImages);
-              
               const imgWindow = window.open("", "_blank", "width=600,height=800");
               imgWindow.document.write(`
                   <html><head><title>Lampiran Gabungan - ${rec.name}</title></head>
@@ -3760,7 +3755,7 @@ const processDischarge = async (type) => {
                                             {/* Kolom Kiri: A (Analisa) & P (Planning) */}
                                             <div className="border-r border-slate-200 pr-2 flex flex-col justify-between gap-2">
                                                 <div>
-                                                    <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">DX / A (ANALISA)</div>
+                                                    <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">A (ANALISA)/ Dx:</div>
                                                     <div className="whitespace-pre-wrap pl-1 text-slate-800 leading-tight text-[11px] font-medium">{safeAnalysis || '-'}</div>
                                                 </div>
 
