@@ -363,7 +363,6 @@ export const LAB_TRANSLATOR = {
 
 // ✨ KAMUS PATTERN REGEX UNTUK PARSING LAB DARI TEKS
 export const LAB_PATTERNS = {
-    // Hematologi (Ditambahkan \b agar tidak membaca HBsAg)
     'Hb': /\b(?:Hb|Hemoglobin)\b[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Leu': /(?:Leu|Leukosit|WBC)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Trmbsit': /(?:Plt|Trombosit|Trombo|Trmbsit|Platelets?)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
@@ -377,10 +376,10 @@ export const LAB_PATTERNS = {
     'APTT': /(?:APTT)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'INR': /(?:INR)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
-    // Kimia Klinik
     'GDS': /(?:GDS|Gula Darah|Gula Darah Sewaktu|Sewaktu)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'GDP': /(?:GDP|Glukosa Puasa|Puasa)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    '2JPP': /(?:2JPP|2.?JPP|Jam PP|Post Prandial)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    // ✨ FIX 4: Regex 2JPP diperbaiki agar tidak salah tangkap angka 2
+    '2JPP': /(?:2\s*JPP|2\s*Jam\s*PP|Post\s*Prandial)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'HbA1c': /(?:HbA1c|Hemoglobin A1c|Glikohemoglobin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Ur': /(?:Ur|Ureum|BUN)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Cr': /(?:Cr|Kreatinin|Creatinin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
@@ -393,39 +392,30 @@ export const LAB_PATTERNS = {
     'Bil.Indirek': /(?:Bilirubin Indirek|Indirek|Bil Indir)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Asam Urat': /(?:Asam Urat|Uric Acid)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
-    // ==========================================
-// FIX ABSOLUT: KALIUM VS KALSIUM ANTI-BENTROK
-// ==========================================
     'Na': /\b(?:Na|Natrium)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    
-    // 🔥 FIX: Kalium hanya mau menerima huruf 'K' tunggal atau kata 'Kalium', dan MENOLAK kata 'Kalsium'
     'K': /\bK\b(?!alsium)[\s:.-]*(\d+(?:[.,]\d+)?)|(?:\bKalium)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    
     'Cl': /\b(?:Cl|Clorida|Chloride|Klorida)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    
-    // Ca juga bisa menangkap penulisan Kalsium, Calcium, atau Ca
     'Ca': /\b(?:Kalsium|Calcium|Ca)\b[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    
     'Lactate': /\b(?:Lactate|Laktat)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
-    // Gas Darah
     'pH': /(?:pH)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'pCO2': /(?:pCO2|PCO2)[\s:.-]*(\d+(?:[.,]\d+)?)/i,    
     'HCO3': /(?:HCO3)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
-    // Panel Lipid (Diperbaiki agar tidak saling curi angka)
     'Kolesterol': /(?:Total Cholesterol|Kolesterol Total|Total Chol|Kolesterol)(?!.*(?:HDL|LDL))[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'LDL': /(?:LDL(?:[\s-]*Cholesterol)?)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'HDL': /(?:HDL(?:[\s-]*Cholesterol)?)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Trigliserida': /(?:Trigliserida|Triglyceride|TG)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
-    // Marker Spesifik
     'Procalcitonin': /(?:Procalcitonin|PCT)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'Ferritin': /(?:Ferritin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'D-Dimer': /(?:D-Dimer|DD)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'CRP': /(?:CRP|C-Reactive)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    'Troponin I': /(?:Troponin I|Trop-I|Troponin I)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    'Troponin T': /(?:Troponin T|Trop-T|Troponin T)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
+    
+    // ✨ FIX 2: Trop T & I diubah agar menangkap teks dan simbol (seperti "<50") bukan cuma angka
+    'Troponin I': /(?:Troponin I|Trop-I|Troponin I)[\s:.-]*(.+?)(?:\n|$)/i,
+    'Troponin T': /(?:Troponin T|Trop-T|Troponin T)[\s:.-]*(.+?)(?:\n|$)/i,
+    
     'CK-MB': /(?:CK-MB|CKMB)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'ProBNP': /(?:ProBNP|BNP)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'TSH': /(?:TSH)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
@@ -434,9 +424,11 @@ export const LAB_PATTERNS = {
     'CA19-9': /(?:CA-19-9|CA19-9)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'CD4': /(?:CD4)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
-    // Lab Kualitatif (hasil kata-kata)
-    'Tubex': /(?:Tubex|Tube Agglutination)[\s:.-]*(.+?)(?:\n|$)/i,
-    'Gram/Sputum': /(?:(?:Gram|Sputum|BTA|Pewarnaan).*)/gi,  // Multi-line: capture semua baris Gram/Sputum/BTA
+    // ✨ FIX 3: Tubex ditambah kata Salmonella
+    'Tubex': /(?:Tubex|Tube Agglutination|Salmonella)[\s:.-]*(.+?)(?:\n|$)/i,
+    // ✨ FIX 1: Gram/Sputum dioptimalkan
+    'Gram/Sputum': /(?:Gram|Sputum|BTA|Pewarnaan|Mikroskopis)[\s:.-]*(.+?)(?:\n|$)/i,
+    
     'TCM': /(?:TCM|GeneXpert|MTB)[\s:.-]*(.+?)(?:\n|$)/i,
     'HIV': /(?:HIV)[\s:.-]*(.+?)(?:\n|$)/i,
     'HBsAg': /(?:HBsAg|Hepatitis B)[\s:.-]*(.+?)(?:\n|$)/i,
@@ -464,7 +456,8 @@ export const LAB_DICTIONARY = [
     { name: "HBsAg", keywords: ["hbsag", "hepatitis b"] },
     { name: "GDS", keywords: ["gula darah sewaktu", "gds"] },
     { name: "GDP", keywords: ["gula darah puasa", "gdp"] },
-    { name: "2JPP", keywords: ["2jpp", "post prandial", "pp"] },
+    // ✨ FIX 4: Keyword 2JPP diperketat
+    { name: "2JPP", keywords: ["2 jam pp", "gula darah 2 jam", "2jpp", "post prandial", "pp"] },
     { name: "SGOT", keywords: ["sgot", "ast"] },
     { name: "SGPT", keywords: ["sgpt", "alt"] },
     { name: "Bil.Total", keywords: ["bilirubin total", "bil total", "bil.total"] },
@@ -475,6 +468,10 @@ export const LAB_DICTIONARY = [
     { name: "Na", keywords: ["natrium", "\\bna\\b"] },
     { name: "K", keywords: ["kalium", "\\bk\\b"] },
     { name: "Cl", keywords: ["klorida", "\\bcl\\b"] },
-    // ✨ FIX: Menambahkan \\b pada Ca agar tidak keliru mendeteksi kata "cara" atau "campur"
-    { name: "Ca", keywords: ["kalsium", "calcium", "\\bca\\b"] }
+    { name: "Ca", keywords: ["kalsium", "calcium", "\\bca\\b"] },
+    // ✨ FIX 1, 2, 3: Kamus baru Sputum, Trop T, dan Tubex
+    { name: "Troponin T", keywords: ["troponin t", "trop t", "trop-t"] },
+    { name: "Troponin I", keywords: ["troponin i", "trop i", "trop-i"] },
+    { name: "Tubex", keywords: ["tubex", "salmonella", "thyphi", "typhi"] },
+    { name: "Gram/Sputum", keywords: ["gram", "sputum", "bta", "mikroskopis", "pewarnaan"] }
 ];

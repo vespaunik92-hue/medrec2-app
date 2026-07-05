@@ -907,23 +907,64 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
             // 🕒 DETEKSI HARI INI (Bahasa Indonesia: 'senin', 'selasa', dll)
             const hariIni = new Date().toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
             
-            // 🤖 SENSOR HANTU: Otomatis mendeteksi pasien CKD on HD
+            // 🤖 SENSOR UTAMA: Otomatis mendeteksi pasien CKD on HD
             const gabunganTeksSOAP = `${record.analysis || ''} ${record.planning || ''}`.toLowerCase();
             const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP);
 
-            // ⚡ MESIN JADWAL PINTAR
+            // =========================================================================
+            // ⚡ MESIN SENSOR HD MULTI-KATEGORI (ADAPTIF CLINICAL MODE)
+            // =========================================================================
             let isHDMenyalaHariIni = false;
+            let shouldBlinkBorder = false;
+            let hdLabel = 'HD';
+            let balloonColor = 'bg-rose-600';
+            let arrowColor = 'border-t-rose-600';
+
             if (isHD) {
-                if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
-                    isHDMenyalaHariIni = ['senin', 'kamis'].includes(hariIni);
-                } else if (gabunganTeksSOAP.includes('selasa-jumat') || gabunganTeksSOAP.includes('selasa jumat')) {
-                    isHDMenyalaHariIni = ['selasa', 'jumat'].includes(hariIni);
-                } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
-                    isHDMenyalaHariIni = ['rabu', 'sabtu'].includes(hariIni);
+                if (gabunganTeksSOAP.includes('extra') || gabunganTeksSOAP.includes('ekstra') || gabunganTeksSOAP.includes('cito')) {
+                    // Kategori A: HD Tambahan / Akut / Cito (Selalu Menyala + Border Berkedip Merah)
+                    isHDMenyalaHariIni = true;
+                    shouldBlinkBorder = true;
+                    hdLabel = 'HD Extra';
+                    balloonColor = 'bg-red-600';
+                    arrowColor = 'border-t-red-600';
+                } else if (gabunganTeksSOAP.includes('inisiasi')) {
+                    // Kategori B: HD Pertama Kali / Inisiasi (Selalu Menyala + Border Berkedip Ungu)
+                    isHDMenyalaHariIni = true;
+                    shouldBlinkBorder = true;
+                    hdLabel = 'HD Inisiasi';
+                    balloonColor = 'bg-purple-600';
+                    arrowColor = 'border-t-purple-600';
+                } else if (gabunganTeksSOAP.includes('belum bersedia') || gabunganTeksSOAP.includes('tolak') || gabunganTeksSOAP.includes('edukasi')) {
+                    // Kategori C: Baru Diagnosa / Edukasi / Tolak Tindakan (Balon Tetap Muncul Amber, tapi Border KALEM tidak berkedip)
+                    isHDMenyalaHariIni = true;
+                    shouldBlinkBorder = false;
+                    hdLabel = 'Edukasi HD';
+                    balloonColor = 'bg-amber-500';
+                    arrowColor = 'border-t-amber-500';
                 } else {
-                    isHDMenyalaHariIni = true; // Nyala default jika perawat lupa nulis hari
+                    // Kategori D: HD Rutin Terjadwal (Hanya menyala di hari H jadwalnya)
+                    let isJadwalCocok = false;
+                    if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
+                        isJadwalCocok = ['senin', 'kamis'].includes(hariIni);
+                    } else if (gabunganTeksSOAP.includes('selasa-jumat') || gabunganTeksSOAP.includes('selasa jumat')) {
+                        isJadwalCocok = ['selasa', 'jumat'].includes(hariIni);
+                    } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
+                        isJadwalCocok = ['rabu', 'sabtu'].includes(hariIni);
+                    } else {
+                        isJadwalCocok = true; // Nyala default jika lupa nulis hari agar aman
+                    }
+
+                    if (isJadwalCocok) {
+                        isHDMenyalaHariIni = true;
+                        shouldBlinkBorder = true;
+                        hdLabel = 'HD';
+                        balloonColor = 'bg-rose-600';
+                        arrowColor = 'border-t-rose-600';
+                    }
                 }
             }
+            // =========================================================================
 
             // 👨‍⚕️ SUNTIKAN OTOMATIS dr. Edi di Layar
             let raberArray = [record.raberName, record.raber2Name].filter(Boolean);
@@ -936,32 +977,29 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                 <div 
                     key={roomNumber} 
                     onClick={() => onEditRoom(record)} 
-                    // ✨ Bingkai berkedip HANYA menyala di jadwal HD-nya
+                    // ✨ KONTROL BORDER BERKEDIP DINAMIS BERDASARKAN KATEGORI AKTIF
                     className={`relative flex flex-col p-1.5 rounded-lg border-2 cursor-pointer transition-all hover:shadow-md ${
-                        isHDMenyalaHariIni 
+                        shouldBlinkBorder 
                             ? 'animate-border-hd border-[2.5px] shadow-md ring-2 ring-slate-950/5' 
                             : (isMale ? 'border-blue-400 shadow-sm' : 'border-rose-400 shadow-sm')
                     } ${isMale ? 'bg-blue-200' : 'bg-rose-100'}`}
                 >
                     
-                    {/* ========================================================================= */}
-                    {/* ✨ BALON TIP MELAYANG (ABSOLUTE) ALA CEFTRIAXONE CPO */}
-                    {/* ========================================================================= */}
+                    {/* ✨ BALON TIP MELAYANG MULTI-KATEGORI (DIKENDALIKAN PROGRAM) */}
                     {isHDMenyalaHariIni && (
-                        <div className="absolute -top-3 -right-2 bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-md flex items-center gap-1 z-30 animate-in zoom-in-95 duration-200">
+                        <div className={`absolute -top-3 -right-2 ${balloonColor} text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-md flex items-center gap-1 z-30 animate-in zoom-in-95 duration-200 uppercase tracking-tight`}>
                             {/* Ikon Ginjal Medis Putih */}
                             <svg className="w-2.5 h-2.5 fill-current text-white animate-pulse shrink-0" viewBox="0 0 24 24">
                                 <path d="M12 2c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 17.2c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l.59-.59C7.93 19.26 9.88 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 14c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/>
                             </svg>
-                            HD
-                            {/* Ekor Balon Tip (Segitiga Mungil Merah ke Bawah) */}
-                            <div className="absolute -bottom-[5px] right-2.5 border-l-[4px] border-r-[4px] border-t-[6px] border-l-transparent border-r-transparent border-t-rose-600 drop-shadow-sm"></div>
+                            {hdLabel}
+                            {/* Ekor Segitiga Menyesuaikan Warna Balon */}
+                            <div className={`absolute -bottom-[5px] right-2.5 border-l-[4px] border-r-[4px] border-t-[6px] border-l-transparent border-r-transparent ${arrowColor} drop-shadow-sm`}></div>
                         </div>
                     )}
-                    {/* ========================================================================= */}
 
                     <div className="flex justify-between items-center mb-0.5 border-b border-white/60 pb-0.5">
-                        <span className={`font-extrabold text-[11px] ${isHDMenyalaHariIni ? 'text-slate-950 font-black' : (isMale ? 'text-blue-900' : 'text-rose-900')}`}>
+                        <span className={`font-extrabold text-[11px] ${shouldBlinkBorder ? 'text-slate-950 font-black' : (isMale ? 'text-blue-900' : 'text-rose-900')}`}>
                             {roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2')}
                         </span>
                         
@@ -4696,6 +4734,21 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
     const [editingId, setEditingId] = useState(null);
     const [tempRoom, setTempRoom] = useState('');
 
+    // ✨ TAMBAHKAN DUA BARIS INI UNTUK KUNCI DROPDOWN TAILWIND PADA HP
+    const [isRoomDropdownOpen, setIsRoomDropdownOpen] = useState(false);
+    const roomSelectRef = useRef(null);
+    
+    // ✨ AUTO CLOSE MENU SAAT KLIK DI LUAR AREA KOTAK DROPDOWN
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (roomSelectRef.current && !roomSelectRef.current.contains(event.target)) {
+                setIsRoomDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
     // --- 1. SHORTCUT KEYBOARD: CTRL + S DI MENU ANTREAN ---
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -4804,24 +4857,66 @@ const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingLi
                 {/* FORM INPUT */}
                 <div className="p-4 space-y-3 bg-white border-b border-gray-200 mb-2 shadow-sm">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Kamar *</label>
-                        <select 
-                            className="w-full p-2 text-xs border border-gray-300 rounded bg-white outline-none font-bold focus:ring-2 focus:ring-indigo-500" 
-                            value={form.plannedRoom} 
-                            onChange={e => setForm({...form, plannedRoom: e.target.value})}
-                        >
-                            <option value="">- Pilih Kamar -</option>
-                            {[...availableRooms]
-                                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-                                .map(r => {
-                                    const status = getRoomOptionStatus(r);
-                                    return (
-                                        <option key={r} value={r} className={status.colorClass}>
-                                            {status.dot} {r} ({status.label})
-                                        </option>
-                                    );
-                            })}
-                        </select>
+                        {/* ✨ TIMPA DENGAN VERSI CUSTOM DROPDOWN (ANTI-POLOSAN HP & TAB) */}
+                        <div className="relative" ref={roomSelectRef}>
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Kamar *</label>
+                            
+                            {/* Tombol Utama Pemicu Dropdown */}
+                            <button
+                                type="button"
+                                onClick={() => setIsRoomDropdownOpen(!isRoomDropdownOpen)}
+                                className="w-full bg-white border border-gray-300 text-gray-800 text-xs font-bold py-2 px-2.5 rounded flex justify-between items-center hover:bg-gray-50 transition shadow-sm h-[34px] outline-none focus:ring-1 focus:ring-indigo-500"
+                            >
+                                {form.plannedRoom ? (
+                                    (() => {
+                                        const status = getRoomOptionStatus(form.plannedRoom);
+                                        return (
+                                            <span className={`flex items-center gap-1.5 ${status.colorClass}`}>
+                                                <span className="text-sm leading-none">{status.dot}</span>
+                                                <span>Bed {form.plannedRoom}</span>
+                                                <span className="text-[10px] opacity-75 font-semibold">({status.label})</span>
+                                            </span>
+                                        );
+                                    })()
+                                ) : (
+                                    <span className="text-gray-400 font-normal">- Pilih Kamar -</span>
+                                )}
+                                <span className="text-gray-400 text-[9px]">{isRoomDropdownOpen ? '▲' : '▼'}</span>
+                            </button>
+
+                            {/* Menu Floating List Kamar Warna-Warni Menembus Batas Mobile */}
+                            {isRoomDropdownOpen && (
+                                <div className="absolute top-full left-0 w-full bg-white border border-gray-300 shadow-2xl rounded-xl mt-1 z-[200] p-1 max-h-56 overflow-y-auto custom-scrollbar">
+                                    {[...availableRooms]
+                                        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+                                        .map(r => {
+                                            const status = getRoomOptionStatus(r);
+                                            const isSelected = form.plannedRoom === r;
+                                            return (
+                                                <button
+                                                    key={r}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setForm({...form, plannedRoom: r});
+                                                        setIsRoomDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition-all flex items-center gap-2 mb-0.5 last:mb-0 ${status.colorClass} ${
+                                                        isSelected 
+                                                            ? 'bg-indigo-600 text-white border-indigo-600 font-black' 
+                                                            : 'hover:bg-slate-100 border-transparent'
+                                                    }`}
+                                                >
+                                                    <span className="text-sm leading-none shrink-0">{status.dot}</span>
+                                                    <span className="font-extrabold tracking-tight flex-1">Bed {r}</span>
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-black/5 text-gray-600'}`}>
+                                                        {status.label}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                </div>
+                            )}
+                        </div>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">

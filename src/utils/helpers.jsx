@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { MEDICATIONS, MEDICATION_TRANSLATOR, LAB_PATTERNS, PROCEDURES, ANTIBIOTICS_DB, LAB_NORMAL_RANGES, LAB_LOW_IS_BAD, ROOM_LIST } from '../constants';
+import { MEDICATIONS, MEDICATION_TRANSLATOR, LAB_PATTERNS, PROCEDURES, ANTIBIOTICS_DB, LAB_NORMAL_RANGES, LAB_LOW_IS_BAD, ROOM_LIST, LAB_TUBEX_POSITIVE_THRESHOLD } from '../constants';
 
 // --- COMPONENTS UI (DEFINED GLOBALLY) ---
 
@@ -716,10 +716,9 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
     );
 };
 
-// --- Helper FormattedObjective: Pewarna Lab Otomatis ---
+// --- Helper FormattedObjective: Pewarna Lab Otomatis Super Cerdas ---
 const FormattedObjective = ({ text }) => {
     if (!text) return <span>-</span>;
-
     const lines = text.split('\n');
 
     return (
@@ -728,7 +727,6 @@ const FormattedObjective = ({ text }) => {
                 const trimmedLine = line.trim();
                 const lowerLine = trimmedLine.toLowerCase();
 
-                // Lindungi header waktu agar terukis rapi
                 if (/^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*\]$/.test(trimmedLine)) {
                     return (
                         <div key={idx} className="text-[10px] font-extrabold text-indigo-500 border-b border-indigo-100 pb-0.5 mt-1.5 mb-1 first:mt-0">
@@ -738,23 +736,46 @@ const FormattedObjective = ({ text }) => {
                 }
 
                 let abnormalType = null;
+                let matchedKey = null;
+                let matchedVal = null;
 
                 for (const [key, pattern] of Object.entries(LAB_PATTERNS || {})) {
                     if (typeof pattern !== 'object' || !pattern.test) continue;
                     const match = trimmedLine.match(pattern);
                     if (match && match[1]) {
-                        const valStr = match[1].trim();
-                        const range = LAB_NORMAL_RANGES[key];
+                        matchedKey = key;
+                        matchedVal = match[1].trim();
+                        break;
+                    }
+                }
+
+                if (matchedKey) {
+                    const valStr = matchedVal;
+                    const lowerVal = valStr.toLowerCase();
+                    
+                    if (matchedKey === 'Tubex') {
+                        if (lowerVal.includes('positif')) abnormalType = 'text-bad';
+                        else {
+                            const num = parseFloat(valStr);
+                            if (!isNaN(num) && num >= LAB_TUBEX_POSITIVE_THRESHOLD) abnormalType = 'text-bad';
+                        }
+                    }
+                    else if (/^[a-zA-Z<>]/.test(valStr) || /^(positif|negatif|reaktif|non|detected|neg|pos)/i.test(valStr)) {
+                        const isDanger = /(positif|reaktif|detected|pos)/.test(lowerVal);
+                        const isSafe = /(negatif|non[- ]?reaktif|not.?detected|neg)/.test(lowerVal);
+                        if (isDanger && !isSafe) abnormalType = 'text-bad';
+                    }
+                    else {
+                        const range = LAB_NORMAL_RANGES[matchedKey];
                         const num = parseFloat(valStr.replace(',', '.'));
                         if (!isNaN(num) && range) {
                             if (num > range.max) abnormalType = 'high';
                             else if (num < range.min) abnormalType = 'low';
-                            break;
                         }
                     }
                 }
 
-                if (!abnormalType) {
+                if (!abnormalType && !matchedKey) {
                     const isDanger = /(positif|reaktif|detected|ditemukan|resistan)/i.test(lowerLine);
                     const isSafe = /(negatif|non[- ]?reaktif|not detected|tidak ditemukan)/i.test(lowerLine);
                     if (isDanger && !isSafe) abnormalType = 'text-bad';
@@ -855,18 +876,57 @@ const getLabBadges = (objectiveText) => {
         const match = objectiveText.match(LAB_PATTERNS[key]);
         if (match && match[1]) {
             const valStr = match[1].trim().replace(',', '.');
-            const num = parseFloat(valStr);
-            const range = LAB_NORMAL_RANGES[key];
-            let color = 'text-gray-500';
-            if (!isNaN(num) && range) {
-                if (num > range.max) color = 'text-red-600 font-bold';
-                else if (num < range.min) color = 'text-blue-600 font-bold';
-                else color = 'text-gray-700';
-            }
-            results.push({ key, val: valStr, color });
+            const info = getLabInfo(key, valStr);
+            results.push({ key, val: valStr, color: info.colorClass || 'text-gray-700' });
         }
     });
     return results;
+};
+
+// ✨ PUSAT OTAK PEWARNAAN & INDIKATOR LAB UNIVERSAL
+export const getLabInfo = (key, val) => {
+    if (!val) return { indicator: '', colorClass: 'text-slate-700' };
+    
+    if (key === 'Tubex') {
+        const lowerVal = val.toLowerCase();
+        if (lowerVal.includes('positif')) {
+            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        }
+        const num = parseFloat(val);
+        if (!isNaN(num) && num >= LAB_TUBEX_POSITIVE_THRESHOLD) {
+            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        }
+        return { indicator: '', colorClass: 'text-green-600 font-semibold' };
+    }
+
+    const isQualitative = /^[a-zA-Z<>]/.test(val) || /^(positif|negatif|reaktif|non|detected|neg|pos)/i.test(val);
+
+    if (isQualitative) {
+        const lowerVal = val.toLowerCase();
+        if (/(negatif|non[- ]?reaktif|not.?detected|neg)/.test(lowerVal)) {
+            return { indicator: '', colorClass: 'text-green-600 font-semibold' };
+        }
+        if (/(positif|reaktif|detected|pos)/.test(lowerVal)) {
+            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        }
+        return { indicator: '', colorClass: 'text-slate-600' };
+    }
+
+    const range = LAB_NORMAL_RANGES[key];
+    if (!range) return { indicator: '', colorClass: 'text-slate-700' };
+    const num = parseFloat(val);
+    if (isNaN(num)) return { indicator: '', colorClass: 'text-slate-700' };
+
+    if (num < range.min) {
+        if (LAB_LOW_IS_BAD.includes(key)) {
+            return { indicator: '↓ ⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        }
+        return { indicator: '↓', colorClass: 'text-blue-600 font-bold bg-blue-50 px-1 rounded' };
+    }
+    if (num > range.max) {
+        return { indicator: '↑ ⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+    }
+    return { indicator: '', colorClass: 'text-green-600 font-semibold' };
 };
 
 // =====================================================================
@@ -979,7 +1039,7 @@ const getDoctorGreeting = (drName) => {
     }
 };
 
-// ✨ FUNGSI LAPORAN SHIFT: SEKARANG 100% DINAMIS MULTI-BANGSAL
+// ✨ FUNGSI LAPORAN SHIFT: SEKARANG 100% DINAMIS MULTI-BANGSAL & BERSIH DARI DR. EDI
 const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, wardName = 'Melati', roomList = []) => {
     const now = new Date();
     const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -992,17 +1052,14 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     if (hours >= 15 && hours < 22) shift = 'Siang';
     // Jika jam 22:00 s/d 08:59 -> Shift Malam
     else if (hours >= 22 || hours < 9) shift = 'Malam';
-    // Jika di luar itu (09:00 - 14:59) -> Shift Pagi (Default)
 
     const snow = '❄️'; const rs = '🏥'; const woman = '👩🏼'; const man = '👨';
 
-    // ✨ FIX MULTI-BANGSAL: Pakai roomList aktif (Dahlia/Melati), jika kosong baru pakai ROOM_LIST lama
     const currentRooms = roomList && roomList.length > 0 ? roomList : ROOM_LIST;
     const totalBed = currentRooms.length;
     
-    // ✨ FIX ISOLASI: Multi-Bangsal (Disesuaikan dengan format P, KM, & Murni Kamar Melati)
     let isoRooms = [];
-    if (wardName.toLowerCase().includes('melati')) isoRooms = ['K14', 'K15P', 'K15KM']; // ✨ K14 murni, K15 pakai P & KM
+    if (wardName.toLowerCase().includes('melati')) isoRooms = ['K14', 'K15P', 'K15KM'];
     else if (wardName.toLowerCase().includes('teratai')) isoRooms = ['K7A', 'K7B'];
     else if (wardName.toLowerCase().includes('anyelir')) isoRooms = ['ISO-A', 'ISO-B'];
     else if (wardName.toLowerCase().includes('anggrek')) isoRooms = ['ISO-A', 'ISO-B'];
@@ -1013,20 +1070,18 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     let emptyCount = 0; let emptyMale = 0; let emptyFemale = 0;
     let emptyIso = 0; let emptyIsoMale = 0; let emptyIsoFemale = 0;
 
-    // ✨ HITUNG BEBAN BED KOSONG SECARA PRESISI (FORMAT BARU)
     currentRooms.forEach(room => {
         if (!occupiedRooms.includes(room)) {
             const isIso = isoRooms.includes(room);
-            // 🔍 REGEX BARU: Menerawang akhiran P atau KM, jika tidak ada berarti kamar murni/sendiri
             const match = room.match(/^(K\d+)(P|KM)$/);
 
             if (isIso) {
                 if (!match) {
-                    emptyIso++; // Masuk sini jika K14 murni kosong
+                    emptyIso++;
                 } else {
                     const roomCode = match[1];
                     const bedCode = match[2];
-                    const neighborBed = bedCode === 'P' ? 'KM' : 'P'; // Saklar tukar P ↔ KM
+                    const neighborBed = bedCode === 'P' ? 'KM' : 'P';
                     const neighborRoom = `${roomCode}${neighborBed}`;
                     const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
 
@@ -1039,14 +1094,12 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
                     }
                 }
             } else {
-                // Kamar Umum Tanpa Suffix (Sifat Kamar Tunggal murni tanpa akhiran)
                 if (!match) {
                     emptyCount++;
                 } else {
-                    // Kamar Umum Dengan Suffix P/KM (Sifat Kamar Berpasangan Melati)
                     const roomCode = match[1];
                     const bedCode = match[2];
-                    const neighborBed = bedCode === 'P' ? 'KM' : 'P'; // Saklar tukar P ↔ KM
+                    const neighborBed = bedCode === 'P' ? 'KM' : 'P';
                     const neighborRoom = `${roomCode}${neighborBed}`;
                     const neighborRec = activeRecords.find(r => r.roomNumber === neighborRoom);
 
@@ -1062,10 +1115,8 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
         }
     });
 
-    // --- HITUNG INDIKATOR MUTASI PASIEN HARI INI ---
     const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
     
-    // ✨ FIX BUG TANGGAL: Helper aman untuk membaca tanggal dari Firebase maupun lokal
     const getSafeDate = (val) => {
         if (!val) return new Date(0);
         return typeof val.toDate === 'function' ? val.toDate() : new Date(val);
@@ -1079,7 +1130,6 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
     const meninggalCount = todayRecords.filter(r => r.isDischarged && r.dischargeType === 'meninggal').length;
     const newPatientCount = activeRecords.filter(r => r.createdAt && getSafeDate(r.createdAt) >= startOfToday).length;
 
-    // --- HITUNG STATISTIK BEBAN DPJP (URUTAN PRIORITAS MELATI) ---
     const dpjpCounts = {};
     activeRecords.forEach(r => {
         if (r.dpjpName) dpjpCounts[r.dpjpName] = (dpjpCounts[r.dpjpName] || 0) + 1;
@@ -1087,7 +1137,6 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
 
     const dpjpStats = Object.keys(dpjpCounts).length > 0
         ? Object.entries(dpjpCounts).sort((a, b) => {
-            // Master urutan dokter prioritas tetap Melati (dr. Susilo sudah dihapus)
             const priorityDocs = [
                 "dr. Delvi, Sp.PD", 
                 "dr. Dian Ekowati, Sp.PD",           
@@ -1095,81 +1144,46 @@ const generateShiftReport = (activeRecords, records, waitingList, dpjpProfiles, 
                 "dr. Risa, Sp.PD",
                 "dr. Evan, Sp.P"
             ];
-            
-            // a[0] dan b[0] adalah string Nama Dokter
             const idxA = priorityDocs.indexOf(a[0]);
             const idxB = priorityDocs.indexOf(b[0]);
-            
-            if (idxA !== -1 && idxB !== -1) return idxA - idxB; // Urutkan sesama dokter utama
-            if (idxA !== -1) return -1; // Naikkan dokter utama ke atas
-            if (idxB !== -1) return 1;  // Naikkan dokter utama ke atas
-            return a[0].localeCompare(b[0]); // Sisa dokter konsul lainnya diurutkan A-Z biasa
-        }).map(([name, count]) => `• ${name} : ${count} pasien`).join('\n') // Menggunakan Bullet Point '•' sesuai format wa-mu
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return a[0].localeCompare(b[0]);
+        }).map(([name, count]) => `• ${name} : ${count} pasien`).join('\n')
         : '-';
 
-    // --- HITUNG STATISTIK RAWAT BERSAMA (RABER) & SENSOR OTOMATIS dr. EDI ---
+    // --- 🛠️ REVISI SEKSI RAWAT BERSAMA (RABER): ELIMINASI TOTAL DR. EDI ---
     const raberMap = {};
-    const hariIniLapor = now.toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
 
     activeRecords.forEach(r => {
-        // 1. Raber manual bawaan form
+        // 1. Saring inputan manual form (Jika mengandung kata 'edi', tendang langsung!)
         [r.raberName, r.raber2Name].forEach(dr => {
             if (dr) {
+                if (dr.toLowerCase().includes('edi')) return; // ❌ SKIP DR. EDI MANUAL
                 if (!raberMap[dr]) raberMap[dr] = [];
-                // Mencegah duplikasi nama jika perawat nulis dr. Edi manual
                 if (!raberMap[dr].includes(r.name)) raberMap[dr].push(r.name);
             }
         });
 
-        // 2. SENSOR HANTU: Auto-rekap dr. Edi untuk laporan shift
-        const gabunganTeksSOAP = `${r.analysis || ''} ${r.planning || ''}`.toLowerCase();
-        const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP);
-
-        if (isHD) {
-            let isJadwalHariIni = false;
-            
-            if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
-                isJadwalHariIni = ['senin', 'kamis'].includes(hariIniLapor);
-            } else if (gabunganTeksSOAP.includes('selasa-jumat') || gabunganTeksSOAP.includes('selasa jumat')) {
-                isJadwalHariIni = ['selasa', 'jumat'].includes(hariIniLapor);
-            } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
-                isJadwalHariIni = ['rabu', 'sabtu'].includes(hariIniLapor);
-            } else {
-                isJadwalHariIni = true; // Jika jadwal kosong, default masuk agar tidak ada pasien tertinggal
-            }
-
-            // Jika jadwalnya cocok dengan hari ini, masukkan ke kantong dr. Edi
-            if (isJadwalHariIni) {
-                const namaDrEdi = "dr. Edi";
-                if (!raberMap[namaDrEdi]) raberMap[namaDrEdi] = [];
-                
-                // Pastikan tidak dobel kalau perawat ternyata sudah pilih nama beliau di form
-                const hasManualEdi = [r.raberName, r.raber2Name].some(dr => dr && dr.toLowerCase().includes('edi'));
-                
-                if (!hasManualEdi && !raberMap[namaDrEdi].includes(r.name)) {
-                    raberMap[namaDrEdi].push(r.name);
-                }
-            }
-        }
+        // 2. SENSOR AUTOMATIS DR. EDI UNTUK LAPORAN SHIFT DIHAPUS TOTAL DI SINI
+        // (Logika deteksi hantu /hd/ ckd/ kemarin sudah dibuang agar tidak mengotori raberMap)
     });
 
     const raberText = Object.keys(raberMap).length > 0
     ? Object.entries(raberMap).map(([dr, pts]) => `• ${dr} : ${pts.length} pasien (${pts.join(', ')})`).join('\n')
     : '-';
 
-    // --- REKAP PASIEN KASUS DHF ---
     const dhfList = activeRecords.filter(r => r.diagnosa?.toUpperCase().includes('DHF') || r.diagnosa?.toUpperCase().includes('DENGUE'));
     const dhfPatients = dhfList.length > 0
         ? dhfList.map(r => `- K.${r.roomNumber} a.n ${r.name} (${r.dpjpName})`).join('\n')
         : '-';
 
-    // --- REKAP PESANAN KASUR (WAITING LIST) ---
     const constPesanan = waitingList ? waitingList.filter(w => !w.isDischarged) : [];
     const pesananText = constPesanan.length > 0
         ? constPesanan.map(w => `- K.${w.plannedRoom || '?'} a.n ${w.name} (rencana masuk)`).join('\n')
         : '-';
 
-    // --- TEMPLATE TEKS FORMAT UTUH WHATSAPP ---
     const text = `Assalamu'alaikum wr.wb.
 *Laporan Dinas ${shift}*
 Tanggal : ${dateStr}
@@ -1201,10 +1215,10 @@ Pasien Baru                        : ${newPatientCount > 0 ? newPatientCount : '
 ${dpjpStats}
 
 *Raber*:
-${raberText || '-'}
+${raberText}
 
 *Pasien DHF*:
-${dhfPatients || '-'}
+${dhfPatients}
 
 *Pesanan*:
 ${pesananText}
@@ -1216,57 +1230,6 @@ ${pesananText}
 Wassalamu'alaikum Wr. Wb`;
 
     return encodeURIComponent(text);
-};
-
-// ✨ PUSAT OTAK PEWARNAAN & INDIKATOR LAB UNIVERSAL (ANTI-BENTROK)
-export const getLabInfo = (key, val) => {
-    if (!val) return { indicator: '', colorClass: 'text-slate-700' };
-    
-    // Handle Tubex khusus
-    if (key === 'Tubex') {
-        const lowerVal = val.toLowerCase();
-        if (lowerVal.includes('positif')) {
-            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-        }
-        const num = parseFloat(val);
-        if (!isNaN(num) && num >= 4) {
-            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-        }
-        return { indicator: '', colorClass: 'text-green-600 font-semibold' };
-    }
-
-    // Cek apakah hasil kualitatif (HBsAg, HIV, dll)
-    const isQualitative = /^[a-zA-Z]/.test(val) || /^(positif|negatif|reaktif|non|detected|neg|pos)/i.test(val);
-
-    if (isQualitative) {
-        const lowerVal = val.toLowerCase();
-        // 🟢 Cek yang aman duluan
-        if (/(negatif|non[- ]?reaktif|not.?detected|neg)/.test(lowerVal)) {
-            return { indicator: '', colorClass: 'text-green-600 font-semibold' };
-        }
-        // 🔴 Cek yang bahaya belakangan
-        if (/(positif|reaktif|detected|pos)/.test(lowerVal)) {
-            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-        }
-        return { indicator: '', colorClass: 'text-slate-600' };
-    }
-
-    // Hasil numerik kuantitatif (Hb, Leu, Trombosit, dll)
-    const range = LAB_NORMAL_RANGES[key];
-    if (!range) return { indicator: '', colorClass: 'text-slate-700' };
-    const num = parseFloat(val);
-    if (isNaN(num)) return { indicator: '', colorClass: 'text-slate-700' };
-
-    if (num < range.min) {
-        if (LAB_LOW_IS_BAD.includes(key)) {
-            return { indicator: '↓ ⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-        }
-        return { indicator: '↓', colorClass: 'text-blue-600 font-bold bg-blue-50 px-1 rounded' };
-    }
-    if (num > range.max) {
-        return { indicator: '↑ ⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
-    }
-    return { indicator: '', colorClass: 'text-green-600 font-semibold' };
 };
 
 export { CustomInput, CustomTextArea, CustomSelect, TagSelector, FormattedObjective, PlanningQuickTag,
