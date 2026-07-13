@@ -162,8 +162,8 @@ export const LAB_NORMAL_RANGES = {
     'Ferritin': { min: 10, max: 300 },
     'D-Dimer': { min: 0, max: 500 },
     'CRP': { min: 0, max: 5 },            
-    'Troponin I': { min: 0.0, max: 0.04 },
-    'Troponin T': { min: 0.0, max: 0.01 },
+    'Troponin I': { min: 0, max: 20 },
+    'Troponin T': { min: 0, max: 50 },
     'CK-MB': { min: 0, max: 25 },
     'ProBNP': { min: 0, max: 125 },
     'TSH': { min: 0.4, max: 4.0 },
@@ -219,7 +219,7 @@ export const LAB_CHECKS = [
     'Fungsi Hati Lengkap', 'Fungsi Ginjal Lengkap', 'Panel Lipid Lengkap',
     'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum', 'CD4', 'igG-igM Dengue', 'igG-igM Leptospirosis',
     'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV', 'serologi morbilli',
-    'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP', 'SADT'    
+    'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP', 'MDT', 'Anna IF'    
 ];
 
 export const RADIOLOGY_CHECKS = [
@@ -302,7 +302,7 @@ export const MEDICATION_TRANSLATOR = {
     "n-asetil sisteine": "Nac",
     "n-acetylcysteine": "Nac",
     "seftriakson": "Seftriakson",
-    "parasetamol": "Paracetamol",
+    "parasetamol": "PCT",
     "pantoprazol": "Pantoprazole",
     "ketorolak": "Ketorolac",
     "metronidazol": "Metronidazole",
@@ -314,8 +314,8 @@ export const MEDICATION_TRANSLATOR = {
     "combiven": "Combiven",
     "pulmicort": "Pulmicort",
     "nacl 0.9%": "IVFD: NaCl 0.9%",
-    "dextrose 5%": "D5%",
-    "dextrose 10%": "D10%",
+    "dextrose 5%": "IVFD: D5%",
+    "dextrose 10%": "IVFD: D10%",
     "ringer laktat": "IVFD: RL",
     // === ANTIBIOTIK BARU ===
     "ceftazidime": "Ceftazidime",

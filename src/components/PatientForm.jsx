@@ -488,7 +488,7 @@ const PatientForm = ({
         }
     };
 
-    // --- [UPDATE V11] SMART LAB: FULL TEXT PARSER & HEADER CLEANER (DIHUBUNGKAN KE CONSTANTS) ---
+    // --- [UPDATE V12] SMART LAB: FULL TEXT PARSER & KUALITATIF SUPPORT ---
     const processLabData = () => {
         if (!rawLabData) return;
         
@@ -503,8 +503,6 @@ const PatientForm = ({
             }).filter(Boolean);
         });
 
-        // ✨ PERUBAHAN DI SINI: Gunakan LAB_DICTIONARY dari constants.js
-        // Kita ubah format dari constants agar bisa dibaca regex oleh mesin lama
         const formattedLabDictionary = LAB_DICTIONARY.map(item => ({
             key: item.name,
             reg: new RegExp(`(?:${item.keywords.join('|')})`, 'i')
@@ -557,11 +555,21 @@ const PatientForm = ({
             }
 
             // --- FUNGSI PENCARI NILAI (DESCRIPTIVE FULL TEXT) ---
-            const descriptiveTests = ['Gram', 'Sputum', 'Kultur', 'TCM', 'Ag', 'PCR', 'HBeAg', 'HBsAg', 'HIV', 'LED', 'CRP', 'Procal', 'Ferritin', 'CD4', 'MDT'];
+            // ✨ FIX FINAL: Masukkan Tubex dan Troponin ke daftar ini agar disedot seutuhnya!
+            const descriptiveTests = ['Gram', 'Sputum', 'Kultur', 'TCM', 'Ag', 'PCR', 'HBeAg', 'HBsAg', 'HIV', 'LED', 'CRP', 'Procal', 'Ferritin', 'CD4', 'MDT', 'Tubex', 'Troponin', 'Trop'];
+            
             const findValue = (text, keyName) => {
-                if (keyName && descriptiveTests.some(dt => keyName.includes(dt))) {
-                    const descVal = text.replace(/[:]/g, '').trim(); 
+                const hasNumber = /\d/.test(text);
+                const hasResultWord = /(?:Non[- ]?Reaktif|Positif|Negatif|Reaktif|Non|Detected|Tidak|Resistan|Sensitif|Sensitive|Resistance|Terlampir)/i.test(text);
+
+                if (keyName && descriptiveTests.some(dt => keyName.toLowerCase().includes(dt.toLowerCase()))) {
+                    // ✨ FIX: Hanya buang karakter titik dua (:) atau sama dengan (=) di awal teks, jangan yang di tengah!
+                    const descVal = text.replace(/^[:=\s]+/, '').trim(); 
                     if (descVal.match(/dengan Reagen/i) && descVal.length < 20) return null; 
+                    
+                    // ✨ PROTEKSI: Pastikan baris ini benar-benar hasil (mengandung angka atau kata hasil), bukan sisa nama tes
+                    if (!hasNumber && !hasResultWord) return null;
+
                     if (descVal.length < 2) return null; 
                     return descVal; 
                 }
@@ -934,8 +942,24 @@ const PatientForm = ({
 
                         {/* --- URUTAN BARU: A - P - O - S --- */}
 
-                        <CustomTextArea label="A (Analisa)" name="analysis" value={formData.analysis} onChange={handleInputChange} 
-                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('analysis') : null} pullLabel="Salin A Lalu" />
+                        <CustomTextArea 
+                            label="A (Analisa) / Dx:" 
+                            name="analysis" 
+                            value={formData.analysis} 
+                            onChange={handleInputChange} 
+                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('analysis') : null} 
+                            pullLabel="Salin A Lalu" 
+                            // ✨ TAMBAHKAN BUTTON RESET PARSIAL DI SINI:
+                            extraButtons={
+                                <button 
+                                    type="button" 
+                                    onClick={() => handleInputChange({ target: { name: 'analysis', value: '' } })} 
+                                    className="text-[9px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-200 hover:bg-red-600 hover:text-white transition font-bold shadow-sm"
+                                >
+                                    🗑️ Reset A
+                                </button>
+                            }
+                        />
                         
                         <CustomTextArea 
                             label="P (Planning)" 
@@ -943,7 +967,17 @@ const PatientForm = ({
                             value={formData.planning} 
                             onChange={handleInputChange}
                             onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('planning') : null} 
-                            pullLabel="Tarik P"                            
+                            pullLabel="Tarik P"
+                            // ✨ TAMBAHKAN BUTTON RESET PARSIAL DI SINI:
+                            extraButtons={
+                                <button 
+                                    type="button" 
+                                    onClick={() => handleInputChange({ target: { name: 'planning', value: '' } })} 
+                                    className="text-[9px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-200 hover:bg-red-600 hover:text-white transition font-bold shadow-sm"
+                                >
+                                    🗑️ Reset P
+                                </button>
+                            }
                         >
                             {/* ✨ PANGKAT DINAMIS: Default z-20, tapi saat diklik ngetik naik pangkat ke z-50 agar list dropdown di image_7a01a5.png tidak tertutup */}
                             <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded relative z-20 focus-within:z-50 transition-all">
@@ -1017,6 +1051,20 @@ const PatientForm = ({
                                     <span className="text-[9px] text-rose-500 italic">
                                         Tidak ikut terhapus saat SOAP direset
                                     </span>
+
+                                    {/* ✨ TAMBAHKAN TOMBOL RESET RESEP PATEN DI SINI: */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if(window.confirm("⚠️ PENTING: Anda yakin ingin menghapus seluruh daftar Resep Obat Paten/Persisten pasien ini?")) {
+                                                handleInputChange({ target: { name: 'currentPrescription', value: '' } });
+                                            }
+                                        }}
+                                        className="text-[9px] px-2 py-0.5 rounded border font-bold shadow-sm transition bg-red-50 text-red-700 border-red-300 hover:bg-red-600 hover:text-white"
+                                        title="Reset khusus kolom resep obat paten"
+                                    >
+                                        🗑️ Reset Obat
+                                    </button>
                                     
                                     {isEditing && (() => {
                                         const combinedPlanAndRx = `${formData.planning || ''}\n${formData.currentPrescription || ''}`;
@@ -1086,6 +1134,13 @@ const PatientForm = ({
                                 <div className="flex gap-1">
                                     <button type="button" onClick={() => setShowLabModal(true)} className="text-[9px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition font-bold shadow-sm">🧪 Lab</button>
                                     <button type="button" onClick={() => setShowTtvModal(true)} className="text-[9px] bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-200 hover:bg-green-100 transition font-bold shadow-sm">+ TTV</button>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => handleInputChange({ target: { name: 'objective', value: '' } })} 
+                                        className="text-[9px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-200 hover:bg-red-600 hover:text-white transition font-bold shadow-sm"
+                                    >
+                                        🗑️ Reset O
+                                    </button>
                                 </div>
                             } 
                         >
@@ -1104,8 +1159,24 @@ const PatientForm = ({
                             )}
                         </CustomTextArea>                       
                        
-                        <CustomTextArea label="S (Subjektif)" name="subjective" value={formData.subjective} onChange={handleInputChange}
-                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('subjective') : null} pullLabel="Salin S Lalu" />
+                        <CustomTextArea 
+                            label="S (Subjektif)" 
+                            name="subjective" 
+                            value={formData.subjective} 
+                            onChange={handleInputChange}
+                            onPullData={historyLogs && historyLogs.length > 0 ? () => pullDataForField('subjective') : null} 
+                            pullLabel="Salin S Lalu" 
+                            // ✨ TAMBAHKAN BUTTON RESET PARSIAL DI SINI:
+                            extraButtons={
+                                <button 
+                                    type="button" 
+                                    onClick={() => handleInputChange({ target: { name: 'subjective', value: '' } })} 
+                                    className="text-[9px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-200 hover:bg-red-600 hover:text-white transition font-bold shadow-sm"
+                                >
+                                    🗑️ Reset S
+                                </button>
+                            }
+                        />
                     </div>
                     
                     {/* 📊 PLATFORM DATA PENUNJANG & PEMANTAUAN (LAB, TTV, RADIOLOGI SEJAJAR) */}

@@ -11,8 +11,7 @@ const LabHistoryTable = ({ record }) => {
     // Logika Fallback: Jika history DB kosong, extract langsung dari teks O yang tertulis di kotak
     const fallbackValues = hasHistory ? null : (() => {
         const vals = {};
-        Object.keys(LAB_PATTERNS).forEach(key => {
-            if (key === 'Gram/Sputum') return;
+        Object.keys(LAB_PATTERNS).forEach(key => {            
             const match = safeObjective.match(LAB_PATTERNS[key]);
             if (match && match[1]) vals[key] = match[1].trim().replace(',', '.');
         });

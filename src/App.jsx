@@ -498,8 +498,8 @@ const PrintLayout = ({ record, historyLogs = [] }) => {
             dateSet.add(dateStr);
 
             Object.keys(LAB_PATTERNS).forEach(key => {
-                // Skip multi-line patterns (Gram/Sputum, TCM, HIV, dll.)
-                if (key === 'Gram/Sputum' || key === 'TCM' || key === 'HIV' || key === 'HBsAg' || key === 'Anti-HCV' || key === 'Widal' || key === 'Kultur' || key === 'MDT') return;
+                // ✨ FIX PERBAIKAN 3 TEMPAT B (Baris 1): Gram/Sputum diizinkan tampil di lembar print
+                if (key === 'TCM' || key === 'HIV' || key === 'HBsAg' || key === 'Anti-HCV' || key === 'Widal' || key === 'Kultur' || key === 'MDT') return;
                 const match = log.objective.match(LAB_PATTERNS[key]);
                 if (match) {
                     if (!labData[key]) labData[key] = [];
@@ -521,8 +521,8 @@ const PrintLayout = ({ record, historyLogs = [] }) => {
         // Build rows with latest value per date (avoid duplicates)
         const rows = {};
         Object.keys(LAB_PATTERNS).forEach(key => {
-            // Skip multi-line patterns
-            if (key === 'Gram/Sputum' || key === 'TCM' || key === 'HIV' || key === 'HBsAg' || key === 'Anti-HCV' || key === 'Widal' || key === 'Kultur' || key === 'MDT') return;
+            // ✨ FIX PERBAIKAN 3 TEMPAT B (Baris 2): Gram/Sputum lolos seleksi baris tabel print
+            if (key === 'TCM' || key === 'HIV' || key === 'HBsAg' || key === 'Anti-HCV' || key === 'Widal' || key === 'Kultur' || key === 'MDT') return;
             if (labData[key] && labData[key].length > 0) {
                 rows[key] = {};
                 // Take the latest entry per date
@@ -674,35 +674,53 @@ const PrintLayout = ({ record, historyLogs = [] }) => {
                                     {renderHighlightedOthers(others)}
                                 </div>
                             )}
-                            {(labs.length > 0 || rads.length > 0 || tms.length > 0 || rxs.length > 0) && (
-                                <div className="space-y-1 mt-2 border-t border-dotted border-gray-400 pt-2 text-xs"> 
-                                    {/* ✨ FIX 2: WARNA-WARNI KATEGORI PLANNING DI KERTAS CETAK */}
-                                    {labs.length > 0 && (
-                                        <div className="flex items-start bg-rose-100 border border-rose-300 text-rose-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                                            <span className="font-bold w-10 flex-shrink-0 uppercase">Lab.</span>
-                                            <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(labs, itemAuthors)}</span>
-                                        </div>
-                                    )}
-                                    {rads.length > 0 && (
-                                        <div className="flex items-start bg-sky-100 border border-sky-300 text-sky-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                                            <span className="font-bold w-10 flex-shrink-0 uppercase">Rad.</span>
-                                            <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(rads, itemAuthors)}</span>
-                                        </div>
-                                    )}
-                                    {tms.length > 0 && (
-                                        <div className="flex items-start bg-emerald-100 border border-emerald-300 text-emerald-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                                            <span className="font-bold w-12 flex-shrink-0 uppercase">Tndkn.</span>
-                                            <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(tms, itemAuthors)}</span>
-                                        </div>
-                                    )}
-                                    {rxs.length > 0 && (
-                                        <div className="flex items-start bg-amber-100 border border-amber-300 text-amber-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                                            <span className="font-bold w-12 flex-shrink-0 uppercase">Terapi.</span>
-                                            <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(rxs, itemAuthors, true)}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                            
+                            {/* ✨ PENYELAMATAN NAMA AUTHOR & KONVERSI [HARI INI] */}
+                            {(labs.length > 0 || rads.length > 0 || tms.length > 0 || rxs.length > 0) && (() => {
+                                // 1. Konversi array ke format [Hari Ini]
+                                const displayLabs = labs.map(item => formatTextToHariIni(item, rec));
+                                const displayRads = rads.map(item => formatTextToHariIni(item, rec));
+                                const displayTms = tms.map(item => formatTextToHariIni(item, rec));
+                                
+                                // 2. Sinkronisasi ulang dictionary author agar nama perawat tidak hilang
+                                const displayItemAuthors = {};
+                                if (typeof itemAuthors !== 'undefined' && itemAuthors) {
+                                    Object.keys(itemAuthors).forEach(key => {
+                                        displayItemAuthors[formatTextToHariIni(key, rec)] = itemAuthors[key];
+                                    });
+                                }
+
+                                // 3. Render HTML dengan data yang sudah bersih
+                                return (
+                                    <div className="space-y-1 mt-2 border-t border-dotted border-gray-400 pt-2 text-xs"> 
+                                        {displayLabs.length > 0 && (
+                                            <div className="flex items-start bg-rose-100 border border-rose-300 text-rose-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+                                                <span className="font-bold w-10 flex-shrink-0 uppercase">Lab.</span>
+                                                <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(displayLabs, displayItemAuthors)}</span>
+                                            </div>
+                                        )}
+                                        {displayRads.length > 0 && (
+                                            <div className="flex items-start bg-sky-100 border border-sky-300 text-sky-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+                                                <span className="font-bold w-10 flex-shrink-0 uppercase">Rad.</span>
+                                                <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(displayRads, displayItemAuthors)}</span>
+                                            </div>
+                                        )}
+                                        {displayTms.length > 0 && (
+                                            <div className="flex items-start bg-emerald-100 border border-emerald-300 text-emerald-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+                                                <span className="font-bold w-12 flex-shrink-0 uppercase">Tndkn.</span>
+                                                <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(displayTms, displayItemAuthors)}</span>
+                                            </div>
+                                        )}
+                                        {rxs.length > 0 && (
+                                            <div className="flex items-start bg-amber-100 border border-amber-300 text-amber-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+                                                <span className="font-bold w-12 flex-shrink-0 uppercase">Terapi.</span>
+                                                {/* Obat/Terapi dibiarkan aslinya karena tidak pakai tag [Besok] */}
+                                                <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(rxs, itemAuthors, true)}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
 
@@ -907,12 +925,20 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
             // 🕒 DETEKSI HARI INI (Bahasa Indonesia: 'senin', 'selasa', dll)
             const hariIni = new Date().toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
             
-            // 🤖 SENSOR UTAMA: Otomatis mendeteksi pasien CKD on HD
-            const gabunganTeksSOAP = `${record.analysis || ''} ${record.planning || ''}`.toLowerCase();
-            const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP);
+            // 🤖 SENSOR UTAMA
+            const gabunganTeksSOAP = `${record.diagnosis || ''} ${record.analysis || ''} ${record.planning || ''}`.toLowerCase();
+            
+            // 🛑 PENGECUALIAN 1: Status Suspek/DD (Tn. Tatang)
+            const statusProvisional = gabunganTeksSOAP.includes('dd ckd') || gabunganTeksSOAP.includes('susp ckd') || gabunganTeksSOAP.includes('susp. ckd') || gabunganTeksSOAP.includes('dd hd') || gabunganTeksSOAP.includes('aki dd');
+            
+            // 🛑 PENGECUALIAN 2: Pasien Menolak Tindakan (Saran Mandor Abi untuk Bu Marsem)
+            const statusMenolak = gabunganTeksSOAP.includes('menolak') || gabunganTeksSOAP.includes('tolak') || gabunganTeksSOAP.includes('tidak mau') || gabunganTeksSOAP.includes('belum bersedia');
+
+            // ✨ EKSEKUSI SENSOR: Balon HD dilarang muncul jika pasien berstatus Suspek ATAU Menolak!
+            const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP) && !statusProvisional && !statusMenolak;
 
             // =========================================================================
-            // ⚡ MESIN SENSOR HD MULTI-KATEGORI (ADAPTIF CLINICAL MODE)
+            // ⚡ MESIN SENSOR HD MULTI-KATEGORI
             // =========================================================================
             let isHDMenyalaHariIni = false;
             let shouldBlinkBorder = false;
@@ -922,28 +948,28 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
 
             if (isHD) {
                 if (gabunganTeksSOAP.includes('extra') || gabunganTeksSOAP.includes('ekstra') || gabunganTeksSOAP.includes('cito')) {
-                    // Kategori A: HD Tambahan / Akut / Cito (Selalu Menyala + Border Berkedip Merah)
+                    // Kategori A: HD Cito
                     isHDMenyalaHariIni = true;
                     shouldBlinkBorder = true;
                     hdLabel = 'HD Extra';
                     balloonColor = 'bg-red-600';
                     arrowColor = 'border-t-red-600';
                 } else if (gabunganTeksSOAP.includes('inisiasi')) {
-                    // Kategori B: HD Pertama Kali / Inisiasi (Selalu Menyala + Border Berkedip Ungu)
+                    // Kategori B: HD Inisiasi
                     isHDMenyalaHariIni = true;
                     shouldBlinkBorder = true;
                     hdLabel = 'HD Inisiasi';
                     balloonColor = 'bg-purple-600';
                     arrowColor = 'border-t-purple-600';
-                } else if (gabunganTeksSOAP.includes('belum bersedia') || gabunganTeksSOAP.includes('tolak') || gabunganTeksSOAP.includes('edukasi')) {
-                    // Kategori C: Baru Diagnosa / Edukasi / Tolak Tindakan (Balon Tetap Muncul Amber, tapi Border KALEM tidak berkedip)
+                } else if (gabunganTeksSOAP.includes('edukasi')) {
+                    // ✨ Kategori C: Edukasi HD (Hanya menyala untuk pasien yang sedang diedukasi dan BELUM menolak)
                     isHDMenyalaHariIni = true;
                     shouldBlinkBorder = false;
                     hdLabel = 'Edukasi HD';
                     balloonColor = 'bg-amber-500';
                     arrowColor = 'border-t-amber-500';
                 } else {
-                    // Kategori D: HD Rutin Terjadwal (Hanya menyala di hari H jadwalnya)
+                    // Kategori D: HD Rutin Terjadwal
                     let isJadwalCocok = false;
                     if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
                         isJadwalCocok = ['senin', 'kamis'].includes(hariIni);
@@ -952,7 +978,7 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                     } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
                         isJadwalCocok = ['rabu', 'sabtu'].includes(hariIni);
                     } else {
-                        isJadwalCocok = true; // Nyala default jika lupa nulis hari agar aman
+                        isJadwalCocok = true; 
                     }
 
                     if (isJadwalCocok) {
@@ -1437,9 +1463,25 @@ const MedicalRecordApp = ({
     const isDelviSelected = dpjpFilter.some(dr => dr.toLowerCase().includes('delvi'));
 
     const filtered = activeRecords.filter(rec => {
-        // Sensor deteksi pasien HD
+        // =====================================================================
+        // 🧠 SENSOR DETEKSI PASIEN HD VERSI PINTAR (ANTI FALSE-POSITIF)
+        // =====================================================================
         const textScan = `${rec.diagnosis || ''} ${rec.analysis || ''} ${rec.planning || ''}`.toLowerCase();
-        const isHD = textScan.includes('hd') || textScan.includes('ckd') || textScan.includes('hemodialisa');
+
+        // 🛑 1. LAYER PENGECUALIAN (Jika ada kata ini, BATALKAN balon HD rutin)
+        const statusMenolak = textScan.includes('menolak hd') || textScan.includes('tolak hd') || textScan.includes('tidak mau hd');
+        const statusProvisional = textScan.includes('dd ckd') || textScan.includes('susp ckd') || textScan.includes('susp. ckd') || textScan.includes('dd hd');
+        
+        // Proteksi khusus agar tidak bentrok dengan balon ungu (HD Inisiasi / Edukasi)
+        const statusInisiasiAtauEdukasi = textScan.includes('inisiasi') || textScan.includes('edukasi hd');
+
+        // 🎯 2. LAYER KONFIRMASI (Kata kunci dasar penanda kasus ginjal/HD)
+        const adaKataKunciHD = textScan.includes('hd') || textScan.includes('ckd') || textScan.includes('hemodialisa');
+
+        // 🏆 3. KEPUTUSAN AKHIR BALON HD
+        // Balon merah HD hanya akan menyala jika ada kata kunci terkait,
+        // BUKAN pasien menolak, BUKAN status diferensial (dd/susp), dan BUKAN kasus inisiasi/edukasi.
+        const isHD = adaKataKunciHD && !statusMenolak && !statusProvisional && !statusInisiasiAtauEdukasi;
 
         // ✨ LOGIKA FILTER DASHBOARD
         // Loloskan pasien jika: Tidak ada filter DPJP, ATAU namanya cocok, ATAU (dr. Delvi dipilih DAN pasien ini HD)
@@ -1885,55 +1927,82 @@ const MedicalRecordApp = ({
       }
   };
 
+  // ✨ FIX FINAL: MESIN PENGELOMPOK ADVIS OTOMATIS BERDASARKAN HARI/WAKTU YANG SAMA (V3)
   const appendText = (field, text) => {
         setFormData(p => {
             const current = p[field] || '';
-            const prefixMatch = text.match(/^(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)\s*:?\s*/i);
             
-            // 1. Jika kotak masih benar-benar kosong
+            if (!text.trim()) return p;
+
+            // 1. Jika kotak input masih kosong melompong, langsung masukkan teks pertama
             if (!current.trim()) {
                 return { ...p, [field]: text.trim() };
             }
 
+            // 2. Pecah komponen teks yang baru masuk (Prefix, Nama Item, dan Keterangan Waktu)
+            // Regex mencari: Prefix (Lab. R/ dll), Nama Pemeriksaan, dan Kurung Siku [Waktu] di akhir
+            const incomingMatch = text.match(/^(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)\s*(.*?)\s*(\[[^\]]+\])?$/i);
+            
+            // Jika teks yang masuk tidak menggunakan prefix standar, lakukan append normal ke baris baru paling bawah
+            if (!incomingMatch) {
+                let lines = current.split('\n');
+                const lastLine = lines[lines.length - 1];
+                if (/^(?:🕒\s*)?\[[^\]]+\]\s*$/.test(lastLine.trim())) {
+                    lines[lines.length - 1] = `${lastLine.trim()}\n${text.trim()}`;
+                    return { ...p, [field]: lines.join('\n') };
+                }
+                return { ...p, [field]: `${current.trim()}\n${text.trim()}` };
+            }
+
+            const prefix = incomingMatch[1];                 // Contoh: "Lab. R/"
+            const itemName = incomingMatch[2].trim();         // Contoh: "Tubex"
+            const timeTag = (incomingMatch[3] || '').trim();   // Contoh: "[Sore Ini]"
+
             let lines = current.split('\n');
+            let isMerged = false;
 
-            if (prefixMatch) {
-                const fullPrefix = prefixMatch[0];
-                const baseKeyword = prefixMatch[1].toLowerCase();
-                let valueOnly = text.substring(fullPrefix.length).trim().replace(/^:\s*/, '').trim();
-                const isTerapi = baseKeyword === 'th.';
-
-                let appended = false;
+            // 3. Scan dari baris paling bawah ke atas untuk mencari pasangan yang cocok
+            for (let i = lines.length - 1; i >= 0; i--) {
+                const line = lines[i].trim();
+                const lineMatch = line.match(/^(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)\s*(.*?)\s*(\[[^\]]+\])?$/i);
                 
-                // 2. Cari dari BAWAH ke ATAS: Adakah baris yang awalannya sama?
-                for (let i = lines.length - 1; i >= 0; i--) {
-                    // Regex ini kebal walau di depannya ada stempel
-                    const lineMatch = lines[i].match(/^(?:(?:🕒\s*)?\[[^\]]+\]\s*)?(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)\s*:?\s*/i);
-                    
-                    if (!isTerapi && lineMatch && lineMatch[1].toLowerCase() === baseKeyword) {
-                        // Gabungkan menyamping dengan koma
-                        lines[i] = `${lines[i].trim().replace(/[,:]$/, '').trim()}, ${valueOnly}`;
-                        appended = true;
-                        break;
+                if (lineMatch) {
+                    const lPrefix = lineMatch[1];
+                    const lItems = lineMatch[2].trim();
+                    const lTimeTag = (lineMatch[3] || '').trim();
+
+                    // Normalisasi spasi double agar pencocokan waktu super akurat
+                    const normLTime = lTimeTag.toLowerCase().replace(/\s+/g, ' ');
+                    const normTime = timeTag.toLowerCase().replace(/\s+/g, ' ');
+
+                    // ⚡ SYARAT GABUNG: Prefix harus sama (misal sama-sama Lab) DAN Waktunya wajib kembar!
+                    if (lPrefix.toLowerCase() === prefix.toLowerCase() && normLTime === normTime) {
+                        
+                        // Cek pencegahan duplikat agar nama pemeriksaan yang sama tidak tertulis dua kali
+                        const existingItems = lItems.split(',').map(item => item.trim().toLowerCase());
+                        if (!existingItems.includes(itemName.toLowerCase())) {
+                            // Masukkan ke baris yang sama, pisahkan dengan koma, pasang kembali label waktunya di ekor
+                            lines[i] = `${lPrefix} ${lItems}, ${itemName}${timeTag ? ' ' + timeTag : ''}`;
+                        }
+                        isMerged = true;
+                        break; // Stop pencarian karena sudah berhasil digabungkan
                     }
                 }
+            }
+
+            // 4. Jika setelah di-scan tidak ditemukan hari/waktu yang cocok, buat baris baru di bawah
+            if (!isMerged) {
+                const lastLine = lines[lines.length - 1];
                 
-                if (appended) return { ...p, [field]: lines.join('\n') };
+                // Proteksi penempatan stempel waktu perawat shift agar tidak tertimpa
+                if (/^(?:🕒\s*)?\[[^\]]+\]\s*$/.test(lastLine.trim())) {
+                    lines[lines.length - 1] = `${lastLine.trim()}\n${text.trim()}`;
+                } else {
+                    lines.push(text.trim());
+                }
             }
 
-            // =========================================================
-            // ✨ FIX POSISI: CEK APAKAH BARIS TERAKHIR HANYA BERISI STEMPEL
-            // =========================================================
-            const lastLine = lines[lines.length - 1];
-            
-            if (/^(?:🕒\s*)?\[[^\]]+\]\s*$/.test(lastLine.trim())) {
-                // Taruh teks tepat di BAWAH stempel (menggunakan \n) !
-                lines[lines.length - 1] = `${lastLine.trim()}\n${text.trim()}`;
-                return { ...p, [field]: lines.join('\n') };
-            }
-
-            // 3. JIKA TEKS BARU: Selalu taruh di baris BARU di paling BAWAH!
-            return { ...p, [field]: `${current.trim()}\n${text.trim()}` };
+            return { ...p, [field]: lines.join('\n') };
         });
     };
 
@@ -2344,9 +2413,8 @@ const MedicalRecordApp = ({
                     let currentDateTimeLabel = `${dToday}/${mToday}, ${timeToday}`;
                     
                     lines.forEach(line => {
-                        
                         Object.keys(LAB_PATTERNS).forEach(key => {
-                            if (key === 'Gram/Sputum') return;
+                            // 🔓 Pintu blokir Gram/Sputum di laci penyimpanan utama sudah dicabut!
                             const match = line.match(LAB_PATTERNS[key]);
                             if (match && match[1]) {
                                 if (!historyMap[currentDateTimeLabel]) historyMap[currentDateTimeLabel] = {};
@@ -2359,7 +2427,6 @@ const MedicalRecordApp = ({
                     
                     return Object.entries(historyMap).map(([dateTime, values]) => ({ date: dateTime, values }))
                         .sort((a, b) => {
-                            // Urutkan dari yang paling baru ke paling lama berdasarkan jam menitnya
                             const parseDateTime = (str) => {
                                 const parts = str.match(/(\d+)\/(\d+),\s*(\d+)\.(\d+)/);
                                 if (parts) return new Date(2026, parts[2] - 1, parts[1], parts[3], parts[4]);
@@ -2670,7 +2737,7 @@ const MedicalRecordApp = ({
               update[field] = smartMergeLines(latestDbData[field] || '', tagged, [], field === 'planning');
           });
 
-          // ✨ FIX 2: EKSTRAK TABEL LAB SAAT PUBLIKASI (Biar tidak blank di tabel)
+          // ✨ FIX 2: Buka gerbang Gram/Sputum saat draf pribadi dipublikasikan ke ruangan
           const rebuildLabHistory = (objectiveText) => {
               if (!objectiveText) return [];
               const historyMap = {};
@@ -2684,7 +2751,7 @@ const MedicalRecordApp = ({
               
               lines.forEach(line => {
                   Object.keys(LAB_PATTERNS).forEach(key => {
-                      if (key === 'Gram/Sputum') return;
+                      // 🔓 Pintu blokir Gram/Sputum di laci publikasi juga sudah dicabut!
                       const match = line.match(LAB_PATTERNS[key]);
                       if (match && match[1]) {
                           if (!historyMap[currentDateTimeLabel]) historyMap[currentDateTimeLabel] = {};
@@ -2823,6 +2890,7 @@ const processDischarge = async (type) => {
             dischargeType: type, // <-- INI KUNCINYA
             updatedAt: Timestamp.now() 
         });
+        fetchArchivedRecords();
     } catch (e) { console.error(e); } finally { setLoading(false); setRecordForDischarge(null); }
 };  
   
@@ -2984,6 +3052,10 @@ const processDischarge = async (type) => {
       const { labs, rads, tms, others } = parsePlanning(cleanForWA(rec.planning)); 
       let planningText = [...others.filter(Boolean), labs.length > 0 ? `Lab: ${labs.join(', ')}` : null, rads.length > 0 ? `Rad: ${rads.join(', ')}` : null, tms.length > 0 ? `Tndkn: ${tms.join(', ')}` : null].filter(Boolean).join('\n');
       
+      // ✨ FIX FINAL: BUANG LOOP BREAKDOWN AUTOMATIS (LAB, RAD, TM)
+      // Kita langsung ambil teks mentah dari kotak P yang sudah dibersihkan untuk WA
+        planningText = cleanForWA(rec.planning) || '-';
+
       // =====================================================================
       // ✨ FIX 2: SUNTIKKAN RESEP OBAT (CPO) KEMBALI KE DALAM TEKS WA (P)
       // =====================================================================
@@ -2994,7 +3066,7 @@ const processDischarge = async (type) => {
       const dpjpInfo = type === 'Forward' ? `\nDPJP: ${rec.dpjpName || '-'}` : '';
       
       // ✨ FORMAT BARU (Nama Pasien Dibold Biar Elegan)
-      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin lapor pasien:\n\n*${patientTitle}${rec.name}* ${dpjpInfo}\n\n*S:*\n${cleanForWA(rec.subjective) || '-'}\n\n*O:*\n${cleanForWA(rec.objective) || '-'}\n\n*A:*\n${cleanForWA(rec.analysis) || '-'}\n\n*P:*\n${planningText || '-'}\n\nMohon advis dok,\nTerima kasih.`;
+      const text = `${salam} dokter, saya ${currentUser?.name} dari Ruang ${currentWardConfig.name}. Izin lapor pasien:\n\n*${patientTitle}${rec.name}* ${dpjpInfo}\n\n*S:*\n${cleanForWA(rec.subjective) || '-'}\n\n*O:*\n${cleanForWA(rec.objective) || '-'}\n\n*A:*\n${cleanForWA(rec.analysis) || '-'}\n\n*P:*\n${planningText}\n\nMohon advisnya dokter,\nTerima kasih.`;
 
       try {
           await navigator.clipboard.writeText(text);
@@ -3035,6 +3107,9 @@ const processDischarge = async (type) => {
             });
         });
         await Promise.all(updatePromises);
+        if (typeof fetchArchivedRecords === 'function') {
+            fetchArchivedRecords();
+        }
         alert(`${ids.length} pasien berhasil dipulangkan.`); // Tambah notifikasi biar mantap
     } catch (e) { 
         console.error(e); 
@@ -3287,7 +3362,7 @@ const processDischarge = async (type) => {
       link.click();
   };
 
-  // --- STATS CALCULATION (VERSI MULTI-BANGSAL DINAMIS - FIX REKAP BULANAN MASA LALU) ---
+  // --- STATS CALCULATION (VERSI SUPER: MULTI-SUFFIX KEBAL STEMPEL PERAWAT) ---
   const stats = useMemo(() => {
       const currentWard = currentUser?.ward || 'MELATI';
       const currentWardConfig = WARD_CONFIG[currentWard] || WARD_CONFIG['MELATI'];
@@ -3314,16 +3389,25 @@ const processDischarge = async (type) => {
       
       const occupied = wardActiveRecords.map(r => r.roomNumber);
       
-      // Hitung bed kosong berdasarkan kapasitas kamar bangsal aktif
+      // ✨ FIX BUG 2: Regex multi-suffix mendukung KM/P (Melati) dan A/B/C/D (Bangsal Lain)
       currentWardConfig.roomList.forEach(room => {
           if (!occupied.includes(room)) {
-              const match = room.match(/^(K\d+)([AB])$/);
+              const match = room.match(/^(K\d+)(KM|P|A|B|C|D)$/i);
               if (!match) {
                   s.emptyCount++;
               } else {
                   const roomCode = match[1];
-                  const bedCode = match[2];
-                  const neighborBed = bedCode === 'A' ? 'B' : 'A';
+                  const bedCode = match[2].toUpperCase();
+                  
+                  // Saklar tukar pasangan bed dinamis universal
+                  let neighborBed = '';
+                  if (bedCode === 'KM') neighborBed = 'P';
+                  else if (bedCode === 'P') neighborBed = 'KM';
+                  else if (bedCode === 'A') neighborBed = 'B';
+                  else if (bedCode === 'B') neighborBed = 'A';
+                  else if (bedCode === 'C') neighborBed = 'D';
+                  else if (bedCode === 'D') neighborBed = 'C';
+
                   const neighborRoom = `${roomCode}${neighborBed}`;
                   const neighborRec = wardActiveRecords.find(r => r.roomNumber === neighborRoom);
 
@@ -3356,24 +3440,21 @@ const processDischarge = async (type) => {
               s.monthly[m].active++;
           }
 
+          // ✨ FIX BUG 3: Gunakan parsePlanning bawaan agar hitungan kebal dari stempel dinas perawat
           if (r.planning) {
-             const lines = r.planning.split('\n');
-             lines.forEach(l => {
-                 const t = l.trim().toLowerCase();
-                 if (t.startsWith('lab.')) s.monthly[m].lab++; 
-                 else if (t.startsWith('rad.')) s.monthly[m].rad++; 
-                 else if (t.startsWith('tm.')) s.monthly[m].tm++;
-             });
+             const parsed = parsePlanning(r.planning);
+             s.monthly[m].lab += (parsed.labs || []).length;
+             s.monthly[m].rad += (parsed.rads || []).length;
+             s.monthly[m].tm  += (parsed.tms || []).length;
           }
       });
 
-      // 3. Hitung jumlah beban pasien per dokter spesialis di bangsal aktif (KODE LAMA YANG TERPUTUS)
+      // 3. Hitung jumlah beban pasien per dokter spesialis di bangsal aktif
       const hariIniStats = new Date().toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
 
       wardActiveRecords.forEach(rec => {
           s.dpjpCounts[rec.dpjpName] = (s.dpjpCounts[rec.dpjpName] || 0) + 1;
           
-          // a. Raber manual dari form
           [rec.raberName, rec.raber2Name].forEach(dr => { 
               if(dr) { 
                   if(!s.raberData[dr]) s.raberData[dr]=[]; 
@@ -3381,9 +3462,14 @@ const processDischarge = async (type) => {
               } 
           });
 
-          // b. SENSOR HANTU: Auto-rekap dr. Edi untuk Jadwal HD Hari Ini
-          const gabunganTeksSOAP = `${rec.analysis || ''} ${rec.planning || ''}`.toLowerCase();
-          const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP);
+          const gabunganTeksSOAP = `${rec.diagnosis || ''} ${rec.analysis || ''} ${rec.planning || ''}`.toLowerCase();
+          
+          // 🛑 Pengecualian agar dr. Edi tidak terseret ke pasien Suspek / Menolak HD
+          const statusProvisional = gabunganTeksSOAP.includes('dd ckd') || gabunganTeksSOAP.includes('susp ckd') || gabunganTeksSOAP.includes('susp. ckd') || gabunganTeksSOAP.includes('dd hd') || gabunganTeksSOAP.includes('aki dd');
+          const statusMenolak = gabunganTeksSOAP.includes('menolak') || gabunganTeksSOAP.includes('tolak') || gabunganTeksSOAP.includes('tidak mau') || gabunganTeksSOAP.includes('belum bersedia');
+
+          // Hanya eksekusi perhitungan jika benar-benar pasien HD murni/rutin
+          const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP) && !statusProvisional && !statusMenolak;
 
           if (isHD) {
               let isJadwalHariIni = false;
@@ -3394,7 +3480,7 @@ const processDischarge = async (type) => {
               } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
                   isJadwalHariIni = ['rabu', 'sabtu'].includes(hariIniStats);
               } else {
-                  isJadwalHariIni = true; // Nyala default jika tidak ditulis jadwal
+                  isJadwalHariIni = true;
               }
 
               if (isJadwalHariIni) {
@@ -3407,38 +3493,76 @@ const processDischarge = async (type) => {
                   }
               }
           }
-      });
+      }); // 🔓 SUNTIKAN AMAN: Menutup loop wardActiveRecords dengan sempurna!
 
       return s;
   }, [records, activeRecords, archivedRecords, currentUser]);
 
-  // ✨ FITUR BARU: MESIN PEMINDAI AGENDA HARI INI (Support Polosan & Kurung)
-  const agendaHariIni = useMemo(() => {
-      const agendas = [];
+  // ✨ HELPER BARU: KONVERSI TEKS KARTU DASHBOARD MENJADI [HARI INI]
+  const formatTextToHariIni = (text, rec) => {
+      if (!text) return '';
       const today = new Date();
       
-      // 1. Siapkan kata kunci hari ini
-      const namaHariIni = today.toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase(); // misal: 'jumat'
+      const namaHariIni = today.toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase(); 
       const d = today.getDate();
       const m = today.getMonth() + 1;
-      const y2 = today.getFullYear().toString().slice(-2); // misal: '26'
-      const y4 = today.getFullYear(); // misal: '2026'
+      const y2 = today.getFullYear().toString().slice(-2); 
+      const y4 = today.getFullYear(); 
       
-      // 2. Siapkan berbagai variasi format tanggal polosan (3/7, 03/07, 3/7/26, dll)
       const tglVariasi = [
           `${d}/${m}`, `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`,
           `${d}/${m}/${y2}`, `${d}/${m}/${y4}`
       ];
 
-      // 3. Sapu bersih semua data pasien aktif
-      activeRecords.forEach(rec => {
+      const lastUpdate = rec.updatedAt?.toDate ? rec.updatedAt.toDate() : (rec.updatedAt ? new Date(rec.updatedAt) : new Date());
+      
+      // Cek apakah data ini di-input kemarin
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isUpdatedYesterday = lastUpdate.getDate() === yesterday.getDate() && lastUpdate.getMonth() === yesterday.getMonth();
+
+      let cleaned = text;
+
+      // 1. Jika mengandung tanggal hari ini, langsung kunci jadi [Hari Ini]
+      const todayRegex = new RegExp(`\\[[^\\]]*(${tglVariasi.join('|')}|sekarang|hari ini)[^\\]]*\\]`, 'gi');
+      if (todayRegex.test(cleaned)) {
+          return cleaned.replace(todayRegex, '[Hari Ini]');
+      }
+
+      // 2. Jika ditulis kemarin dan mengandung kata "besok/bsk", ubah jadi [Hari Ini]
+      if (isUpdatedYesterday && /\b(besok|bsk)\b/i.test(cleaned)) {
+          // Ganti format kurung siku besok menjadi [Hari Ini]
+          cleaned = cleaned.replace(/\[\s*(besok|bsk)[^\]]*\]/gi, '[Hari Ini]');
+          // Toleransi jika ditulis tanpa kurung siku
+          cleaned = cleaned.replace(/\b(besok|bsk)\b/gi, '[Hari Ini]');
+      }
+
+      return cleaned;
+  };
+  
+  // ✨ FITUR BARU: MESIN PEMINDAI AGENDA + AUTO SORTING + RESPONSIF FILTER DASHBOARD (V10 - FINAL)
+  const agendaHariIni = useMemo(() => {
+      const agendas = [];
+      const today = new Date();
+      
+      const namaHariIni = today.toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase(); 
+      const d = today.getDate();
+      const m = today.getMonth() + 1;
+      const y2 = today.getFullYear().toString().slice(-2); 
+      const y4 = today.getFullYear(); 
+      
+      const tglVariasi = [
+          `${d}/${m}`, `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`,
+          `${d}/${m}/${y2}`, `${d}/${m}/${y4}`
+      ];
+
+      // ⚡ FIX KUNCI UTAMA: Menggunakan filteredActiveRecords agar sinkron dengan filter dashboard atas!
+      filteredActiveRecords.forEach(rec => {
           if (!rec.planning) return;
           
-          // Pecah planning jadi array (Lab, Rad, Tindakan) menggunakan fungsi bawaan SIMPAN
           const { labs, rads, tms } = parsePlanning(rec.planning);
           const allActions = [...labs, ...rads, ...tms];
 
-          // Cek kapan data ini terakhir disimpan (untuk melacak kata "besok" atau "sore ini")
           const lastUpdate = rec.updatedAt?.toDate ? rec.updatedAt.toDate() : (rec.updatedAt ? new Date(rec.updatedAt) : new Date());
           const isUpdatedToday = lastUpdate.getDate() === today.getDate() && lastUpdate.getMonth() === today.getMonth();
           
@@ -3450,43 +3574,65 @@ const processDischarge = async (type) => {
               const lowerAction = action.toLowerCase();
               let isTargetToday = false;
 
-              // A. Deteksi Nama Hari (Contoh polosan: "CT Scan jumat")
+              // Radar A: Deteksi Hari & Tanggal Angka murni
               if (lowerAction.includes(namaHariIni)) isTargetToday = true;
-
-              // B. Deteksi Tanggal (Contoh polosan: "CT Scan 3/7" atau "[03/07/26]")
               if (tglVariasi.some(tgl => lowerAction.includes(tgl))) isTargetToday = true;
 
-              // C. Deteksi Waktu Jangka Pendek (sore, malam, nanti) JIKA ditulis hari ini
+              // Radar B: Deteksi Sore/Malam dinas berjalan
               if (isUpdatedToday && (lowerAction.includes('sore') || lowerAction.includes('malam') || lowerAction.includes('nanti'))) {
                   isTargetToday = true;
               }
 
-              // D. Deteksi kata "Besok" JIKA ditulisnya kemarin!
+              // Radar C: Deteksi kata "Besok" yang ditulis kemarin (Mundur 1 hari)
               if (isUpdatedYesterday && (lowerAction.includes('besok') || lowerAction.includes('bsk'))) {
                   isTargetToday = true;
               }
 
-              // Jika masuk radar hari ini, dorong ke daftar alarm!
+              // Radar D: Deteksi kata kustom manual dari Smart Planning
+              if (lowerAction.includes('sekarang') || lowerAction.includes('hari ini')) {
+                  isTargetToday = true;
+              }
+
               if (isTargetToday) {
-                  // Coba deteksi ini kategori apa untuk ikonnya
                   let icon = '📋';
                   if (rads.includes(action)) icon = '🩻';
                   else if (labs.includes(action)) icon = '🩸';
                   else if (tms.includes(action)) icon = '💉';
 
+                  let cleanedAction = action;
+                  const todayRegex = new RegExp(`\\[[^\\]]*(${tglVariasi.join('|')}|sekarang|hari ini)[^\\]]*\\]`, 'gi');
+                  
+                  if (todayRegex.test(cleanedAction)) {
+                      cleanedAction = cleanedAction.replace(todayRegex, '[Hari Ini]');
+                  } else {
+                      cleanedAction = cleanedAction.replace(/\b(besok|bsk|sekarang|hari ini)\b/gi, '[Hari Ini]');
+                  }
+
                   agendas.push({
                       id: rec.id,
-                      room: rec.roomNumber,
+                      room: rec.roomNumber || '',
                       name: rec.name,
                       dpjp: rec.dpjpName,
-                      action: action,
+                      action: cleanedAction, 
                       icon: icon
                   });
               }
           });
       });
+
+      // =====================================================================
+      // ⚡ ENGINE PENGURUT KAMAR ALAMI (Urut dari K1, K2... K15 secara tertib)
+      // =====================================================================
+      agendas.sort((a, b) => {
+          const numA = parseInt((a.room.match(/\d+/)?.[0] || '999'), 10);
+          const numB = parseInt((b.room.match(/\d+/)?.[0] || '999'), 10);
+          
+          if (numA !== numB) return numA - numB;
+          return a.room.localeCompare(b.room);
+      });
+
       return agendas;
-  }, [activeRecords]);
+  }, [filteredActiveRecords]); // ⚡ DEPENDENCY UTAMA DIKUNCI KE DATA FILTERED
 
   // --- RENDER DASHBOARD ---
   const renderDashboard = () => (
@@ -3682,7 +3828,7 @@ const processDischarge = async (type) => {
                                 // ✨ PERBAIKAN: Gunakan stripAuthorTags agar SEMUA stempel terhapus dari tampilan E-Ontang-Anting
                                 const safeSubjective = isActuallyEmpty(rawSubj) ? '' : stripAuthorTags(rawSubj);
                                 const safeObjective  = isActuallyEmpty(rawObj)  ? '' : stripAuthorTags(rawObj);
-                                const safePlanning   = isActuallyEmpty(rawPlan) ? '' : stripAuthorTags(rawPlan);
+                                const safePlanning = isActuallyEmpty(rawPlan) ? '' : rawPlan;
 
                                 // Analisa tetap kita paksa bersih tanpa stempel (sesuai desain aslimu)
                                 const safeAnalysis   = stripAuthorTags(rawAna);
@@ -5338,16 +5484,37 @@ const FormattedObjective = ({ text }) => {
 };
 
 const App = () => {
-  // 1. State System (VERSI BERSIH & MENGUNCI MEMORI)
+  // 1. State System (VERSI AUTO-LOGOUT IMBAS INAKTIVITAS)
   const [db, setDb] = useState(null);
   const [storage, setStorage] = useState(null);
-  const [userId, setUserId] = useState(() => localStorage.getItem('simpan_uid') || null); // Tarik dari memori lokal
+  
+  // Waktu Batas: 15 Menit (15 * 60 * 1000 ms)
+  const INACTIVITY_TIMEOUT = 15 * 60 * 1000; 
+
+  const [userId, setUserId] = useState(() => {
+      const uid = localStorage.getItem('simpan_uid');
+      const lastActive = localStorage.getItem('simpan_last_active');
+      const now = new Date().getTime();
+      
+      if (lastActive && (now - parseInt(lastActive) > INACTIVITY_TIMEOUT)) {
+          localStorage.removeItem('simpan_user');
+          localStorage.removeItem('simpan_uid');
+          localStorage.removeItem('simpan_last_active');
+          return null;
+      }
+      return uid;
+  });
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   
   // 2. State Login Lokal & Mode
   const [currentUser, setCurrentUser] = useState(() => {
       try {
-          // Cari apakah di komputer ini sudah pernah login sebelumnya
+          const lastActive = localStorage.getItem('simpan_last_active');
+          const now = new Date().getTime();
+          
+          if (lastActive && (now - parseInt(lastActive) > INACTIVITY_TIMEOUT)) {
+              return null;
+          }
           return JSON.parse(localStorage.getItem('simpan_user')) || null;
       } catch (e) {
           return null;
@@ -5384,19 +5551,35 @@ const App = () => {
     };
   }, []);
 
-  // --- MONITORING USER DARI DATABASE (GLOBAL) ---
+  // ⚡ MESIN SENSOR INAKTIVITAS: AUTO LOGOUT JIKA DITINGGAL LAMA
   useEffect(() => {
-      if (!db) return;
-      const usersRef = collection(db, 'users');
-      // Pastikan 'name' sesuai dengan field di database kamu
-      const q = query(usersRef, orderBy('name', 'asc')); 
+      if (!currentUser) return; 
+
+      let timeoutId;
+
+      const resetTimer = () => {
+          localStorage.setItem('simpan_last_active', new Date().getTime());
+
+          if (timeoutId) clearTimeout(timeoutId);
+          
+          timeoutId = setTimeout(() => {
+              handleInternalLogout();
+              alert("Sesi Anda telah berakhir demi keamanan data pasien & ruangan. Silakan masuk kembali.");
+          }, INACTIVITY_TIMEOUT);
+      };
+
+      const interaksiEvents = ['mousedown', 'keydown', 'scroll', 'touchstart'];
       
-      const unsub = onSnapshot(q, (snap) => {
-          const users = snap.docs.map(d => d.data());
-          setAllUsers(users);
-      });
-      return () => unsub();
-  }, [db]);
+      // Daftarkan fungsi pemantau ke window browser (Sudah difix agar sintaksnya aman)
+      interaksiEvents.forEach(evt => window.addEventListener(evt, resetTimer));
+
+      resetTimer();
+
+      return () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          interaksiEvents.forEach(evt => window.removeEventListener(evt, resetTimer));
+      };
+  }, [currentUser]);
  
   // --- [LEVEL 3] LOGIC LOGIN VIA DATABASE (FINAL) ---
   const handleLogin = async (e) => {
@@ -5439,6 +5622,7 @@ const App = () => {
                 // Kunci sesi di memori lokal (fitur anti-logout kemarin)
                 localStorage.setItem('simpan_user', JSON.stringify(userWithWard));
                 localStorage.setItem('simpan_uid', userWithWard.id);
+                localStorage.setItem('simpan_last_active', new Date().getTime());
             } else {
                 alert('Password salah!');
             }
@@ -5468,6 +5652,7 @@ const App = () => {
       // ✨ SUNTIKKAN INI: Hapus kunci sesi hanya saat klik logout sengaja
       localStorage.removeItem('simpan_user');
       localStorage.removeItem('simpan_uid');
+      localStorage.removeItem('simpan_last_active');
   };
 
   const getCashflowRole = () => {

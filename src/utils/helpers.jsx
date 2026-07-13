@@ -618,7 +618,10 @@ const getAntibioticDay = (medName, medicationLogs = {}) => {
 const renderPlanningCell = (text, medicationLogs = {}) => {
     if (!text) return '-';
     
-    const { labs, rads, tms, rxs, others, itemAuthors } = parsePlanning(text);
+    const { labs, rads, tms, rxs, others, itemAuthors, itemTimestamps } = parsePlanning(text);
+    
+    // ✨ AMBIL TANGGAL HARI INI SEBAGAI KUNCI STABILO
+    const todayStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' });
     
     const renderItem = (title, items, bgClass, borderClass, textClass, isRx = false) => {
         if (items.length === 0) return null;
@@ -628,6 +631,10 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
                 <span className="mr-1 uppercase">{title}:</span>
                 {items.map((item, idx) => {
                     const authors = itemAuthors[item] || [];
+                    const timestamp = itemTimestamps?.[item] || '';
+                    
+                    // 🔥 LOGIKA HIGHLIGHT "ADVIS BARU" 🔥
+                    const isNewToday = timestamp.includes(todayStr);
                     
                     let abBadge = null;
                     if (isRx) {
@@ -647,9 +654,13 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
                     return (
                         <span key={item}>
                             {idx > 0 && '; '}
-                            {item}
-                            {abBadge}
-                            {/* Balon nama HANYA MUNCUL jika diedit > 1 orang (Saling mengingatkan) */}
+                            {/* BUNGKUS STABILO KUNING JIKA ADVIS DITULIS HARI INI */}
+                            <span className={isNewToday ? "bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 py-[1px] rounded shadow-sm inline-block animate-pulse ml-0.5" : ""}>
+                                {isNewToday && '✨ '}
+                                {item}
+                                {abBadge}
+                            </span>
+                            
                             {authors.length > 1 && (
                                 <span className="ml-1 font-normal text-[9px] opacity-70 normal-case">
                                     ({authors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' & ')})
@@ -664,19 +675,16 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
 
     return (
         <div className="space-y-1">
-            {renderItem('Lab', labs, 'bg-red-100', 'border-red-300', 'text-red-500 animate-pulse')}
+            {renderItem('Lab', labs, 'bg-red-100', 'border-red-300', 'text-red-500')}
             {renderItem('Rad', rads, 'bg-blue-100', 'border-blue-400', 'text-blue-500')}
             {renderItem('Tndkn', tms, 'bg-emerald-100', 'border-emerald-400', 'text-emerald-500')}
             {renderItem('Terapi', rxs, 'bg-fuchsia-200', 'border-fuchsia-400', 'text-fuchsia-500', true)}
             
             {others.map((line, idx) => {
                 if (line.startsWith('HEADER:')) {
-                    const headerText = line.replace('HEADER:', '');
-                    return (
-                        <div key={`other-${idx}`} className="block mb-1 text-[10px] font-extrabold text-indigo-500 border-b border-indigo-100 pb-0.5 mt-2 first:mt-0">
-                            🕒 {headerText}
-                        </div>
-                    );
+                    // ✨ MANTRA GAIB: Kembalikan 'null' agar stempel waktu & tanggal 
+                    // TIDAK digambar di layar, tapi mesin tetap bisa baca datanya!
+                    return null; 
                 }
 
                 const lower = line.toLowerCase();
@@ -690,7 +698,6 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
                     return <div key={`other-${idx}`} className="block mb-1 px-2 py-1 rounded w-fit max-w-full text-[11px] font-bold border shadow-sm bg-indigo-100 border-indigo-400 text-indigo-900">🏥 {line}</div>;
                 }
                 
-                // ✨ Deteksi antibiotik di kategori lain untuk menampilkan badge H
                 let abBadge = null;
                 if (typeof isAntibioticMedicationName === 'function' && isAntibioticMedicationName(line)) {
                     let hCode = null;
@@ -705,10 +712,17 @@ const renderPlanningCell = (text, medicationLogs = {}) => {
                     }
                 }
                 
+                // Cek status "Advis Baru" untuk item lainnya
+                const timestamp = itemTimestamps?.[line] || '';
+                const isNewToday = timestamp.includes(todayStr);
+
                 return (
                     <div key={`other-${idx}`} className="text-xs text-gray-700 whitespace-pre-wrap flex items-center flex-wrap">
-                        <span>{line}</span>
-                        {abBadge}
+                        <span className={isNewToday ? "bg-yellow-300 text-yellow-900 border border-yellow-400 px-1 py-[1px] rounded shadow-sm inline-block animate-pulse" : ""}>
+                            {isNewToday && '✨ '}
+                            {line}
+                            {abBadge}
+                        </span>
                     </div>
                 );
             })}
@@ -760,10 +774,18 @@ const FormattedObjective = ({ text }) => {
                             if (!isNaN(num) && num >= LAB_TUBEX_POSITIVE_THRESHOLD) abnormalType = 'text-bad';
                         }
                     }
+                    // ✨ FIX FINAL DILEMA: Prioritas kemunculan kata kunci pertama di dalam kalimat!
                     else if (/^[a-zA-Z<>]/.test(valStr) || /^(positif|negatif|reaktif|non|detected|neg|pos)/i.test(valStr)) {
-                        const isDanger = /(positif|reaktif|detected|pos)/.test(lowerVal);
-                        const isSafe = /(negatif|non[- ]?reaktif|not.?detected|neg)/.test(lowerVal);
-                        if (isDanger && !isSafe) abnormalType = 'text-bad';
+                        // Regex akan menangkap kata kunci mana yang posisinya paling depan
+                        const firstMatch = lowerVal.match(/\b(non[- ]?reaktif|not.?detected|negatif|neg|positif|reaktif|detected|pos)\b/);
+                        if (firstMatch) {
+                            const keyword = firstMatch[1];
+                            if (/(non[- ]?reaktif|not.?detected|negatif|neg)/.test(keyword)) {
+                                abnormalType = null; // Normal (Hijau/Hitam)
+                            } else {
+                                abnormalType = 'text-bad'; // Pasti Merah ⚠️
+                            }
+                        }
                     }
                     else {
                         const range = LAB_NORMAL_RANGES[matchedKey];
@@ -903,11 +925,17 @@ export const getLabInfo = (key, val) => {
 
     if (isQualitative) {
         const lowerVal = val.toLowerCase();
-        if (/(negatif|non[- ]?reaktif|not.?detected|neg)/.test(lowerVal)) {
-            return { indicator: '', colorClass: 'text-green-600 font-semibold' };
-        }
-        if (/(positif|reaktif|detected|pos)/.test(lowerVal)) {
-            return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' };
+        
+        // ✨ FIX FINAL DILEMA: Siapa cepat, dia dapat!
+        const firstMatch = lowerVal.match(/\b(non[- ]?reaktif|not.?detected|negatif|neg|positif|reaktif|detected|pos)\b/);
+        
+        if (firstMatch) {
+            const keyword = firstMatch[1];
+            if (/(non[- ]?reaktif|not.?detected|negatif|neg)/.test(keyword)) {
+                return { indicator: '', colorClass: 'text-green-600 font-semibold' }; // Aman!
+            } else {
+                return { indicator: '⚠️', colorClass: 'text-red-600 font-bold bg-red-50 px-1 rounded' }; // Bahaya!
+            }
         }
         return { indicator: '', colorClass: 'text-slate-600' };
     }
@@ -938,8 +966,7 @@ export const getLabInfo = (key, val) => {
 const extractLabSnapshot = (objectiveText) => {
     if (!objectiveText) return {};
     const values = {};
-    Object.keys(LAB_PATTERNS).forEach(key => {
-        if (key === 'Gram/Sputum') return; // skip multi-line
+    Object.keys(LAB_PATTERNS).forEach(key => {        
         const match = objectiveText.match(LAB_PATTERNS[key]);
         if (match && match[1]) {
             values[key] = match[1].trim().replace(',', '.');
@@ -952,12 +979,14 @@ const extractLabSnapshot = (objectiveText) => {
 const extractLineTags = (line) => {
     let content = line;
     let author = null;
+    let timestamp = null; // ✨ MESIN RADAR WAKTU
     const collaborators = [];
 
     // Murni hanya membaca Tag Baru (inline mode): [Abi, 15/06/26 10:04]
-    const newTagMatch = content.match(/^\[([A-Za-z0-9\s]+),\s*\d{1,2}\/\d{1,2}[^\]]*\]\s*/);
+    const newTagMatch = content.match(/^\[([A-Za-z0-9\s]+),\s*(\d{1,2}\/\d{1,2}[^\]]*)\]\s*/);
     if (newTagMatch) {
         author = newTagMatch[1].trim();
+        timestamp = newTagMatch[2].trim(); // Tangkap tanggalnya!
         content = content.slice(newTagMatch[0].length);
     }
 
@@ -967,16 +996,16 @@ const extractLineTags = (line) => {
         return ''; 
     });
 
-    return { author, collaborators, content: content.trim() };
+    return { author, timestamp, collaborators, content: content.trim() };
 };
 
 const parsePlanning = (text) => {
-    if (!text) return { labs: [], rads: [], tms: [], rxs: [], others: [], itemAuthors: {} };
+    if (!text) return { labs: [], rads: [], tms: [], rxs: [], others: [], itemAuthors: {}, itemTimestamps: {} };
 
     const lines = text.split('\n').filter(line => line.trim() !== '');
-    const res = { labs: [], rads: [], tms: [], rxs: [], others: [], itemAuthors: {} };
+    const res = { labs: [], rads: [], tms: [], rxs: [], others: [], itemAuthors: {}, itemTimestamps: {} };
 
-    const addItem = (category, rawContent, prefixRegex, authors) => {
+    const addItem = (category, rawContent, prefixRegex, authors, timestamp) => {
         const itemText = rawContent.replace(prefixRegex, '').trim();
         if (!itemText) return;
         if (!res[category].includes(itemText)) res[category].push(itemText);
@@ -984,32 +1013,40 @@ const parsePlanning = (text) => {
             const existing = res.itemAuthors[itemText] || [];
             res.itemAuthors[itemText] = Array.from(new Set([...existing, ...authors]));
         }
+        if (timestamp) {
+            res.itemTimestamps[itemText] = timestamp; // Rekam jejak waktunya
+        }
     };
 
     let currentBlockAuthor = null;
+    let currentBlockTimestamp = null; // ✨ MESIN RADAR WAKTU
 
     lines.forEach(line => {
         const trimmed = line.trim();
         
         // Tangkap Header Murni
-        const pureHeaderMatch = trimmed.match(/^\[([A-Za-z0-9\s]+),\s*\d{1,2}\/\d{1,2}.*?\]$/);
+        const pureHeaderMatch = trimmed.match(/^\[([A-Za-z0-9\s]+),\s*(\d{1,2}\/\d{1,2}.*?)\]$/);
         if (pureHeaderMatch) {
             currentBlockAuthor = pureHeaderMatch[1].trim();
+            currentBlockTimestamp = pureHeaderMatch[2].trim();
             res.others.push(`HEADER:${trimmed}`);
             return;
         }
 
-        const { author, collaborators, content } = extractLineTags(trimmed);
+        const { author, timestamp, collaborators, content } = extractLineTags(trimmed);
         const effectiveAuthor = author || currentBlockAuthor;
+        const effectiveTimestamp = timestamp || currentBlockTimestamp;
         const authors = [effectiveAuthor, ...collaborators].filter(Boolean);
 
         const lower = content.toLowerCase();
-        // Regex super aman agar tidak memotong isi teks
-        if (lower.startsWith('lab. r/')) addItem('labs', content, /^Lab\.\s*R\/\s*/i, authors);
-        else if (lower.startsWith('rad. r/')) addItem('rads', content, /^Rad\.\s*R\/\s*/i, authors);
-        else if (lower.startsWith('tm.')) addItem('tms', content, /^TM\.\s*/i, authors);
-        else if (lower.startsWith('th.')) addItem('rxs', content, /^Th\.\s*/i, authors);
-        else if (content) res.others.push(content);
+        if (lower.startsWith('lab. r/')) addItem('labs', content, /^Lab\.\s*R\/\s*/i, authors, effectiveTimestamp);
+        else if (lower.startsWith('rad. r/')) addItem('rads', content, /^Rad\.\s*R\/\s*/i, authors, effectiveTimestamp);
+        else if (lower.startsWith('tm.')) addItem('tms', content, /^TM\.\s*/i, authors, effectiveTimestamp);
+        else if (lower.startsWith('th.')) addItem('rxs', content, /^Th\.\s*/i, authors, effectiveTimestamp);
+        else if (content) {
+            res.others.push(content);
+            if (effectiveTimestamp) res.itemTimestamps[content] = effectiveTimestamp;
+        }
     });
     return res;
 };
