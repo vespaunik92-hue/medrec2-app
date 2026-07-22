@@ -15,12 +15,12 @@ export const DAHLIA_ROOM_LIST = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '1
 
 // --- KONFIGURASI RUANG TERATAI (22 BED) ---
 export const TERATAI_ROOMS = [
-    'K1A', 'K1B', 
-    'K2A', 'K2B', 'K2C', 'K2D', 
-    'K3A', 'K3B', 'K3C', 'K3D', 
-    'K4A', 'K4B', 
-    'K5A', 'K5B', 'K5C', 'K5D', 
-    'K6A', 'K6B', 'K6C', 'K6D', 
+    'K1A', 'K1B',
+    'K2A', 'K2B', 'K2C', 'K2D',
+    'K3A', 'K3B', 'K3C', 'K3D',
+    'K4A', 'K4B',
+    'K5A', 'K5B', 'K5C', 'K5D',
+    'K6A', 'K6B', 'K6C', 'K6D',
     'K7A', 'K7B' // (Isolasi)
 ];
 
@@ -34,12 +34,12 @@ export const TERATAI_RIGHT_ROOMS = [
 
 // --- KONFIGURASI RUANG ANYELIR (26 BED) ---
 export const ANYELIR_ROOMS = [
-    'K1A', 'K1B', 'K1C', 'K1D', 
-    'K2A', 'K2B', 'K2C', 'K2D', 
-    'K3A', 'K3B', 'K3C', 'K3D', 
-    'K4A', 'K4B', 'K4C', 'K4D', 
-    'K5A', 'K5B', 'K5C', 'K5D', 
-    'K6A', 'K6B', 'K6C', 'K6D', 
+    'K1A', 'K1B', 'K1C', 'K1D',
+    'K2A', 'K2B', 'K2C', 'K2D',
+    'K3A', 'K3B', 'K3C', 'K3D',
+    'K4A', 'K4B', 'K4C', 'K4D',
+    'K5A', 'K5B', 'K5C', 'K5D',
+    'K6A', 'K6B', 'K6C', 'K6D',
     'ISO-A', 'ISO-B' // (Isolasi)
 ];
 
@@ -111,31 +111,31 @@ export const WARD_CONFIG = {
 // ✨ 1. KAMUS NILAI NORMAL LAB (Sudah disesuaikan standar RS)
 export const LAB_NORMAL_RANGES = {
     // --- HEMATOLOGI (Darah Rutin & Pembekuan) ---
-    'Hb': { min: 12, max: 16 },       
+    'Hb': { min: 12, max: 16 },
     'Leu': { min: 4.5, max: 11 },         // 4.500 - 11.000 (Disingkat)
     'Trmbsit': { min: 150, max: 450 },    // 150.000 - 450.000 (Disingkat)
-    'Ht': { min: 37, max: 47 }, 
+    'Ht': { min: 37, max: 47 },
     'Eritrosit': { min: 4.7, max: 6.1 },  // Tambahan jaga-jaga
     'Retikulosit': { min: 0.5, max: 1.5 },
     'LED': { min: 0, max: 20 },
-    'BT': { min: 1, max: 6 },     
-    'CT': { min: 5, max: 15 },    
+    'BT': { min: 1, max: 6 },
+    'CT': { min: 5, max: 15 },
     'PT': { min: 10, max: 13 },
     'APTT': { min: 25, max: 35 },
     'INR': { min: 0.8, max: 1.2 },
 
     // --- KIMIA KLINIK (Gula, Ginjal, Hati) ---
-    'GDS': { min: 70, max: 140 },         
+    'GDS': { min: 70, max: 140 },
     'GDP': { min: 70, max: 126 },
     '2JPP': { min: 70, max: 140 },
     'HbA1c': { min: 4.0, max: 5.7 },
-    'Ur': { min: 10, max: 50 },           
-    'Cr': { min: 0.5, max: 1.1 },       
+    'Ur': { min: 10, max: 50 },
+    'Cr': { min: 0.5, max: 1.1 },
     'SGOT': { min: 0, max: 37 },
     'SGPT': { min: 0, max: 40 },
-    'Alb': { min: 3.5, max: 5.0 },        
+    'Alb': { min: 3.5, max: 5.0 },
     'Globulin': { min: 2.0, max: 3.5 },
-    'Bil.Total': { min: 0.1, max: 1.2 },    
+    'Bil.Total': { min: 0.1, max: 1.2 },
     'Bil.Direk': { min: 0.0, max: 0.3 },
     'Bil.Indirek': { min: 0.1, max: 0.9 },
     'Asam Urat': { min: 3.5, max: 7.2 },
@@ -144,7 +144,7 @@ export const LAB_NORMAL_RANGES = {
     'Na': { min: 135, max: 145 },
     'K': { min: 3.5, max: 5.5 },
     'Cl': { min: 96, max: 106 },
-    'Ca': { min: 8.5, max: 10.5 },   
+    'Ca': { min: 8.5, max: 10.5 },
     'Lactate': { min: 0.5, max: 2.2 },
     'pH': { min: 7.35, max: 7.45 },
     'pCO2': { min: 35, max: 45 },
@@ -154,14 +154,14 @@ export const LAB_NORMAL_RANGES = {
     // --- PANEL LIPID ---
     'Kolesterol': { min: 0, max: 200 },
     'LDL': { min: 0, max: 100 },
-    'HDL': { min: 40, max: 100 }, 
+    'HDL': { min: 40, max: 100 },
     'Trigliserida': { min: 0, max: 150 },
 
     // --- JANTUNG, INFEKSI, & MARKER SPESIFIK ---
     'Procalcitonin': { min: 0.0, max: 0.15 },
     'Ferritin': { min: 10, max: 300 },
     'D-Dimer': { min: 0, max: 500 },
-    'CRP': { min: 0, max: 5 },            
+    'CRP': { min: 0, max: 5 },
     'Troponin I': { min: 0, max: 20 },
     'Troponin T': { min: 0, max: 50 },
     'CK-MB': { min: 0, max: 25 },
@@ -173,7 +173,7 @@ export const LAB_NORMAL_RANGES = {
 };
 
 export const DEFAULT_DPJP_DATA = [
-    { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },    
+    { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },
     { name: 'dr. Dian Ekowati, Sp.PD', waNumber: '6281210680279' },
     { name: 'dr. Priyo, Sp.PD', waNumber: '62811220364' },
     { name: 'dr. Risa, Sp.PD', waNumber: '6281316198500' },
@@ -203,7 +203,7 @@ export const DEFAULT_DPJP_DATA = [
     { name: 'drg. Septania Hermanti', waNumber: '6281802290090' },
     { name: 'drg. Raden Aan Harjany', waNumber: '628122055933' },
     { name: 'dr. Dian Herdiansyah, Sp.KFR', waNumber: '62817211317' },
-    { name: 'dr. Dede Lia Marlia, Sp. A', waNumber: '628121280535'},
+    { name: 'dr. Dede Lia Marlia, Sp. A', waNumber: '628121280535' },
     { name: 'dr. Tommy Nugrahadi, Sp.A', waNumber: '6282115159220' },
     { name: 'dr. Yogi Agustian, Sp.A', waNumber: '6281320033339' },
     { name: 'dr. Edi', waNumber: '6283817014059' }
@@ -219,7 +219,7 @@ export const LAB_CHECKS = [
     'Fungsi Hati Lengkap', 'Fungsi Ginjal Lengkap', 'Panel Lipid Lengkap',
     'Profil Lipid (Kolesterol)', 'Asam Urat', 'Sputum', 'CD4', 'igG-igM Dengue', 'igG-igM Leptospirosis',
     'Urin', 'Feses', 'Kultur Darah', 'TCM TB', 'HBsAg/Anti-HBs/Anti-HCV/Anti-HIV', 'serologi morbilli',
-    'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP', 'MDT', 'Anna IF'    
+    'Troponin T/I', 'CK-MB', 'Tubex', 'Titer Widal', 'CRP Kuantitatif', 'ProBNP', 'MDT', 'Anna IF'
 ];
 
 export const RADIOLOGY_CHECKS = [
@@ -271,7 +271,7 @@ export const ANTIBIOTICS_DB = [
     'fosfomycin', 'monurol',
     'daptomycin', 'cubicin',
     // === ANTIBIOTIK BARU ===
-    'ceftazidime', 'fortum', 'cetazidim',
+    'ceftazidime', 'fortum', 'cetazidim', 'seftazidim',
     'bactrim', 'septra', 'tmp-smx', 'trimetoprim',
     'rifampicin', 'rifampin', 'rifadin',
     'polymyxin b',
@@ -319,6 +319,7 @@ export const MEDICATION_TRANSLATOR = {
     "ringer laktat": "IVFD: RL",
     // === ANTIBIOTIK BARU ===
     "ceftazidime": "Ceftazidime",
+    "seftazidim": "Seftazidim",
     "trimethoprim/sulfamethoxazole": "TMP-SMX",
     "tigecycline": "Tigecycline",
     "rifampicin": "Rifampicin",
@@ -357,7 +358,7 @@ export const LAB_TRANSLATOR = {
     "r/ dr": "Lab. R/ Darah Rutin",
     "dr": "Lab. R/ Darah Rutin",
     "tubex": "Lab. R/ Tubex",
-    "gds": "Lab. R/ GDS",    
+    "gds": "Lab. R/ GDS",
     // Tambahkan tes lab lain di sini...
 };
 
@@ -399,7 +400,7 @@ export const LAB_PATTERNS = {
     'Lactate': /\b(?:Lactate|Laktat)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
     'pH': /(?:pH)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    'pCO2': /(?:pCO2|PCO2)[\s:.-]*(\d+(?:[.,]\d+)?)/i,    
+    'pCO2': /(?:pCO2|PCO2)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'HCO3': /(?:HCO3)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
 
     'Kolesterol': /(?:Total Cholesterol|Kolesterol Total|Total Chol|Kolesterol)(?!.*(?:HDL|LDL))[\s:.-]*(\d+(?:[.,]\d+)?)/i,
@@ -411,11 +412,11 @@ export const LAB_PATTERNS = {
     'Ferritin': /(?:Ferritin)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'D-Dimer': /(?:D-Dimer|DD)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'CRP': /(?:CRP|C-Reactive)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
-    
+
     // ✨ FIX 2: Trop T & I diubah agar menangkap teks dan simbol (seperti "<50") bukan cuma angka
     'Troponin I': /(?:Troponin I|Trop-I|Troponin I)[\s:.-]*(.+?)(?:\n|$)/i,
     'Troponin T': /(?:Troponin T|Trop-T|Troponin T)[\s:.-]*(.+?)(?:\n|$)/i,
-    
+
     'CK-MB': /(?:CK-MB|CKMB)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'ProBNP': /(?:ProBNP|BNP)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
     'TSH': /(?:TSH)[\s:.-]*(\d+(?:[.,]\d+)?)/i,
@@ -428,7 +429,7 @@ export const LAB_PATTERNS = {
     'Tubex': /(?:Tubex|Tube Agglutination|Salmonella)[\s:.-]*(.+?)(?:\n|$)/i,
     // ✨ FIX 1: Gram/Sputum dioptimalkan
     'Gram/Sputum': /(?:Gram|Sputum|BTA|Pewarnaan|Mikroskopis)[\s:.-]*(.+?)(?:\n|$)/i,
-    
+
     'TCM': /(?:TCM|GeneXpert|MTB)[\s:.-]*(.+?)(?:\n|$)/i,
     'HIV': /(?:HIV)[\s:.-]*(.+?)(?:\n|$)/i,
     'HBsAg': /(?:HBsAg|Hepatitis B)[\s:.-]*(.+?)(?:\n|$)/i,
