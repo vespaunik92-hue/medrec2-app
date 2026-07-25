@@ -172,42 +172,8 @@ export const LAB_NORMAL_RANGES = {
     'CD4': { min: 500, max: 1500 }
 };
 
-export const DEFAULT_DPJP_DATA = [
-    { name: 'dr. Delvi, Sp.PD', waNumber: '6281283812875' },
-    { name: 'dr. Dian Ekowati, Sp.PD', waNumber: '6281210680279' },
-    { name: 'dr. Priyo, Sp.PD', waNumber: '62811220364' },
-    { name: 'dr. Risa, Sp.PD', waNumber: '6281316198500' },
-    { name: 'dr. Evan, Sp.P', waNumber: '6281210100626' },
-    { name: 'dr. Evi, Sp.JP', waNumber: '628112223938' },
-    { name: 'dr. Iman, Sp.JP', waNumber: '6281395546887' },
-    { name: 'dr. Murti, Sp.S', waNumber: '6281383315383' },
-    { name: 'dr. Zuhaira, Sp.S', waNumber: '6282121992620' },
-    { name: 'dr. Ganda, Sp.N', waNumber: '6282121759729' },
-    { name: 'dr. Agam, Sp.B', waNumber: '6282218321999' },
-    { name: 'dr. Daniel, Sp.B', waNumber: '6281398906655' },
-    { name: 'dr. Synthia, Sp.B', waNumber: '628122004566' },
-    { name: 'dr. Eka, Sp.OT', waNumber: '6281380733477' },
-    { name: 'dr. Gamal, Sp.OT', waNumber: '6281312208478' },
-    { name: 'dr. Andre, Sp.BS', waNumber: '6287822462203' },
-    { name: 'dr. Joko, Sp.U', waNumber: '6281322819326' },
-    { name: 'dr. Eric, Sp.OG', waNumber: '628156226961' },
-    { name: 'dr. Huda, Sp.OG', waNumber: '628112294881' },
-    { name: 'dr. Sella, Sp.OG', waNumber: '6282226862504' },
-    { name: 'dr. Jamal, Sp.KJ', waNumber: '6282116190858' },
-    { name: 'dr. Virama, Sp.KJ', waNumber: '628121078143' },
-    { name: 'dr. Sri Siswanti, Sp.Kk', waNumber: '6281227153161' },
-    { name: 'drg. Dian Maifara, Sp.BM', waNumber: '62811119879' },
-    { name: 'dr. Ayuning, Sp.M', waNumber: '6281320657281' },
-    { name: 'dr. Sudarmanto, Sp.M', waNumber: '6281287083336' },
-    { name: 'dr. Erick Maulana Yusup, Sp.T.H.T.K.L', waNumber: '628112225992' },
-    { name: 'drg. Septania Hermanti', waNumber: '6281802290090' },
-    { name: 'drg. Raden Aan Harjany', waNumber: '628122055933' },
-    { name: 'dr. Dian Herdiansyah, Sp.KFR', waNumber: '62817211317' },
-    { name: 'dr. Dede Lia Marlia, Sp. A', waNumber: '628121280535' },
-    { name: 'dr. Tommy Nugrahadi, Sp.A', waNumber: '6282115159220' },
-    { name: 'dr. Yogi Agustian, Sp.A', waNumber: '6281320033339' },
-    { name: 'dr. Edi', waNumber: '6283817014059' }
-];
+// Mengambil data DPJP dari brankas rahasia .env
+export const DEFAULT_DPJP_DATA = JSON.parse(import.meta.env.VITE_DEFAULT_DPJP_DATA || '[]');
 
 export const LAB_CHECKS = [
     'Darah Rutin (DR)', 'HJL', 'Masa Pendarahan (CT/BT)', 'CA125', 'CA19-9', 'PT/APTT/INR',
@@ -223,7 +189,7 @@ export const LAB_CHECKS = [
 ];
 
 export const RADIOLOGY_CHECKS = [
-    'Thorax', 'Thorax Lateral', 'BNO Polos', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas', 'Rontgen Cruris', 'Rontgen OA Genou',
+    'Thorax', 'Thorax Lateral','Manus', 'BNO Polos', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas', 'Rontgen Cruris', 'Rontgen OA Genou',
     'USG Whole Abdomen', 'USG Hepatobilier/Upper Abdomen', 'USG Lower/Ginjal Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Kandung Empedu', 'USG Jantung', 'Echocardiography', 'USG Vaskular Doppler',
     'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Thorax non-Kontras', 'CT Scan Abdomen kontras',
     'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography', 'CT Scan Cardiac', 'CT Urografi kontras', 'CT Urografi non-kontras',

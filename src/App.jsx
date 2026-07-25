@@ -42,14 +42,14 @@ import {
 } from './constants';
 import { LogOut, Wallet, FileText, ChevronLeft } from 'lucide-react';
 
-// --- Global Firebase Configuration ---
+// --- Global Firebase Configuration (SECURED) ---
 const firebaseConfig = {
-    apiKey: "AIzaSyCL9PYpOe3pJOaoEfZLw9mymIrC6LtMJWE",
-    authDomain: "e-ontang-anting.firebaseapp.com",
-    projectId: "e-ontang-anting",
-    storageBucket: "e-ontang-anting.firebasestorage.app",
-    messagingSenderId: "1097108054720",
-    appId: "1:1097108054720:web:a53efbaf9882d5086d0325"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // 🔥 1. TARUH DI SINI: Inisialisasi abadi di LUAR komponen
@@ -1178,13 +1178,100 @@ const MedicalRecordApp = ({
     db, userId, appId, isOnline, onLogout,
     currentUser, setAppMode, cashflowRole, onSwitchWard
 }) => {
-    // ✨ SUNTIKAN TAHAP 3: MASTER KEY BANGSAL
-    const currentWardConfig = WARD_CONFIG[currentUser?.ward || 'MELATI'] || WARD_CONFIG['MELATI'];
+    
+    // ✨ 1. STATE PENAMPUNG DENAH DINAMIS (FASE 2)
+    const [dynamicWards, setDynamicWards] = useState({});
+
+    // ✨ 2. SUNTIKAN TAHAP 3: MASTER KEY BANGSAL (DINAMIS DARI FIREBASE)
+    const currentWardName = currentUser?.ward || 'MELATI';
+    
+    // 👇 FIX: Cari key denah yang cocok walaupun huruf besar/kecilnya beda (Case-Insensitive Failsafe)
+    const matchingKey = Object.keys(dynamicWards).find(
+        k => k.toLowerCase() === currentWardName.toLowerCase()
+    ) || currentWardName;
+    
+    const currentWardConfig = dynamicWards[matchingKey] || WARD_CONFIG[currentWardName] || { 
+        name: currentWardName.charAt(0) + currentWardName.slice(1).toLowerCase(), 
+        roomList: [], leftRooms: [], rightRooms: [] 
+    };
+
+    // ✨ 3. FITUR BARU: BUILDER DENAH MANUAL DI SETELAN
+    const [rebuildForm, setRebuildForm] = useState({ bedCount: 20, layout: '2baris', bedFormat: 'K1' });
+
+    // ✨ FASE 2: UNIVERSAL ROOM BUILDER & SPAWNER (SUPERADMIN CONTROL)
+    const handleRebuildWard = async (e) => {
+        e.preventDefault();
+        
+        // Tentukan target eksekusi (Gunakan input form, jika kosong fallback ke lokasi admin aktif)
+        const targetRs = (rebuildForm.rsTarget || currentUser.hospital || 'RSUD BAYU ASIH').toUpperCase().trim();
+        const targetWard = (rebuildForm.wardTarget || currentUser.ward || 'MELATI').toUpperCase().trim();
+
+        if(!targetRs || !targetWard) return alert("Nama Rumah Sakit dan Ruangan tidak boleh kosong!");
+        if(!confirm(`Apakah Anda yakin ingin membangun/memodifikasi denah Ruang ${targetWard} di ${targetRs}?`)) return;
+
+        const count = rebuildForm.bedCount || 20;
+        const format = rebuildForm.bedFormat || 'K1';
+        const layout = rebuildForm.layout || '2baris';
+        const rooms = [];
+        
+        // 1. Generate Array Nama Kasur
+        for (let i = 1; i <= count; i++) {
+            if (format === 'K1') rooms.push(`K${i}`);
+            else if (format === '1A') rooms.push(`${Math.ceil(i/2)}${i%2===1?'A':'B'}`);
+            else rooms.push(`${i}`);
+        }
+        
+        // 2. Pembagian Lorong
+        let left = [], right = [];
+        if (layout === '1baris') {
+            left = rooms;
+        } else {
+            const mid = Math.ceil(rooms.length / 2);
+            left = rooms.slice(0, mid);
+            right = rooms.slice(mid);
+        }
+        const newWardConfig = { roomList: rooms, leftRooms: left, rightRooms: right, name: targetWard };
+
+        // 3. Tembak ke Dokumen Konfigurasi RS Target
+        const safeHospName = targetRs.replace(/\s+/g, '_').toUpperCase();
+        const configRef = doc(db, `artifacts/${appId}/public/data/settings_${safeHospName}`, 'mainConfig');
+
+        try {
+            const snap = await getDoc(configRef);
+            let existingWards = snap.exists() && snap.data().wards ? snap.data().wards : {};
+            existingWards[targetWard] = newWardConfig; // Daftarkan atau timpa denah ruangan target
+            
+            await setDoc(configRef, { 
+                wards: existingWards,
+                // Jika RS ini baru pertama kali dilahirkan oleh Abi, inisialisasi laci datanya agar kosong melompong (Anti-Bocor!)
+                ...(snap.exists() ? {} : {
+                    dpjpProfiles: targetRs === 'RSUD BAYU ASIH' ? initialDpjpProfiles : [],
+                    masterLabs: [], masterRads: [], masterProcedures: [], masterMedications: []
+                })
+            }, { merge: true });
+
+            alert(`🎉 Sukses! Denah Ruang ${targetWard} di ${targetRs} berhasil dibangun.`);
+            
+            // Bersihkan form input target khusus superadmin
+            setRebuildForm(prev => ({ ...prev, rsTarget: '', wardTarget: '' }));
+        } catch(e) {
+            alert("Gagal membangun denah: " + e.message);
+        }
+    };
+
+    // ✨ 4. STATE UNTUK POP-UP WELCOME GREETING
+    const [showWelcomeToast, setShowWelcomeToast] = useState(true);
+    useEffect(() => {
+        // Hilangkan toast setelah 4.5 detik
+        const timer = setTimeout(() => setShowWelcomeToast(false), 4500);
+        return () => clearTimeout(timer);
+    }, []);
 
     // --- STATE LEVEL 4: MANAJEMEN USER (BARU) ---
     const [allUsers, setAllUsers] = useState([]); // Daftar user (Admin Only)
     const [profileForm, setProfileForm] = useState({ name: '', pass: '' }); // Form Profil Sendiri
-    const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' }); // ✨ Ditambah default ward
+    const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' }); 
+    
     // ✨ STATE NAVIGASI KEYBOARD UNTUK MENU DROPDOWN UTAMA
     const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
     const [mainMenuHighlight, setMainMenuHighlight] = useState(-1);
@@ -1192,6 +1279,57 @@ const MedicalRecordApp = ({
     const [isMarModalOpen, setIsMarModalOpen] = useState(false);
     const [marSelectedRecord, setMarSelectedRecord] = useState(null);
 
+    // ✨ STATE UNTUK MENU ACCORDION GOD MODE
+    const [expandedHospital, setExpandedHospital] = useState(null);
+
+    // ✨ RADAR PENDETEKSI RUMAH SAKIT & RUANGAN (MENU GOD MODE)
+    const hospitalWardsList = useMemo(() => {
+        const hw = {
+            'RSUD BAYU ASIH': {
+                originalName: 'RSUD BAYU ASIH',
+                wards: new Map([
+                    ['MELATI', 'MELATI'], ['DAHLIA', 'DAHLIA'], ['TERATAI', 'TERATAI'], 
+                    ['ANYELIR', 'ANYELIR'], ['ANGGREK', 'ANGGREK']
+                ])
+            }
+        };
+        allUsers.forEach(u => {
+            // ✨ FIX 1: Beri label otomatis untuk akun jadul yang belum punya RS/Ruangan
+            const safeHosp = u.hospital || 'RSUD BAYU ASIH';
+            const safeWard = u.ward || 'MELATI';
+            
+            const hKey = safeHosp.toUpperCase();
+            const wKey = safeWard.toUpperCase();
+            
+            if (!hw[hKey]) {
+                hw[hKey] = { originalName: safeHosp, wards: new Map() };
+            }
+            if (!hw[hKey].wards.has(wKey)) {
+                hw[hKey].wards.set(wKey, safeWard); 
+            }
+        });
+        
+        const result = {};
+        Object.keys(hw).forEach(k => { 
+            result[k] = {
+                originalName: hw[k].originalName,
+                wards: Array.from(hw[k].wards.values()).sort()
+            };
+        });
+        return result;
+    }, [allUsers]);
+
+    // ✨ FUNGSI ACC (APPROVE) USER BARU
+    const handleAccUser = async (targetId) => {
+        if (!confirm("Setujui akun ini? User akan bisa langsung login.")) return;
+        try {
+            await updateDoc(doc(db, 'users', targetId), { status: 'approved' });
+            alert("✅ Akun berhasil disetujui (ACC)!");
+        } catch (e) {
+            alert("Gagal ACC: " + e.message);
+        }
+    };
+    
     // Auto-close menu jika pengguna klik di luar area menu
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -1268,7 +1406,7 @@ const MedicalRecordApp = ({
     // Helper pembuat huruf Kapital awal kata
     const toTitleCase = (str) => str.toLowerCase().replace(/(?:^|\s)\w/g, m => m.toUpperCase());
 
-    // --- STATE LAMA (TETAP ADA) ---
+// --- STATE LAMA (TETAP ADA) ---
     const [records, setRecords] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [activeRecords, setActiveRecords] = useState([]);
@@ -1281,15 +1419,18 @@ const MedicalRecordApp = ({
     // ✨ MODE SOAP: 'personal' = catatan pribadi perawat, 'ruangan' = catatan gabungan/final
     const [soapMode, setSoapMode] = useState('personal');
 
-    // State untuk Data Dinamis (Setelan) - dengan localStorage backup
+    // ✨ FASE 2 & 3: ISOLASI STATE DPJP MURNI PER RUMAH SAKIT (ANTI-BOCOR)
     const [dpjpProfiles, setDpjpProfiles] = useState(() => {
         try {
-            // Coba ambil dari memori browser dulu (jika internet mati/diblokir)
-            const localData = JSON.parse(localStorage.getItem('backupDpjp'));
+            const hosp = currentUser?.hospital || 'RSUD BAYU ASIH';
+            const safeHospName = hosp.replace(/\s+/g, '_').toUpperCase();
+            const localData = JSON.parse(localStorage.getItem(`backupDpjp_${safeHospName}`));
             if (localData && localData.length > 0) return localData;
         } catch (e) { }
-        // Jika benar-benar kosong, baru ambil dari constants.js
-        return initialDpjpProfiles.map(p => ({ ...p, name: p.name }));
+        
+        // Hanya berikan dokter bawaan pabrik jika usernya terdaftar di RSUD Bayu Asih
+        const isBayuAsih = currentUser?.hospital?.toUpperCase() === 'RSUD BAYU ASIH';
+        return isBayuAsih ? initialDpjpProfiles.map(p => ({ ...p, name: p.name })) : [];
     });
     // Master data lists (lab, radiologi, tindakan, terapi) -- dapat diubah lewat Setelan
     // Load dari localStorage sebagai fallback jika Firebase lambat/error
@@ -1383,6 +1524,10 @@ const MedicalRecordApp = ({
 
     const [dpjpFilter, setDpjpFilter] = useState([]);
     const [selectedRoomFilter, setSelectedRoomFilter] = useState(currentWardConfig.roomList);
+    // ✅ FIX MASALAH 1: Paksa filter untuk auto-select semua kamar saat denah baru selesai diload
+        useEffect(() => {
+            setSelectedRoomFilter(currentWardConfig.roomList || []);
+        }, [currentWardConfig.roomList]);
 
     const [showRaber1, setShowRaber1] = useState(false);
     const [showRaber2, setShowRaber2] = useState(false);
@@ -1406,9 +1551,9 @@ const MedicalRecordApp = ({
 
     // --- [LEVEL 4] LOGIC: USER MONITORING & ACTIONS ---
 
-    // 1. Monitor Users (Admin, Karu, & Admin Ruangan)
+    // 1. Monitor Users (Admin, Karu, & PPJA)
     useEffect(() => {
-        if (!['admin', 'karu', 'admin_ruangan'].includes(currentUser?.role) || !db) return;
+        if (!['admin', 'karu', 'PPJA'].includes(currentUser?.role) || !db) return;
         const usersRef = collection(db, 'users');
         const q = query(usersRef, orderBy('name', 'asc'));
         const unsub = onSnapshot(q, (snap) => {
@@ -1438,8 +1583,8 @@ const MedicalRecordApp = ({
         if (!adminUserForm.id || !adminUserForm.name || !adminUserForm.pass) return alert("Semua kolom wajib diisi!");
         const targetId = adminUserForm.id.toLowerCase().trim().replace(/\s+/g, '_');
 
-        // Mengunci otomatis ruangan sesuai lokasi Karu/Admin Ruangan bertugas
-        const isLockedWard = ['karu', 'admin_ruangan'].includes(currentUser?.role);
+        // Mengunci otomatis ruangan sesuai lokasi Karu/PPJA bertugas
+        const isLockedWard = ['karu', 'PPJA'].includes(currentUser?.role);
         const targetWard = isLockedWard ? currentUser.ward : (adminUserForm.ward || 'MELATI');
 
         try {
@@ -1578,12 +1723,24 @@ const MedicalRecordApp = ({
         return null;
     }, [db, appId]);
 
+    // ✨ FASE 3: ISOLASI DATABASE SETELAN MULTI-RS
     const getConfigRef = useCallback(() => {
-        if (db) return doc(db, `artifacts/${appId}/public/data/settings`, 'mainConfig');
-        return null;
-    }, [db, appId]);
+        if (!db) return null;
+        
+        // Baca nama RS user yang login
+        const hosp = currentUser?.hospital || 'RSUD BAYU ASIH';
+        
+        // 🛡️ Backward Compatibility: Biar data Bayu Asih yang lama tidak hilang
+        if (hosp === 'RSUD BAYU ASIH' || hosp === 'RSUD Bayu Asih') {
+            return doc(db, `artifacts/${appId}/public/data/settings`, 'mainConfig');
+        } else {
+            // 🏥 RS Baru: Buat laci setelan khusus dengan nama RS-nya
+            const safeHospName = hosp.replace(/\s+/g, '_').toUpperCase();
+            return doc(db, `artifacts/${appId}/public/data/settings_${safeHospName}`, 'mainConfig');
+        }
+    }, [db, appId, currentUser]);
 
-    // 1. Load Settings (DPJP) - dengan retry dan localStorage fallback
+    // 1. Load Settings (DPJP & Denah Dinamis) - dengan retry dan localStorage fallback
     useEffect(() => {
         if (!userId) return;
         const ref = getConfigRef();
@@ -1600,68 +1757,61 @@ const MedicalRecordApp = ({
                 const unsubscribe = onSnapshot(ref, (snap) => {
                     if (snap.exists()) {
                         const data = snap.data();
-                        if (data.dpjpProfiles && Array.isArray(data.dpjpProfiles)) {
-                            // 1. AUTO-SYNC: Cek dokter baru di constants.js yang belum ada di Firebase
+                        
+                        // ✨ FASE 2: Tarik Denah Dinamis
+                        if (data.wards) setDynamicWards(data.wards);
+
+                        // ✨ FASE 2: Cegah Auto-Sync Dokter Bayu Asih ke RS Lain
+                        const isBayuAsih = (currentUser?.hospital || 'RSUD BAYU ASIH').toUpperCase() === 'RSUD BAYU ASIH';
+                        let finalDpjp = data.dpjpProfiles || [];
+
+                        if (isBayuAsih && Array.isArray(data.dpjpProfiles)) {
+                            // AUTO-SYNC HANYA UNTUK BAYU ASIH
                             const cloudNames = data.dpjpProfiles.map(p => p.name.toLowerCase());
                             const missingFromCloud = initialDpjpProfiles.filter(p => !cloudNames.includes(p.name.toLowerCase()));
-
-                            let finalDpjp = data.dpjpProfiles;
-
                             if (missingFromCloud.length > 0) {
-                                // Gabungkan dan urutkan
                                 finalDpjp = [...data.dpjpProfiles, ...missingFromCloud].sort((a, b) => a.name.localeCompare(b.name));
-                                // Tanam data baru ke Firebase tanpa menghapus yang lama
-                                setDoc(ref, { dpjpProfiles: finalDpjp }, { merge: true }).catch(err => console.error("Auto-sync DPJP failed:", err));
+                                setDoc(ref, { dpjpProfiles: finalDpjp }, { merge: true }).catch(err => console.error(err));
                             }
+                        } else if (!isBayuAsih && Array.isArray(data.dpjpProfiles)) {
+                            // ✨ AUTO-CLEANUP: Jika RS Lain terinfeksi dokter Bayu Asih (ex: dr. Delvi) karena bug lama, bersihkan otomatis!
+                            if (data.dpjpProfiles.some(p => p.name.includes('Delvi') || p.name.includes('Ekowati'))) {
+                                finalDpjp = []; // Kosongkan
+                                setDoc(ref, { dpjpProfiles: [] }, { merge: true }).catch(err => console.error(err));
+                            }
+                        }
 
-                            // 2. SIMPAN STATE & LOKAL: Tampilkan di layar & simpan di memori anti-hilang
-                            setDpjpProfiles(finalDpjp);
-                            localStorage.setItem('backupDpjp', JSON.stringify(finalDpjp));
-                        }
-                        // load master lists if present dan simpan ke localStorage
-                        if (data.masterLabs && Array.isArray(data.masterLabs)) {
-                            setMasterLabs(data.masterLabs);
-                            localStorage.setItem('masterLabs', JSON.stringify(data.masterLabs));
-                        }
-                        if (data.masterRads && Array.isArray(data.masterRads)) {
-                            setMasterRads(data.masterRads);
-                            localStorage.setItem('masterRads', JSON.stringify(data.masterRads));
-                        }
-                        if (data.masterProcedures && Array.isArray(data.masterProcedures)) {
-                            setMasterProcedures(data.masterProcedures);
-                            localStorage.setItem('masterProcedures', JSON.stringify(data.masterProcedures));
-                        }
-                        if (data.masterMedications && Array.isArray(data.masterMedications)) {
-                            setMasterMedications(data.masterMedications);
-                            localStorage.setItem('masterMedications', JSON.stringify(data.masterMedications));
-                        }
+                        // ✨ Simpan State & Kunci Sesuai Nama RS-nya
+                        const safeHospName = (currentUser?.hospital || 'RSUD BAYU ASIH').replace(/\s+/g, '_').toUpperCase();
+                        setDpjpProfiles(finalDpjp);
+                        localStorage.setItem(`backupDpjp_${safeHospName}`, JSON.stringify(finalDpjp));
+                        
+                        if (data.masterLabs && Array.isArray(data.masterLabs)) { setMasterLabs(data.masterLabs); localStorage.setItem('masterLabs', JSON.stringify(data.masterLabs)); }
+                        if (data.masterRads && Array.isArray(data.masterRads)) { setMasterRads(data.masterRads); localStorage.setItem('masterRads', JSON.stringify(data.masterRads)); }
+                        if (data.masterProcedures && Array.isArray(data.masterProcedures)) { setMasterProcedures(data.masterProcedures); localStorage.setItem('masterProcedures', JSON.stringify(data.masterProcedures)); }
+                        if (data.masterMedications && Array.isArray(data.masterMedications)) { setMasterMedications(data.masterMedications); localStorage.setItem('masterMedications', JSON.stringify(data.masterMedications)); }
+                        
                         setIsSettingsLoaded(true);
                         setSettingsError(null);
-                        retryCount = 0; // Reset jika berhasil
+                        retryCount = 0; 
                     } else {
-                        // ⚠️ Dokumen tidak ada: initialize dengan DPJP default saja, master kosong
+                        // ⚠️ Dokumen RS Baru belum ada isinya: Buat kosong melompong (Anti Bocor)
+                        const isBayuAsih = currentUser?.hospital?.toUpperCase() === 'RSUD BAYU ASIH';
                         setDoc(ref, {
-                            dpjpProfiles: initialDpjpProfiles,
-                            masterLabs: [],
-                            masterRads: [],
-                            masterProcedures: [],
-                            masterMedications: []
+                            dpjpProfiles: isBayuAsih ? initialDpjpProfiles : [],
+                            masterLabs: [], masterRads: [], masterProcedures: [], masterMedications: [],
+                            wards: {}
                         }).catch(err => console.error("Init settings error:", err));
                         setIsSettingsLoaded(true);
                         setSettingsError(null);
                     }
                 }, (err) => {
-                    // ⚠️ ERROR: Jangan reset state! Gunakan localStorage sebagai fallback
-                    console.warn("Firebase settings load error (retry " + (retryCount + 1) + "/" + maxRetries + "):", err.message);
+                    console.warn("Firebase settings load error:", err.message);
                     setSettingsError(err.message);
-
-                    // Tunggu dan retry jika masih ada kesempatan
                     if (retryCount < maxRetries) {
                         retryCount++;
-                        timeoutId = setTimeout(attemptLoad, 2000 * retryCount); // Exponential backoff: 2s, 4s, 6s
+                        timeoutId = setTimeout(attemptLoad, 2000 * retryCount);
                     } else {
-                        // Setelah max retries, load dari localStorage dan anggap berhasil
-                        console.log("Max retries reached. Using localStorage fallback for master data.");
                         setIsSettingsLoaded(true);
                     }
                 });
@@ -1671,7 +1821,6 @@ const MedicalRecordApp = ({
                     if (timeoutId) clearTimeout(timeoutId);
                 };
             } catch (e) {
-                console.error("Settings listener setup error:", e);
                 setSettingsError(e.message);
                 setIsSettingsLoaded(true);
             }
@@ -1679,10 +1828,8 @@ const MedicalRecordApp = ({
 
         attemptLoad();
 
-        return () => {
-            if (timeoutId) clearTimeout(timeoutId);
-        };
-    }, [getConfigRef, userId]);
+        return () => { if (timeoutId) clearTimeout(timeoutId); };
+    }, [getConfigRef, userId, currentUser]);
 
     // ✨ FIX DROPDOWN: Mengurutkan filter utama Dashboard berdasarkan Dokter Prioritas Ruangan (Sesuai image_7e06b0.png)
     const dpjpOptions = useMemo(() => {
@@ -1834,8 +1981,8 @@ const MedicalRecordApp = ({
             });
 
             // ✨ ISOLASI BANGSAL (WARD)
-            const currentWard = currentUser?.ward || 'MELATI';
-            const active = data.filter(r => (r.ward || 'MELATI') === currentWard);
+            const activeWard = currentUser?.ward || 'MELATI';
+            const active = data.filter(r => (r.ward || 'MELATI') === activeWard);
 
             setRecords(active);
             setActiveRecords(active);
@@ -2269,8 +2416,8 @@ const MedicalRecordApp = ({
         const hasRadiology = formData.radiologyImages && formData.radiologyImages.length > 0;
 
         // 🔥 Konfigurasi Cloudinary (Berlaku untuk Lampiran Luka & Radiologi)
-        const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dnbijv4p1/image/upload";
-        const CLOUDINARY_PRESET = "radiologi_preset";
+        const CLOUDINARY_URL = import.meta.env.VITE_CLOUDINARY_URL;
+        const CLOUDINARY_PRESET = import.meta.env.VITE_CLOUDINARY_PRESET;
 
         // 1. Upload Gambar Lampiran Biasa (Luka dll)
         let finalEvidenceImages = [];
@@ -3408,15 +3555,15 @@ const MedicalRecordApp = ({
 
     // --- STATS CALCULATION (VERSI SUPER: MULTI-SUFFIX KEBAL STEMPEL PERAWAT) ---
     const stats = useMemo(() => {
-        const currentWard = currentUser?.ward || 'MELATI';
-        const currentWardConfig = WARD_CONFIG[currentWard] || WARD_CONFIG['MELATI'];
+        // ✨ FIX ERROR: Ganti nama variabel jadi activeWard agar tidak bentrok
+        const activeWard = currentUser?.ward || 'MELATI';
 
         // 1. Saring data pasien aktif yang saat ini sedang dirawat di bangsal
-        const wardActiveRecords = activeRecords.filter(r => (r.ward || 'MELATI') === currentWard);
+        const wardActiveRecords = activeRecords.filter(r => (r.ward || 'MELATI') === activeWard);
 
         // 2. GABUNGKAN data records ruangan saat ini dengan data dari Gudang Arsip (archivedRecords)
-        const wardRecords = records.filter(r => (r.ward || 'MELATI') === currentWard);
-        const wardArchivedRecords = (archivedRecords || []).filter(r => (r.ward || 'MELATI') === currentWard);
+        const wardRecords = records.filter(r => (r.ward || 'MELATI') === activeWard);
+        const wardArchivedRecords = (archivedRecords || []).filter(r => (r.ward || 'MELATI') === activeWard);
         const combinedRecords = [...wardRecords, ...wardArchivedRecords];
 
         const s = {
@@ -4279,7 +4426,20 @@ const MedicalRecordApp = ({
     return (
         <div className="min-h-screen bg-gray-100 font-sans text-gray-800 pb-20">
 
-            {/* HEADER V5 (MENU UNIVERSAL) */}
+            {/* ✨ FLOATING WELCOME TOAST (MENGHILANG OTOMATIS) */}
+            {showWelcomeToast && (
+                <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[100] animate-in slide-in-from-top-5 fade-in duration-500">
+                    <div className="bg-indigo-600/95 backdrop-blur-sm text-white px-5 py-2.5 rounded-full shadow-2xl border-2 border-indigo-400/50 flex items-center gap-3">
+                        <span className="text-2xl animate-wave">👋</span>
+                        <div className="flex flex-col leading-tight">
+                            <span className="text-xs font-black">Halo, {currentUser?.name.split(' ')[0]}!</span>
+                            <span className="text-[10px] text-indigo-100 font-medium">Selamat datang di Ruang {currentWardConfig.name} - {currentUser?.hospital || 'RSUD Bayu Asih'}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* HEADER V6 (MENU UNIVERSAL + NOTIFIKASI) */}
             <div className="bg-white shadow-sm px-4 h-14 sticky top-0 z-[80] border-b flex justify-between items-center max-w-7xl mx-auto">
 
                 {/* 1. KIRI: LOGO (flex-none supaya ukuran paten) */}
@@ -4287,14 +4447,8 @@ const MedicalRecordApp = ({
                     <img src="/logo3.png" alt="SIMPAN Header" className="h-28 object-contain" />
                 </div>
 
-                {/* 2. TENGAH: PESAN WELCOME (1 Baris Lurus & Presisi di Tengah) */}
-                <div className="flex-1 flex justify-center px-4">
-                    <div className="hidden md:flex bg-indigo-50 px-4 py-1.5 rounded-full border border-indigo-100 shadow-sm">
-                        <span className="text-[11px] font-bold text-indigo-900 whitespace-nowrap">
-                            Halo {currentUser?.name} 👋, Selamat datang di Ruang {currentWardConfig.name} Aplikasi SIMPAN
-                        </span>
-                    </div>
-                </div>
+                {/* 2. TENGAH: KOSONGKAN (Diganti dengan Floating Toast di atas) */}
+                <div className="flex-1"></div>
 
                 {/* 3. KANAN: SEKERANJANG TOMBOL AKSI & MENU DROPDOWN */}
                 <div className="flex items-center gap-2 flex-none">
@@ -4308,13 +4462,23 @@ const MedicalRecordApp = ({
 
                     <div className={`hidden sm:block w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-green-400' : 'bg-red-500'} ring-2 ring-white`} title={isOnline ? "Online" : "Offline"}></div>
 
-                    {/* --- MENU NAVIGASI UNIVERSAL (UPGRADE KEYBOARD NAVIGATION) --- */}
+                    {/* --- MENU NAVIGASI UNIVERSAL DENGAN NOTIF RED DOT --- */}
                     <div className="relative ml-2" ref={menuWrapperRef} onKeyDown={handleMenuKeyDown}>
                         <button
                             onClick={() => { setIsMainMenuOpen(!isMainMenuOpen); setMainMenuHighlight(-1); }}
-                            className="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm hover:bg-gray-50 transition outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="relative bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm hover:bg-gray-50 transition outline-none focus:ring-2 focus:ring-indigo-500"
                         >
                             <span>☰</span> MENU ▾
+                            {/* ✨ RED DOT NOTIFIKASI JIKA ADA USER PENDING */}
+                            {(() => {
+                                const pendingCount = allUsers.filter(u => u.status === 'pending' && (currentUser.role === 'admin' || currentUser.role === 'SUPERADMIN' || (u.hospital === currentUser.hospital && u.ward === currentUser.ward))).length;
+                                if (pendingCount > 0) return (
+                                    <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-sm border border-white">
+                                        {pendingCount}
+                                    </span>
+                                );
+                                return null;
+                            })()}
                         </button>
 
                         {isMainMenuOpen && (
@@ -4336,14 +4500,24 @@ const MedicalRecordApp = ({
                                     </div>
 
                                     <div className="px-4 py-1 border-b border-gray-50 mb-1">
-                                        <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded w-fit block uppercase">
+                                        <span className="text-[9px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded w-fit block uppercase truncate max-w-full">
                                             👤 {currentUser ? currentUser.name : 'Guest'}
                                         </span>
                                     </div>
 
                                     <button onClick={() => { setView('dashboard'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'dashboard') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>🏠 Dashboard</button>
                                     <button onClick={() => { setView('patient-list'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'patient-list') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>📋 Daftar Pasien</button>
-                                    <button onClick={() => { setView('settings'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'settings') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>⚙️ Setelan</button>
+                                    
+                                    {/* ✨ MENU SETELAN + BADGE ANGKA NOTIFIKASI */}
+                                    <button onClick={() => { setView('settings'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center justify-between text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'settings') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>
+                                        <span>⚙️ Setelan</span>
+                                        {(() => {
+                                            const pendingCount = allUsers.filter(u => u.status === 'pending' && (currentUser.role === 'admin' || currentUser.role === 'SUPERADMIN' || (u.hospital === currentUser.hospital && u.ward === currentUser.ward))).length;
+                                            if (pendingCount > 0) return <span className="bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">{pendingCount} Baru</span>;
+                                            return null;
+                                        })()}
+                                    </button>
+
                                     <button onClick={() => { setView('archived-list'); setIsMainMenuOpen(false); fetchArchivedRecords(); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'archived-list') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>🗃️ Gudang Arsip Pasien</button>
 
                                     {/* MENU KEUANGAN (HANYA MUNCUL JIKA USER ADALAH PJ) */}
@@ -4356,22 +4530,53 @@ const MedicalRecordApp = ({
                                         </>
                                     )}
 
-                                    {/* MENU SUPERADMIN / GOD MODE SWITCH BANGSAL */}
-                                    {(currentUser?.role === 'SUPERADMIN' || currentUser?.name?.toLowerCase().includes('abi')) && (
+                                    {/* MENU SUPERADMIN / GOD MODE SWITCH BANGSAL (ALA WINDOWS EXPLORER) */}
+                                    {currentUser?.role === 'admin' && (
                                         <>
                                             <div className="border-t border-gray-100 my-1"></div>
                                             <div className="px-3 py-1 bg-purple-50">
-                                                <span className="text-[9px] font-bold text-purple-700 uppercase tracking-wider">👑 God Mode (Admin)</span>
+                                                <span className="text-[9px] font-bold text-purple-700 uppercase tracking-wider">👑 God Mode (Multi-RS)</span>
                                             </div>
-                                            {['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK'].map(wName => (
-                                                <button
-                                                    key={wName}
-                                                    onClick={() => { onSwitchWard(wName); setIsMainMenuOpen(false); }}
-                                                    className={`w-full text-left px-4 py-2 text-xs flex items-center font-bold transition-colors ${mainMenuHighlight === getMenuIdx('ward', wName) ? 'bg-indigo-100 text-indigo-900 font-black' : currentWardConfig.name === toTitleCase(wName) ? 'bg-purple-100 text-purple-700' : 'hover:bg-slate-50 text-slate-700'}`}
-                                                >
-                                                    🏥 Ruang {toTitleCase(wName)}
-                                                </button>
-                                            ))}
+                                            
+                                            {/* RENDER FOLDER RUMAH SAKIT */}
+                                            <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                                {Object.keys(hospitalWardsList).sort().map(hospKey => {
+                                                    const hospData = hospitalWardsList[hospKey];
+                                                    const hospName = hospData.originalName; // ✨ Tarik format tulisan aslinya dari database
+                                                    return (
+                                                        <div key={hospKey} className="flex flex-col">
+                                                            {/* NAMA RS (SEBAGAI FOLDER) */}
+                                                            <button 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation(); // Biar menu utama gak ketutup
+                                                                    setExpandedHospital(expandedHospital === hospKey ? null : hospKey);
+                                                                }} 
+                                                                className="w-full text-left px-4 py-2 text-xs flex items-center justify-between font-bold hover:bg-slate-50 text-slate-800 border-b border-slate-50/50"
+                                                            >
+                                                                <span className="truncate pr-2">🏥 {hospName}</span>
+                                                                <span className="text-slate-400 font-mono">{expandedHospital === hospKey ? '[-]' : '[+]'}</span>
+                                                            </button>
+
+                                                            {/* ISI FOLDER (NAMA RUANGAN) */}
+                                                            {expandedHospital === hospKey && (
+                                                                <div className="bg-slate-50 py-1 border-l-2 border-indigo-200 ml-4 mb-1">
+                                                                    {/* ✨ FIX: Gunakan hospData.wards.map */}
+                                                                    {hospData.wards.map(wName => (
+                                                                        <button
+                                                                            key={wName}
+                                                                            // ✨ FIX: wName & hospName dikirim utuh, TANPA toUpperCase()
+                                                                            onClick={() => { onSwitchWard(wName, hospName); setIsMainMenuOpen(false); }}
+                                                                            className="w-full text-left pl-6 pr-4 py-1.5 text-[11px] flex items-center font-bold transition-colors hover:bg-indigo-50 text-slate-600 hover:text-indigo-700"
+                                                                        >
+                                                                            🛏️ Ruang {toTitleCase(wName)}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </>
                                     )}
 
@@ -4490,201 +4695,365 @@ const MedicalRecordApp = ({
                             </div>
                         )}
 
-                        {/* --- VIEW 3: SETELAN (LEVEL 4 - UPDATE) --- */}
+                        {/* --- VIEW 3: SETELAN (SaaS CONTROL TOWER INTERFACE) --- */}
                         {view === 'settings' && (
-                            <div className="bg-white p-6 rounded shadow h-full overflow-y-auto">
-                                <div className="flex items-center justify-between mb-6">
-                                    <h2 className="font-bold text-xl text-indigo-900 border-b pb-2 flex items-center gap-2">⚙️ Pusat Pengaturan</h2>
-                                    {/* Status Indikator */}
-                                    <div className="flex items-center gap-2">
-                                        {settingsError && (
-                                            <div className="text-[10px] px-2 py-1 rounded bg-yellow-100 text-yellow-700 font-bold flex items-center gap-1">
-                                                ⚠️ Menggunakan data lokal (koneksi bermasalah)
-                                            </div>
-                                        )}
-                                        {!isSettingsLoaded && (
-                                            <div className="text-[10px] px-2 py-1 rounded bg-blue-100 text-blue-700 font-bold flex items-center gap-1">
-                                                ⏳ Memuat data...
-                                            </div>
-                                        )}
-                                        {isSettingsLoaded && !settingsError && (
-                                            <div className="text-[10px] px-2 py-1 rounded bg-green-100 text-green-700 font-bold flex items-center gap-1">
-                                                ✓ Data sinkron dengan Firebase
-                                            </div>
-                                        )}
+                            <div className="bg-white p-4 md:p-6 rounded-xl shadow-md h-full overflow-y-auto custom-scrollbar">
+                                {/* Header Judul Utama */}
+                                <div className="flex items-center justify-between mb-6 border-b pb-3 flex-wrap gap-2">
+                                    <div>
+                                        <h2 className="font-black text-xl text-indigo-950 flex items-center gap-2">⚙️ Pusat Kendali Aplikasi SIMPAN</h2>
+                                        <p className="text-xs text-slate-500 mt-0.5">Institusi Aktif: <span className="font-bold text-indigo-600">{currentUser.hospital || 'RSUD BAYU ASIH'}</span> | Ruang: <span className="font-bold text-indigo-600">{currentWardConfig.name}</span></p>
+                                    </div>
+                                    <div className="text-[10px] px-2.5 py-1 rounded-full font-bold bg-green-50 text-green-700 border border-green-200 shadow-sm">
+                                        ● Database Terhubung (Multi-Tenant Node)
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    {/* 1. PROFIL SAYA */}
-                                    <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
-                                        <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">👤 Profil Saya <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded uppercase">{currentUser.role}</span></h3>
-                                        <div className="space-y-3">
-                                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Username (ID)</label><input type="text" value={currentUser.id} disabled className="w-full p-2 bg-slate-200 text-slate-500 border rounded text-sm font-mono cursor-not-allowed" /></div>
-                                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nama Tampilan</label><input type="text" value={profileForm.name} onChange={e => setProfileForm({ ...profileForm, name: e.target.value })} className="w-full p-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-indigo-500" /></div>
-                                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label><input type="text" value={profileForm.pass} onChange={e => setProfileForm({ ...profileForm, pass: e.target.value })} className="w-full p-2 border border-slate-300 rounded text-sm font-mono focus:ring-2 focus:ring-indigo-500" /></div>
-                                            <button onClick={handleUpdateSelf} className="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition shadow-sm mt-2">Simpan Perubahan Profil</button>
+
+                                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+                                    
+                                    {/* PANEL KIRI (4 KOLOM): DATA PRIBADI PERAWAT */}
+                                    <div className="xl:col-span-4 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                                        <h3 className="font-black text-xs text-slate-700 uppercase tracking-wider flex items-center justify-between border-b pb-2">
+                                            <span>👤 Profil Akun Saya</span>
+                                            {/* ✨ FIX: LENCANA JABATAN SESUAI PERMINTAAN ABI */}
+                                            <span className="text-[9px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-black border border-indigo-200 shadow-sm">
+                                                ⭐ JABATAN: {currentUser.role === 'member' || currentUser.role === 'Pelaksana' ? 'PELAKSANA' : currentUser.role.toUpperCase()}
+                                            </span>
+                                        </h3>
+                                        <div className="space-y-2.5 text-xs">
+                                            <div><label className="block font-bold text-slate-500 uppercase mb-1">Username (ID)</label><input type="text" value={currentUser.id} disabled className="w-full p-2 bg-slate-200 text-slate-500 border rounded font-mono cursor-not-allowed" /></div>
+                                            <div><label className="block font-bold text-slate-500 uppercase mb-1">Nama Tampilan</label><input type="text" value={profileForm.name} onChange={e => setProfileForm({ ...profileForm, name: e.target.value })} className="w-full p-2 border border-slate-300 rounded font-bold" /></div>
+                                            <div><label className="block font-bold text-slate-500 uppercase mb-1">Password Masuk</label><input type="text" value={profileForm.pass} onChange={e => setProfileForm({ ...profileForm, pass: e.target.value })} className="w-full p-2 border border-slate-300 rounded font-mono" /></div>
+                                            <button onClick={handleUpdateSelf} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold transition shadow-sm">Simpan Perubahan Profil</button>
                                         </div>
                                     </div>
-                                    {/* 2. ADMIN & MANAGEMENT PANEL */}
-                                    {['admin', 'karu', 'admin_ruangan'].includes(currentUser.role) && (
-                                        <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-200">
-                                            <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">
-                                                {currentUser.role === 'admin' ? '🛡️ God Admin: Manajemen Global' : '📋 Manajemen Anggota Ruangan'}
-                                            </h3>
 
-                                            {/* --- FORM INPUT USER --- */}
-                                            <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm mb-4">
-                                                <h4 className="text-xs font-bold text-indigo-800 mb-2 uppercase">Tambah / Reset Perawat</h4>
-                                                <div className="grid grid-cols-2 gap-2 mb-2">
-                                                    <input type="text" placeholder="ID (Username)" value={adminUserForm.id} onChange={e => setAdminUserForm({ ...adminUserForm, id: e.target.value })} className="p-2 border rounded text-xs" />
-                                                    <input type="text" placeholder="Nama Lengkap" value={adminUserForm.name} onChange={e => setAdminUserForm({ ...adminUserForm, name: e.target.value })} className="p-2 border rounded text-xs" />
-                                                </div>
-
-                                                <div className="grid grid-cols-3 gap-2 mb-2">
-                                                    <input type="text" placeholder="Password" value={adminUserForm.pass} onChange={e => setAdminUserForm({ ...adminUserForm, pass: e.target.value })} className="p-2 border rounded text-xs font-mono" />
-
-                                                    <select value={adminUserForm.role} onChange={e => setAdminUserForm({ ...adminUserForm, role: e.target.value })} className="p-2 border rounded text-xs bg-white outline-none">
-                                                        <option value="member">Perawat Pelaksana</option>
-                                                        <option value="karu">Kepala Ruangan (Karu)</option>
-                                                        <option value="admin_ruangan">Admin Ruangan</option>
-                                                        <option value="finance_jm">Keuangan (JM)</option>
-                                                        <option value="finance_kas">Keuangan (KAS)</option>
-                                                        <option value="finance_doc">Keuangan (Dokter)</option>
-                                                        {currentUser.role === 'admin' && <option value="admin">God Admin</option>}
-                                                    </select>
-
-                                                    {/* Dropdown Pilihan Ruangan (Otomatis Terkunci & Menyesuaikan Pengguna) */}
-                                                    <div>
-                                                        <select
-                                                            value={['karu', 'admin_ruangan'].includes(currentUser.role) ? currentUser.ward : (adminUserForm.ward || 'MELATI')}
-                                                            onChange={e => setAdminUserForm({ ...adminUserForm, ward: e.target.value })}
-                                                            disabled={['karu', 'admin_ruangan'].includes(currentUser.role)}
-                                                            className="w-full p-2 border rounded text-xs bg-white font-bold text-indigo-700 outline-none border-indigo-200 disabled:bg-gray-100 disabled:text-gray-400"
-                                                        >
-                                                            <option value="MELATI">🏥 Ruang Melati</option>
-                                                            <option value="DAHLIA">🏥 Ruang Dahlia</option>
-                                                            <option value="TERATAI">🏥 Ruang Teratai</option>
-                                                            <option value="ANYELIR">🏥 Ruang Anyelir</option>
-                                                            <option value="ANGGREK">🏥 Ruang Anggrek</option>
-                                                        </select>
-                                                        {['karu', 'admin_ruangan'].includes(currentUser.role) && (
-                                                            <p className="text-[9px] text-amber-600 mt-0.5 font-medium">*Hubungi God Admin jika ingin mengajukan mutasi</p>
-                                                        )}
+                                    {/* PANEL KANAN (8 KOLOM): MANAGEMENT GLOBAL MULTI-RS */}
+                                    <div className="xl:col-span-8 space-y-6">
+                                        
+                                        {/* MANAGEMENT PANEL USER (DIREKTRIS STRUKTUR RS & RUANGAN) */}
+                                        {['admin', 'karu', 'PPJA'].includes(currentUser.role) && (
+                                            <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-200 space-y-4">
+                                                <div className="flex justify-between items-center border-b border-indigo-100 pb-2 flex-wrap gap-2">
+                                                    <h3 className="font-black text-xs text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                                                        {currentUser.role === 'admin' ? '👑 God Admin: Manajemen Akun Terpimpin' : '📋 Manajemen Anggota Ruangan'}
+                                                    </h3>
+                                                    {/* Form Input Kilat Perawat Baru */}
+                                                    <div className="bg-white p-2 rounded-lg border border-indigo-100 text-[10px] font-bold text-indigo-700">
+                                                        Total Terdaftar: {
+                                                            currentUser.role === 'admin' 
+                                                            ? allUsers.length 
+                                                            : allUsers.filter(u => u.hospital?.toUpperCase() === (currentUser.hospital || 'RSUD BAYU ASIH').toUpperCase() && u.ward?.toUpperCase() === currentUser.ward?.toUpperCase()).length
+                                                        } User
                                                     </div>
                                                 </div>
 
-                                                <button onClick={handleAdminSaveUser} className="w-full bg-indigo-600 text-white py-1.5 rounded text-xs font-bold hover:bg-indigo-700">Simpan / Update User</button>
+                                                {/* KOTAK SPAWNER / TAMBAH PERAWAT BARU */}
+                                                <div className="bg-white p-3 rounded-xl border border-indigo-100 shadow-sm space-y-2.5">
+                                                    <span className="text-[10px] font-black text-indigo-900 uppercase block">➕ Pendaftaran & Reset Akun Manual</span>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <input type="text" placeholder="Username (Kecil tanpa spasi)" value={adminUserForm.id} onChange={e => setAdminUserForm({ ...adminUserForm, id: e.target.value })} className="p-2 border rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                        <input type="text" placeholder="Nama Lengkap Perawat" value={adminUserForm.name} onChange={e => setAdminUserForm({ ...adminUserForm, name: e.target.value })} className="p-2 border rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-bold" />
+                                                    </div>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <input type="text" placeholder="Password Akun" value={adminUserForm.pass} onChange={e => setAdminUserForm({ ...adminUserForm, pass: e.target.value })} className="p-2 border rounded text-xs font-mono outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                        {/* ✨ FIX: Pilihan Role disesuaikan Kasta */}
+                                                        <select value={adminUserForm.role} onChange={e => setAdminUserForm({ ...adminUserForm, role: e.target.value })} className="p-2 border rounded text-xs bg-white outline-none">
+                                                            <option value="member">Perawat Pelaksana</option>
+                                                            <option value="PPJA">Perawat - PPJA</option>
+                                                            {['admin', 'karu'].includes(currentUser.role) && <option value="karu">Kepala Ruangan (Karu)</option>}
+                                                            {currentUser.role === 'admin' && <option value="admin">God Admin</option>}
+                                                        </select>
+                                                        {/* ✨ FIX: Dropdown ruangan Terkunci jika Karu/PPJA */}
+                                                        <select 
+                                                            value={['karu', 'PPJA'].includes(currentUser.role) ? currentUser.ward : (adminUserForm.ward || 'MELATI')} 
+                                                            onChange={e => setAdminUserForm({ ...adminUserForm, ward: e.target.value.toUpperCase() })} 
+                                                            disabled={['karu', 'PPJA'].includes(currentUser.role)}
+                                                            className="p-2 border rounded text-xs bg-white font-extrabold text-indigo-700 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                                                        >
+                                                            {currentUser.role === 'admin' ? (
+                                                                Object.keys(hospitalWardsList).flatMap(rs => Array.from(hospitalWardsList[rs]?.wards || [])).map(w => (
+                                                                    <option key={w} value={w}>Ruang {toTitleCase(w)}</option>
+                                                                ))
+                                                            ) : (
+                                                                <option value={currentUser.ward}>Ruang {toTitleCase(currentUser.ward)}</option>
+                                                            )}
+                                                        </select>
+                                                    </div>
+                                                    <button onClick={handleAdminSaveUser} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 rounded-lg text-xs font-bold transition shadow-sm">Simpan / Update Otoritas User</button>
+                                                </div>
+
+                                                {/* ✨ FIX: STRUKTUR FOLDER GRUP AKUN (TERSENSOR JIKA BUKAN ADMIN) */}
+                                                <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+                                                    {Object.keys(hospitalWardsList)
+                                                        .filter(rsKey => currentUser.role === 'admin' || rsKey === (currentUser.hospital || 'RSUD BAYU ASIH').toUpperCase())
+                                                        .sort().map(rsKey => {
+                                                        const hospData = hospitalWardsList[rsKey];
+                                                        const hospName = hospData.originalName || rsKey;
+                                                        const isExpanded = expandedHospital === rsKey || currentUser.role !== 'admin'; // Auto expand if not admin
+                                                        
+                                                        return (
+                                                        <div key={rsKey} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                                            <button 
+                                                                onClick={() => { if(currentUser.role === 'admin') setExpandedHospital(isExpanded ? null : rsKey) }}
+                                                                className={`w-full flex items-center justify-between bg-slate-50 px-3 py-2 border-b border-slate-200 transition outline-none ${currentUser.role === 'admin' ? 'hover:bg-slate-100 cursor-pointer' : 'cursor-default'}`}
+                                                            >
+                                                                <span className="text-xs font-black text-slate-800">🏥 {hospName}</span>
+                                                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1">
+                                                                    Grup Institusi {currentUser.role === 'admin' ? (isExpanded ? '▼' : '▶') : ''}
+                                                                </span>
+                                                            </button>
+                                                            
+                                                            {isExpanded && (
+                                                                <div className="p-3 space-y-2 bg-white">
+                                                                    {Array.from(hospData.wards || [])
+                                                                        .filter(wardName => currentUser.role === 'admin' || wardName.toUpperCase() === (currentUser.ward || 'MELATI').toUpperCase())
+                                                                        .map(wardName => {
+                                                                        const roomUsers = allUsers.filter(u => 
+                                                                            (u.hospital || 'RSUD BAYU ASIH').toUpperCase() === rsKey && 
+                                                                            (u.ward || 'MELATI').toUpperCase() === wardName.toUpperCase()
+                                                                        );
+                                                                        if (roomUsers.length === 0) return null;
+
+                                                                        return (
+                                                                            <div key={wardName} className="ml-1 pl-2 border-l-2 border-indigo-200 space-y-1.5">
+                                                                                <div className="text-[11px] font-extrabold text-indigo-700 flex items-center gap-1">
+                                                                                    📂 Ruang {toTitleCase(wardName)} ({roomUsers.length} Staf)
+                                                                                </div>
+                                                                                
+                                                                                <div className="overflow-x-auto rounded-lg border border-slate-100">
+                                                                                    <table className="w-full text-[11px] text-left bg-white">
+                                                                                        <thead className="bg-slate-50 text-slate-600 font-bold border-b text-[10px]">
+                                                                                            <tr>
+                                                                                                <th className="p-2">ID</th>
+                                                                                                <th className="p-2">Nama</th>
+                                                                                                <th className="p-2">Role</th>
+                                                                                                <th className="p-2">Pass</th>
+                                                                                                <th className="p-2 text-center">Status</th>
+                                                                                                <th className="p-2 text-center">Aksi</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody className="divide-y divide-slate-100">
+                                                                                            {roomUsers.map(u => (
+                                                                                                <tr key={u.id} className="hover:bg-indigo-50/40">
+                                                                                                    <td className="p-2 font-mono text-slate-500">{u.id}</td>
+                                                                                                    <td className="p-2 font-bold text-slate-800">{u.name}</td>
+                                                                                                    <td className="p-2">
+                                                                                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : u.role === 'karu' ? 'bg-amber-100 text-amber-700' : u.role === 'PPJA' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{u.role === 'member' || u.role === 'Pelaksana' ? 'pelaksana' : u.role}</span>
+                                                                                                    </td>
+                                                                                                    <td className="p-2 font-mono text-slate-400">{u.pass}</td>
+                                                                                                    <td className="p-2 text-center">
+                                                                                                        {u.status === 'pending' ? (
+                                                                                                            <button onClick={() => handleAccUser(u.id)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-2 py-0.5 rounded text-[9px] font-black animate-pulse shadow-sm transition">✓ ACC</button>
+                                                                                                        ) : (
+                                                                                                            <span className="text-emerald-600 font-bold text-[9px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">Aktif</span>
+                                                                                                        )}
+                                                                                                    </td>
+                                                                                                    <td className="p-2 text-center flex justify-center gap-1.5">
+                                                                                                        <button onClick={() => setAdminUserForm({ ...u })} className="text-yellow-600 hover:scale-110 transition-transform">✏️</button>
+                                                                                                        {u.id !== currentUser.id && (
+                                                                                                            <button onClick={() => handleAdminDeleteUser(u.id)} className="text-red-500 hover:scale-110 transition-transform">🗑️</button>
+                                                                                                        )}
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            ))}
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )})}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* ✨ DYNAMIC ENGINE: UNIVERSAL DENAH BUILDER (HANYA ADMIN & KARU, BUKAN PPJA) */}
+                                        {['admin', 'karu'].includes(currentUser.role) && (
+                                            <div className="bg-sky-50 p-4 rounded-xl border border-sky-200 shadow-sm space-y-3">
+                                                <div>
+                                                    <h3 className="font-black text-sky-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                                                        {currentUser.role === 'admin' ? '🏗️ Builder Denah Ruangan Universal (SaaS Spawner)' : `🏗️ Builder Denah Ruangan (${currentWardConfig.name})`}
+                                                    </h3>
+                                                    <p className="text-[10px] text-sky-700 mt-0.5">
+                                                        {currentUser.role === 'admin' 
+                                                            ? 'Sebagai Superadmin, Anda bebas melahirkan RS baru atau membangun denah ruangan mana pun di Indonesia dari panel ini.'
+                                                            : 'Modifikasi jumlah kasur dan tata letak denah ruangan Anda di sini.'}
+                                                    </p>
+                                                </div>
+
+                                                <form onSubmit={handleRebuildWard} className="space-y-3 bg-white p-3 rounded-xl border border-sky-100 shadow-inner">
+                                                    {/* Baris Atas: Penentuan Target RS dan Ward secara Fleksibel (HANYA AKTIF UNTUK ADMIN) */}
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Target Rumah Sakit</label>
+                                                            <input 
+                                                                type="text" 
+                                                                list="existing-hospitals" 
+                                                                placeholder="Misal: RS KELUARGA REKSOSUDOMO" 
+                                                                value={currentUser.role === 'admin' ? (rebuildForm.rsTarget || '') : currentUser.hospital || 'RSUD BAYU ASIH'} 
+                                                                onChange={e => setRebuildForm({...rebuildForm, rsTarget: e.target.value})} 
+                                                                disabled={currentUser.role !== 'admin'}
+                                                                className="w-full p-2 border rounded text-xs font-extrabold text-slate-800 outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50/50 uppercase disabled:bg-slate-100 disabled:text-slate-500" 
+                                                            />
+                                                            {currentUser.role === 'admin' && (
+                                                                <datalist id="existing-hospitals">
+                                                                    {Object.keys(hospitalWardsList).map(h => <option key={h} value={h} />)}
+                                                                </datalist>
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Target Nama Ruangan</label>
+                                                            <input 
+                                                                type="text" 
+                                                                placeholder="Misal: KRESNA / MELATI / ICU" 
+                                                                value={currentUser.role === 'admin' ? (rebuildForm.wardTarget || '') : currentUser.ward || 'MELATI'} 
+                                                                onChange={e => setRebuildForm({...rebuildForm, wardTarget: e.target.value})} 
+                                                                disabled={currentUser.role !== 'admin'}
+                                                                className="w-full p-2 border rounded text-xs font-extrabold text-indigo-700 outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50/50 uppercase disabled:bg-slate-100 disabled:text-slate-500" 
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Baris Bawah: Konfigurasi Cetak Biru Kasur */}
+                                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end pt-1">
+                                                        <div>
+                                                            <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Total Kasur Bed</label>
+                                                            <input type="number" min="1" max="100" value={rebuildForm.bedCount} onChange={e => setRebuildForm({...rebuildForm, bedCount: parseInt(e.target.value) || 20})} className="w-full p-1.5 border rounded text-xs text-center font-bold" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Format Nama</label>
+                                                            <select value={rebuildForm.bedFormat} onChange={e => setRebuildForm({...rebuildForm, bedFormat: e.target.value})} className="w-full p-1.5 border rounded text-xs bg-white font-bold">
+                                                                <option value="K1">Awalan "K" (K1, K2)</option>
+                                                                <option value="1">Angka Saja (1, 2, 3)</option>
+                                                                <option value="1A">Format Blok (1A, 1B)</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Layout Lorong</label>
+                                                            <select value={rebuildForm.layout} onChange={e => setRebuildForm({...rebuildForm, layout: e.target.value})} className="w-full p-1.5 border rounded text-xs bg-white font-bold">
+                                                                <option value="1baris">1 Baris Berjejer</option>
+                                                                <option value="2baris">2 Baris (Kiri & Kanan)</option>
+                                                            </select>
+                                                        </div>
+                                                        <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white py-2 rounded-lg font-black text-xs transition shadow-md">
+                                                            🏗️ Bangun Denah Target
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        )}
+
+                                        {/* MASTER DATA OBAT & LAB (TERISOLASI MATANG) */}
+                                        <div className="mt-4 pt-4 border-t border-slate-200">
+                                            <div className="flex justify-between items-center border-b pb-1.5 mb-3">
+                                                <h3 className="font-black text-slate-700 text-xs uppercase tracking-wider">🗂️ Master Data Medis Ruangan</h3>
+                                                <span className="text-[10px] bg-slate-100 px-2 py-0.5 text-slate-500 font-bold rounded">Isi Otomatis Mengikuti RS Terpilih</span>
+                                            </div>
+                                            
+                                            {/* Baris Input DPJP Baru */}
+                                            <div className="flex space-x-2 mb-3">
+                                                <input type="text" placeholder="Nama Dokter Baru..." value={newDpjpName} onChange={(e) => setNewDpjpName(e.target.value)} className="border p-2 rounded text-xs w-1/2 outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                <input type="text" placeholder="No. WA (08xxxx)" value={newDpjpWa} onChange={(e) => setNewDpjpWa(e.target.value)} className="border p-2 rounded text-xs w-1/3 font-mono outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                <button onClick={handleAddDpjp} disabled={!isSettingsLoaded} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition shadow-sm">+ Dokter</button>
                                             </div>
 
-                                            {/* --- TABEL DAFTAR USER (Saringan Sisi Klien Otomatis) --- */}
-                                            <div className="overflow-hidden rounded border border-indigo-200">
-                                                <table className="w-full text-left text-xs bg-white">
-                                                    <thead className="bg-indigo-100 text-indigo-800">
-                                                        <tr>
-                                                            <th className="p-2">ID</th>
-                                                            <th className="p-2">Nama</th>
-                                                            <th className="p-2">Role</th>
-                                                            <th className="p-2">Ruangan</th>
-                                                            <th className="p-2">Pass</th>
+                                            {/* Tabel DPJP */}
+                                            <div className="border rounded-xl overflow-hidden bg-white shadow-sm max-h-48 overflow-y-auto custom-scrollbar">
+                                                <table className="w-full text-left border-collapse text-xs">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 border-b text-slate-600 font-bold text-[10px] uppercase">
+                                                            <th className="p-2 border-r">Nama Dokter Spesialis</th>
+                                                            <th className="p-2 border-r">No. WhatsApp</th>
                                                             <th className="p-2 text-center">Aksi</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody className="divide-y divide-indigo-50">
-                                                        {allUsers
-                                                            .filter(u => currentUser.role === 'admin' || u.ward === currentUser.ward)
-                                                            .map(u => (
-                                                                <tr key={u.id} className="hover:bg-indigo-50">
-                                                                    <td className="p-2 font-mono text-slate-500">{u.id}</td>
-                                                                    <td className="p-2 font-bold">{u.name}</td>
-                                                                    <td className="p-2">
-                                                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : u.role === 'karu' ? 'bg-amber-100 text-amber-700' : u.role === 'admin_ruangan' ? 'bg-blue-100 text-blue-700' : u.role === 'member' ? 'bg-slate-100 text-slate-600' : 'bg-green-100 text-green-700'}`}>{u.role}</span>
-                                                                    </td>
-                                                                    <td className="p-2 font-extrabold text-indigo-600 text-[10px] tracking-wide">
-                                                                        📂 {u.ward || 'MELATI'}
-                                                                    </td>
-                                                                    <td className="p-2 font-mono text-slate-500">{u.pass}</td>
-                                                                    <td className="p-2 text-center flex justify-center gap-1">
-                                                                        <button onClick={() => setAdminUserForm({ ward: currentUser.ward, ...u })} className="bg-yellow-100 text-yellow-700 p-1 rounded">✏️</button>
-                                                                        {u.id !== currentUser.id && (
-                                                                            <button onClick={() => handleAdminDeleteUser(u.id)} className="bg-red-100 text-red-700 p-1 rounded">🗑️</button>
-                                                                        )}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
+                                                    <tbody className="divide-y divide-slate-100">
+                                                        {dpjpProfiles.length === 0 ? (
+                                                            <tr><td colSpan="3" className="p-4 text-center text-slate-400 italic font-medium">Belum ada dokter spesialis terdaftar di RS ini. Silakan tambahkan di atas.</td></tr>
+                                                        ) : dpjpProfiles.map((p, idx) => (
+                                                            <tr key={idx} className="hover:bg-slate-50 transition">
+                                                                <td className="p-2 border-r font-bold text-slate-800">{p.name}</td>
+                                                                <td className="p-2 border-r text-slate-500 font-mono">{p.waNumber}</td>
+                                                                <td className="p-2 text-center"><button onClick={() => handleRemoveDpjp(p.name)} disabled={!isSettingsLoaded} className="text-red-500 font-bold border border-red-100 px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-[10px] transition">Hapus</button></td>
+                                                            </tr>
+                                                        ))}
                                                     </tbody>
                                                 </table>
                                             </div>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="mt-8 pt-6 border-t border-slate-200">
-                                    <h3 className="font-bold text-gray-700 mb-2">Daftar DPJP & Nomor WA (Master Data)</h3>
-                                    <div className="flex space-x-2 mb-3"><input type="text" placeholder="Nama Dokter" value={newDpjpName} onChange={(e) => setNewDpjpName(e.target.value)} className="border p-2 rounded text-xs w-1/2 focus:ring-2 focus:ring-indigo-500 outline-none" /><input type="text" placeholder="Nomor WA (08xxx)" value={newDpjpWa} onChange={(e) => setNewDpjpWa(e.target.value)} className="border p-2 rounded text-xs w-1/3 focus:ring-2 focus:ring-indigo-500 outline-none" /><button onClick={handleAddDpjp} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-green-700 transition disabled:bg-gray-400">+ Tambah</button></div>
-                                    <div className="border rounded overflow-hidden bg-white shadow-sm max-h-64 overflow-y-auto"><table className="w-full text-left border-collapse"><thead><tr className="bg-gray-100 text-xs text-gray-600 border-b"><th className="p-2 border-r font-bold uppercase">Nama Dokter</th><th className="p-2 border-r font-bold uppercase">No. WA</th><th className="p-2 text-center font-bold uppercase">Aksi</th></tr></thead><tbody>{dpjpProfiles && dpjpProfiles.map((p, idx) => (<tr key={idx} className="border-b text-xs hover:bg-indigo-50 transition"><td className="p-2 border-r font-medium text-gray-800">{p.name}</td><td className="p-2 border-r text-gray-500 font-mono">{p.waNumber}</td><td className="p-2 text-center"><button onClick={() => handleRemoveDpjp(p.name)} disabled={!isSettingsLoaded} className="text-red-500 hover:text-red-700 font-bold px-2 py-1 border border-red-200 rounded hover:bg-red-50 transition text-[10px]">🗑️ Hapus</button></td></tr>))}</tbody></table></div>
 
-                                    {/* MASTER DATA: Lab / Radiologi / Tindakan / Terapi */}
-                                    <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="bg-white p-3 rounded border">
-                                            <h4 className="text-sm font-bold mb-2">Master Lab</h4>
-                                            <div className="flex gap-2 mb-2">
-                                                <input type="text" placeholder="Tambah Lab" value={newMasterLab} onChange={e => setNewMasterLab(e.target.value)} className="flex-1 p-2 border rounded text-xs" />
-                                                <button onClick={() => handleAddMaster('lab')} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-3 rounded text-xs font-bold">Tambah</button>
-                                            </div>
-                                            <div className="max-h-40 overflow-y-auto text-xs">
-                                                {masterLabs.length === 0 ? <div className="text-gray-400 italic">(Kosong)</div> : masterLabs.map((i, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between py-1 border-b">
-                                                        <div className="truncate">{i}</div>
-                                                        <button onClick={() => handleRemoveMaster('lab', i)} className="text-red-500 text-[11px] px-2 rounded">Hapus</button>
+                                            {/* Grid Komponen Penunjang Medis */}
+                                            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {/* Master Lab */}
+                                                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                                                    <h4 className="text-xs font-black text-slate-700 mb-2 uppercase border-b pb-1">🧪 Master Lab</h4>
+                                                    <div className="flex gap-1.5 mb-2">
+                                                        <input type="text" placeholder="Nama Lab..." value={newMasterLab} onChange={e => setNewMasterLab(e.target.value)} className="flex-1 p-1.5 border rounded text-xs outline-none" />
+                                                        <button onClick={() => handleAddMaster('lab')} disabled={!isSettingsLoaded} className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm">+</button>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        </div>
+                                                    <div className="max-h-28 overflow-y-auto custom-scrollbar text-xs divide-y divide-slate-50">
+                                                        {masterLabs.length === 0 ? <div className="text-slate-400 italic text-[11px] p-1">(Kosong)</div> : masterLabs.map((i, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between py-1 font-medium text-slate-700">
+                                                                <div className="truncate">{i}</div>
+                                                                <button onClick={() => handleRemoveMaster('lab', i)} className="text-red-500 hover:bg-red-50 px-1.5 rounded transition text-[10px]">✕</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
 
-                                        <div className="bg-white p-3 rounded border">
-                                            <h4 className="text-sm font-bold mb-2">Master Radiologi</h4>
-                                            <div className="flex gap-2 mb-2">
-                                                <input type="text" placeholder="Tambah Radiologi" value={newMasterRad} onChange={e => setNewMasterRad(e.target.value)} className="flex-1 p-2 border rounded text-xs" />
-                                                <button onClick={() => handleAddMaster('rad')} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-3 rounded text-xs font-bold">Tambah</button>
-                                            </div>
-                                            <div className="max-h-40 overflow-y-auto text-xs">
-                                                {masterRads.length === 0 ? <div className="text-gray-400 italic">(Kosong)</div> : masterRads.map((i, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between py-1 border-b">
-                                                        <div className="truncate">{i}</div>
-                                                        <button onClick={() => handleRemoveMaster('rad', i)} className="text-red-500 text-[11px] px-2 rounded">Hapus</button>
+                                                {/* Master Rad */}
+                                                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                                                    <h4 className="text-xs font-black text-slate-700 mb-2 uppercase border-b pb-1">🩻 Master Radiologi</h4>
+                                                    <div className="flex gap-1.5 mb-2">
+                                                        <input type="text" placeholder="Nama Rad..." value={newMasterRad} onChange={e => setNewMasterRad(e.target.value)} className="flex-1 p-1.5 border rounded text-xs outline-none" />
+                                                        <button onClick={() => handleAddMaster('rad')} disabled={!isSettingsLoaded} className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm">+</button>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        </div>
+                                                    <div className="max-h-28 overflow-y-auto custom-scrollbar text-xs divide-y divide-slate-50">
+                                                        {masterRads.length === 0 ? <div className="text-slate-400 italic text-[11px] p-1">(Kosong)</div> : masterRads.map((i, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between py-1 font-medium text-slate-700">
+                                                                <div className="truncate">{i}</div>
+                                                                <button onClick={() => handleRemoveMaster('rad', i)} className="text-red-500 hover:bg-red-50 px-1.5 rounded transition text-[10px]">✕</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
 
-                                        <div className="bg-white p-3 rounded border">
-                                            <h4 className="text-sm font-bold mb-2">Master Tindakan / Prosedur</h4>
-                                            <div className="flex gap-2 mb-2">
-                                                <input type="text" placeholder="Tambah Tindakan" value={newMasterProcedure} onChange={e => setNewMasterProcedure(e.target.value)} className="flex-1 p-2 border rounded text-xs" />
-                                                <button onClick={() => handleAddMaster('procedure')} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-3 rounded text-xs font-bold">Tambah</button>
-                                            </div>
-                                            <div className="max-h-40 overflow-y-auto text-xs">
-                                                {masterProcedures.length === 0 ? <div className="text-gray-400 italic">(Kosong)</div> : masterProcedures.map((i, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between py-1 border-b">
-                                                        <div className="truncate">{i}</div>
-                                                        <button onClick={() => handleRemoveMaster('procedure', i)} className="text-red-500 text-[11px] px-2 rounded">Hapus</button>
+                                                {/* Master Tindakan */}
+                                                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                                                    <h4 className="text-xs font-black text-slate-700 mb-2 uppercase border-b pb-1">💉 Master Tindakan</h4>
+                                                    <div className="flex gap-1.5 mb-2">
+                                                        <input type="text" placeholder="Nama Tindakan..." value={newMasterProcedure} onChange={e => setNewMasterProcedure(e.target.value)} className="flex-1 p-1.5 border rounded text-xs outline-none" />
+                                                        <button onClick={() => handleAddMaster('procedure')} disabled={!isSettingsLoaded} className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm">+</button>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        </div>
+                                                    <div className="max-h-28 overflow-y-auto custom-scrollbar text-xs divide-y divide-slate-50">
+                                                        {masterProcedures.length === 0 ? <div className="text-slate-400 italic text-[11px] p-1">(Kosong)</div> : masterProcedures.map((i, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between py-1 font-medium text-slate-700">
+                                                                <div className="truncate">{i}</div>
+                                                                <button onClick={() => handleRemoveMaster('procedure', i)} className="text-red-500 hover:bg-red-50 px-1.5 rounded transition text-[10px]">✕</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
 
-                                        <div className="bg-white p-3 rounded border">
-                                            <h4 className="text-sm font-bold mb-2">Master Terapi / Obat</h4>
-                                            <div className="flex gap-2 mb-2">
-                                                <input type="text" placeholder="Tambah Terapi / Obat" value={newMasterMedication} onChange={e => setNewMasterMedication(e.target.value)} className="flex-1 p-2 border rounded text-xs" />
-                                                <button onClick={() => handleAddMaster('medication')} disabled={!isSettingsLoaded} className="bg-green-600 text-white px-3 rounded text-xs font-bold">Tambah</button>
-                                            </div>
-                                            <div className="max-h-40 overflow-y-auto text-xs">
-                                                {masterMedications.length === 0 ? <div className="text-gray-400 italic">(Kosong)</div> : masterMedications.map((i, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between py-1 border-b">
-                                                        <div className="truncate">{i}</div>
-                                                        <button onClick={() => handleRemoveMaster('medication', i)} className="text-red-500 text-[11px] px-2 rounded">Hapus</button>
+                                                {/* Master Obat */}
+                                                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                                                    <h4 className="text-xs font-black text-slate-700 mb-2 uppercase border-b pb-1">💊 Master Terapi / Obat</h4>
+                                                    <div className="flex gap-1.5 mb-2">
+                                                        <input type="text" placeholder="Nama Obat..." value={newMasterMedication} onChange={e => setNewMasterMedication(e.target.value)} className="flex-1 p-1.5 border rounded text-xs outline-none" />
+                                                        <button onClick={() => handleAddMaster('medication')} disabled={!isSettingsLoaded} className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-sm">+</button>
                                                     </div>
-                                                ))}
+                                                    <div className="max-h-28 overflow-y-auto custom-scrollbar text-xs divide-y divide-slate-50">
+                                                        {masterMedications.length === 0 ? <div className="text-gray-400 italic text-[11px] p-1">(Kosong)</div> : masterMedications.map((i, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between py-1 font-medium text-slate-700">
+                                                                <div className="truncate">{i}</div>
+                                                                <button onClick={() => handleRemoveMaster('medication', i)} className="text-red-500 hover:bg-red-50 px-1.5 rounded transition text-[10px]">✕</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -5569,6 +5938,36 @@ const App = () => {
     const [appMode, setAppMode] = useState('MEDIS');
     const [allUsers, setAllUsers] = useState([]);
 
+    // ✨ RADAR RS & RUANGAN UNTUK HALAMAN PENDAFTARAN (SEBELUM LOGIN)
+    const [publicHospitals, setPublicHospitals] = useState({
+        'RSUD BAYU ASIH': ['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK']
+    });
+
+    useEffect(() => {
+        if (!db) return;
+        const fetchHospitals = async () => {
+            try {
+                const snap = await getDocs(collection(db, 'users'));
+                const hw = { 'RSUD BAYU ASIH': new Set(['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK']) };
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    if (data.hospital && data.ward) {
+                        const h = data.hospital.toUpperCase();
+                        const w = data.ward.toUpperCase();
+                        if (!hw[h]) hw[h] = new Set();
+                        hw[h].add(w);
+                    }
+                });
+                const result = {};
+                Object.keys(hw).forEach(k => { result[k] = Array.from(hw[k]).sort(); });
+                setPublicHospitals(result);
+            } catch (e) {
+                console.log("Radar RS Public error:", e);
+            }
+        };
+        fetchHospitals();
+    }, [db]);
+
     // --- INIT FIREBASE (VERSI BYPASS JARINGAN RS) ---
     useEffect(() => {
         const handleOnline = () => setIsOnline(true);
@@ -5651,23 +6050,29 @@ const App = () => {
             if (userSnap.exists()) {
                 const userData = userSnap.data();
 
-                // 2. Cek Password (password dari input VS password dari database)
-                // 2. Cek Password (password dari input VS password dari database)
+                // 2. Cek Password & Status Approval
                 if (userData.pass === loginForm.pass) {
+                    
+                    // ✨ GEMBOK FASE 3: Cegah login jika akun masih pending
+                    if (userData.status === 'pending') {
+                        return alert("Mohon maaf, akun Anda masih berstatus PENDING. Minta Karu / Admin ruangan Anda untuk mengaktifkannya.");
+                    }
+
                     // SUKSES!
                     console.log("Login Berhasil via Firestore:", userData.name);
 
-                    // ✨ TAHAP 2: BERIKAN CAP BANGSAL DEFAULT JIKA BELUM ADA
+                    // Berikan Cap Bangsal Default & Instansi
                     const userWithWard = {
                         ...userData,
-                        ward: userData.ward || 'MELATI' // Kalau di database kosong, otomatis jadi MELATI
+                        ward: userData.ward || 'MELATI',
+                        hospital: userData.hospital || 'RSUD Bayu Asih'
                     };
 
                     setCurrentUser(userWithWard);
                     setAppMode('MEDIS');
                     setUserId(userWithWard.id);
 
-                    // Kunci sesi di memori lokal (fitur anti-logout kemarin)
+                    // Kunci sesi di memori lokal
                     localStorage.setItem('simpan_user', JSON.stringify(userWithWard));
                     localStorage.setItem('simpan_uid', userWithWard.id);
                     localStorage.setItem('simpan_last_active', new Date().getTime());
@@ -5683,24 +6088,154 @@ const App = () => {
         }
     };
 
-    // ✨ TAHAP 4: FUNGSI SUPERADMIN UNTUK PINDAH RUANGAN
-    const handleSwitchWard = (targetWard) => {
-        const updatedUser = { ...currentUser, ward: targetWard };
+    // --- [FASE 3] LOGIC PENDAFTARAN SAAS (MULTI-TENANT) ---
+    const handleRegister = async (e) => {
+        e.preventDefault();
+        if (!db) return alert("Database belum siap. Cek koneksi!");
+
+        // 1. Tentukan Nama RS dan Ruangan (✨ PAKSA KAPITAL AGAR TIDAK DOUBLE!)
+        const finalRsName = (regForm.rsSelect === 'BUAT_BARU' ? regForm.newRsName.trim() : regForm.rsSelect).toUpperCase();
+        const finalWardName = (regForm.wardSelect === 'BUAT_BARU' ? regForm.newWardName.trim() : regForm.wardSelect).toUpperCase();
+
+        if (!finalRsName || !finalWardName) return alert("Rumah Sakit dan Ruangan wajib diisi!");
+
+        // 2. Standarisasi ID (Username kecil semua tanpa spasi)
+        const targetId = regForm.id.toLowerCase().trim().replace(/\s+/g, '_');
+
+        try {
+            // Cek apakah username sudah dipakai orang lain di seluruh Indonesia
+            const userDocRef = doc(db, 'users', targetId);
+            const userSnap = await getDoc(userDocRef);
+
+            if (userSnap.exists()) {
+                return alert(`Username "${targetId}" sudah dipakai! Silakan pilih username lain (misal ditambah angka).`);
+            }
+
+            // 3. Tentukan Role & Status
+            const isFounder = regForm.wardSelect === 'BUAT_BARU';
+            const finalRole = isFounder ? 'karu' : regForm.role; 
+            
+            // ✨ REVISI: SEMUA AKUN WAJIB PENDING! (Biar Abi bisa ACC RS/Ruangan Baru dari Setelan)
+            const finalStatus = 'pending'; 
+
+            // 4. Siapkan KTP Digital User Baru
+            const newUser = {
+                id: targetId,
+                name: regForm.fullname.trim(),
+                pass: regForm.pass,
+                role: finalRole,
+                hospital: finalRsName,
+                ward: finalWardName,
+                status: finalStatus,
+                createdAt: Timestamp.now()
+            };
+
+            // Simpan ke database (KTP User) - ✨ FIX: Hapus kode duplikat di sini
+            await setDoc(userDocRef, newUser);
+
+            // ✨ FASE 2: MESIN BUILDER DENAH RUANGAN & ISOLASI MASTER DATA
+            if (isFounder) {
+                // A. Rakit Array Kasur berdasarkan isian form
+                const count = regForm.bedCount || 20;
+                const format = regForm.bedFormat || 'K1';
+                const layout = regForm.layout || '2baris';
+                const rooms = [];
+                for (let i = 1; i <= count; i++) {
+                    if (format === 'K1') rooms.push(`K${i}`);
+                    else if (format === '1A') rooms.push(`${Math.ceil(i/2)}${i%2===1?'A':'B'}`);
+                    else rooms.push(`${i}`);
+                }
+                
+                // B. Rakit Layout Lorong
+                let left = [], right = [];
+                if (layout === '1baris') {
+                    left = rooms;
+                } else {
+                    const mid = Math.ceil(rooms.length / 2);
+                    left = rooms.slice(0, mid);
+                    right = rooms.slice(mid);
+                }
+                const newWardConfig = { roomList: rooms, leftRooms: left, rightRooms: right, name: finalWardName };
+
+                // C. Simpan ke Laci Khusus RS Baru
+                const safeHospName = finalRsName.replace(/\s+/g, '_').toUpperCase();
+                // ✨ FIX: Pastikan appId terbaca dengan aman
+                const safeAppId = firebaseConfig?.appId || '1:1097108054720:web:a53efbaf9882d5086d0325';
+                const configRef = doc(db, `artifacts/${safeAppId}/public/data/settings_${safeHospName}`, 'mainConfig');
+                
+                try {
+                    const snap = await getDoc(configRef);
+                    let existingWards = {};
+                    if (snap.exists() && snap.data().wards) existingWards = snap.data().wards;
+                    existingWards[finalWardName] = newWardConfig;
+
+                    await setDoc(configRef, {
+                        wards: existingWards,
+                        // D. Cegah Kebocoran Dokter! Jika ini bukan Bayu Asih, kosongkan semua DPJP & Lab.
+                        ...(snap.exists() ? {} : { 
+                            dpjpProfiles: finalRsName === 'RSUD BAYU ASIH' ? initialDpjpProfiles : [], 
+                            masterLabs: [], masterRads: [], masterProcedures: [], masterMedications: [] 
+                        })
+                    }, { merge: true });
+                } catch(e) { 
+                    console.error("Gagal build denah:", e); 
+                }
+            } // ✨ FIX: Ini adalah penutup kurung kurawal if(isFounder) yang sangat krusial
+
+            // 5. Notifikasi Keberhasilan (Sama Rata)
+            alert(`Pendaftaran Berhasil diajukan! 📝\n\nAkun Anda berstatus PENDING.\nSilakan hubungi Admin Pusat (Abi) / Karu ruangan untuk meminta persetujuan ACC sebelum Login.`);
+
+            // Kembalikan ke halaman login & bersihkan form
+            setAuthView('LOGIN');
+            setRegForm({
+                fullname: '', id: '', pass: '', role: 'Pelaksana',
+                rsSelect: '', newRsName: '', wardSelect: '', newWardName: '',
+                bedCount: 20, layout: '2baris', bedFormat: 'K1'
+            });
+
+        } catch (error) {
+            console.error("Gagal mendaftar:", error);
+            alert("Terjadi kesalahan saat mendaftar. Cek koneksi internet.");
+        }
+    };
+
+    // ✨ TAHAP 4: FUNGSI SUPERADMIN UNTUK PINDAH RUANGAN & RUMAH SAKIT
+    const handleSwitchWard = (targetWard, targetHospital) => {
+        // Jika targetHospital dikirim, gunakan itu. Jika tidak, gunakan RS yang sedang aktif.
+        const finalHospital = targetHospital || currentUser.hospital;
+
+        const updatedUser = { 
+            ...currentUser, 
+            ward: targetWard,
+            hospital: finalHospital // 👇 Kunci sukses God Mode pindah RS!
+        };
         setCurrentUser(updatedUser);
 
         // Update juga brankas di browser agar tidak hilang saat di-refresh
         localStorage.setItem('simpan_user', JSON.stringify(updatedUser));
-        alert(`Beralih ke pantauan Ruang ${targetWard}`);
+        
+        if (targetHospital) {
+            alert(`Beralih ke pantauan Ruang ${targetWard} - ${targetHospital}`);
+        } else {
+            alert(`Beralih ke pantauan Ruang ${targetWard}`);
+        }
     };
     const handleInternalLogout = () => {
         setCurrentUser(null);
         setUserId(null);
         setLoginForm({ id: '', pass: '' });
         setAppMode('MEDIS');
-        // ✨ SUNTIKKAN INI: Hapus kunci sesi hanya saat klik logout sengaja
+        
         localStorage.removeItem('simpan_user');
         localStorage.removeItem('simpan_uid');
         localStorage.removeItem('simpan_last_active');
+        
+        // ✅ FIX 2A: Bersihkan Cache Data Master agar tidak terbawa ke RS Lain!
+        localStorage.removeItem('backupDpjp');
+        localStorage.removeItem('masterLabs');
+        localStorage.removeItem('masterRads');
+        localStorage.removeItem('masterProcedures');
+        localStorage.removeItem('masterMedications');
     };
 
     const getCashflowRole = () => {
@@ -5714,13 +6249,9 @@ const App = () => {
 
     // --- 1. TAMPILAN LOGIN & ONBOARDING (FASE 1 - SAAS MODE - COMPACT EDITION) ---
     if (!currentUser) {
-        // 🗄️ DUMMY DATA FASE 1: Simulasi Database Rumah Sakit yang sudah mendaftar
-        const DUMMY_HOSPITALS = {
-            'RSUD Bayu Asih': ['Melati', 'Dahlia', 'IGD', 'Teratai', 'Anyelir', 'Anggrek'],
-            'RS Bina Kasih': ['Mawar', 'ICU']
-        };
-        const availableHospitals = Object.keys(DUMMY_HOSPITALS);
-        const availableWards = regForm.rsSelect && DUMMY_HOSPITALS[regForm.rsSelect] ? DUMMY_HOSPITALS[regForm.rsSelect] : [];
+        // ✨ DUMMY_HOSPITALS SUDAH DIHAPUS, SEKARANG BACA DARI RADAR DATABASE
+        const availableHospitals = Object.keys(publicHospitals);
+        const availableWards = regForm.rsSelect && publicHospitals[regForm.rsSelect] ? publicHospitals[regForm.rsSelect] : [];
 
         return (
             <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
@@ -5797,7 +6328,7 @@ const App = () => {
                             </div>
 
                             {/* 🔄 UPGRADE: space-y-3 jadi space-y-2 */}
-                            <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); alert("Fase 1 Selesai! Data Smart Form ini siap dirakit ke database di Fase 3."); }}>
+                            <form className="space-y-2" onSubmit={handleRegister}>
 
                                 {/* 1. IDENTITAS DIRI */}
                                 <div className="grid grid-cols-2 gap-2">
