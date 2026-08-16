@@ -20,6 +20,7 @@ import {
     getDoc,
     limit,
 } from 'firebase/firestore';
+import { AuthScreen } from './components/AuthScreen';
 import Cashflow from './components/Cashflow';
 import GudangArsip from './components/GudangArsip';
 import LabHistoryTable from './components/LabHistoryTable'; // 👈 Tambahkan ini di atas
@@ -28,10 +29,11 @@ import PatientTable from './components/PatientTable';
 import BukuCMTable from './components/BukuCMTable'; // 👈 Taruh di deretan komponen lain
 import { GlobalMedicationBoard, MedicationMarModal } from './components/MedicationBoard';
 import PatientForm from './components/PatientForm';
+import RoomMap from './components/RoomMap';
 import {
     formatDateCM, hitungHariCM, getAntibioticDay, parsePlanning, parseDateCM,
     renderLacakTtv, renderObjectiveCell, renderPlanningCell, CustomInput, extractLabSnapshot,
-    generateShiftReport, getLabInfo
+    generateShiftReport, getLabInfo, updateTransfusionText
 } from './utils/helpers';
 import {
     LEFT_ROOMS, RIGHT_ROOMS, ROOM_LIST,
@@ -41,6 +43,11 @@ import {
     LAB_PATTERNS, LAB_LOW_IS_BAD, LAB_TUBEX_POSITIVE_THRESHOLD
 } from './constants';
 import { LogOut, Wallet, FileText, ChevronLeft } from 'lucide-react';
+import { PrintView, BulkPrintView, FormattedObjective, autoSmartDateTransformer, handlePrintTTV, handlePrintSOAP, handlePrintBukuCM } from './components/PrintManager';
+import { TtvModal, DischargeModal, LaporModal, ConfirmationModal, LaporConfirmationModal, WaitingListInputPanel } from './components/Modals';
+import { RoomFilterDropdown, DpjpFilterDropdown, DigitalClock } from './components/DashboardHelpers';
+import { HandoverModal, BulkHandoverModal } from './components/HandoverModal';
+import { BukuEkspedisiModal } from './components/BukuEkspedisi';
 
 // --- Global Firebase Configuration (SECURED) ---
 const firebaseConfig = {
@@ -57,1142 +64,26 @@ export const app = initializeApp(firebaseConfig);
 
 const initialDpjpProfiles = DEFAULT_DPJP_DATA;
 
-// --- UTILS: PRINT HANDLER ---
-// --- FUNGSI HELPER UNTUK PRINT DI HP/TABLET (ANTI-CRASH) ---
-const cetakPWA = (htmlContent, title = 'Cetak') => {
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow.document;
-    doc.open();
-    doc.write(`<title>${title}</title>` + htmlContent);
-    doc.close();
-
-    setTimeout(() => {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-        setTimeout(() => {
-            document.body.removeChild(iframe);
-        }, 3000);
-    }, 800);
-};
-
-// --- FUNGSI HELPER UNTUK PRINT DI HP/TABLET (ANTI-CRASH) ---
-const handlePrintWindow = (elementId, title, paperSize = 'A5') => {
-    const content = document.getElementById(elementId);
-    if (!content) return;
-
-    const html = `
-        <!DOCTYPE html>
-        <html lang="id">
-        <head>
-            <meta charset="UTF-8">
-            <title>${title}</title>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <style>
-                body { background-color: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: ${paperSize === 'A4' ? '12pt' : '11pt'}; }
-                @media print { 
-                    @page { size: ${paperSize} portrait; margin: 0.5cm; } 
-                    body { margin: 0; } 
-                    .no-print { display: none !important; } 
-                    .print-break { page-break-after: always; } 
-                    #print-container { width: 100%; max-width: ${paperSize === 'A4' ? '210mm' : '148mm'}; margin: 0 auto; } 
-                }
-            </style>
-        </head>
-        <body>
-            <div id="print-container">${content.innerHTML}</div>
-        </body>
-        </html>
-    `;
-    cetakPWA(html, title);
-};
-
-// --- KOMPONEN BARU: FILTER KAMAR DROPDOWN (ANTI-RIBET) ---
-const RoomFilterDropdown = ({ allRooms, selectedRooms, onChange }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const wrapperRef = useRef(null); // Tambah useRef untuk klik luar
-
-    const toggleRoom = (room) => {
-        if (selectedRooms.includes(room)) {
-            onChange(selectedRooms.filter(r => r !== room));
-        } else {
-            onChange([...selectedRooms, room]);
-        }
-    };
-
-    const toggleAll = () => {
-        if (selectedRooms.length === allRooms.length) onChange([]); // Hapus Semua
-        else onChange(allRooms); // Pilih Semua
-    };
-
-    // Logic penutup saat klik di luar dropdown
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [wrapperRef]);
-
-    return (
-        <div className="relative w-full" ref={wrapperRef}>
-            {/* Tombol Pemicu */}
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-full bg-white border border-indigo-200 text-indigo-700 text-[10px] font-bold py-1.5 px-2 rounded flex justify-between items-center hover:bg-indigo-50 transition h-[32px] md:h-full"
-            >
-                <span className="truncate pr-2">{selectedRooms.length === allRooms.length ? 'Semua Kamar Tampil' : `${selectedRooms.length} Kamar Dipilih`}</span>
-                <span>{isOpen ? '▲' : '▼'}</span>
-            </button>
-
-            {/* Menu Dropdown */}
-            {isOpen && (
-                <div className="absolute top-full left-0 w-full bg-white border border-gray-300 shadow-xl rounded-lg mt-1 z-50 p-2">
-                    <div className="flex justify-between border-b pb-1 mb-2">
-                        <button onClick={toggleAll} className="text-[10px] font-bold text-blue-600 hover:underline">
-                            {selectedRooms.length === allRooms.length ? 'Uncheck All' : 'Check All'}
-                        </button>
-                        <button onClick={() => setIsOpen(false)} className="text-[10px] text-red-500 hover:underline">Tutup</button>
-                    </div>
-
-                    {/* Grid Kamar */}
-                    <div className="grid grid-cols-4 gap-1 max-h-48 overflow-y-auto custom-scrollbar">
-                        {[...allRooms].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(room => (
-                            <button
-                                key={room}
-                                onClick={() => toggleRoom(room)}
-                                className={`text-[9px] py-1 rounded border transition ${selectedRooms.includes(room)
-                                    ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-sm'
-                                    : 'bg-gray-50 text-gray-500 border-gray-100 hover:bg-gray-100'
-                                    }`}
-                            >
-                                {room}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-// --- KOMPONEN BARU: FILTER DPJP MULTI-SELECT DENGAN SEARCH ---
-const DpjpFilterDropdown = ({ allOptions, selectedOptions, onChange }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const wrapperRef = useRef(null);
-
-    const toggleOption = (opt) => {
-        if (selectedOptions.includes(opt)) onChange(selectedOptions.filter(o => o !== opt));
-        else onChange([...selectedOptions, opt]);
-    };
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setIsOpen(false);
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [wrapperRef]);
-
-    const filteredList = allOptions.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    return (
-        <div className="relative w-full" ref={wrapperRef}>
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-full bg-white border border-indigo-200 text-indigo-700 text-[10px] font-bold py-1.5 px-2 rounded flex justify-between items-center hover:bg-indigo-50 transition h-[32px] md:h-full"
-            >
-                <span className="truncate pr-2">
-                    {selectedOptions.length === 0 ? 'Semua Dokter (DPJP)' : `${selectedOptions.length} Dokter Dipilih`}
-                </span>
-                <span>{isOpen ? '▲' : '▼'}</span>
-            </button>
-
-            {isOpen && (
-                <div className="absolute top-full left-0 w-full md:w-64 bg-white border border-gray-300 shadow-xl rounded-lg mt-1 z-[100] p-2">
-                    <div className="flex justify-between border-b pb-1 mb-2 items-center">
-                        <button onClick={() => onChange([])} className="text-[10px] font-bold text-red-600 hover:underline">Reset</button>
-                        <button onClick={() => setIsOpen(false)} className="text-[10px] text-gray-500 hover:underline">Tutup</button>
-                    </div>
-                    <input
-                        type="text"
-                        placeholder="Ketik cari dokter..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="w-full p-1.5 border rounded text-[10px] mb-2 outline-none focus:ring-1 focus:ring-indigo-500 bg-gray-50"
-                    />
-                    <div className="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar">
-                        {filteredList.map(opt => (
-                            <label key={opt} className="flex items-center gap-2 p-1.5 hover:bg-indigo-50 rounded cursor-pointer border border-transparent hover:border-indigo-100 transition">
-                                <input
-                                    type="checkbox"
-                                    checked={selectedOptions.includes(opt)}
-                                    onChange={() => toggleOption(opt)}
-                                    className="accent-indigo-600 cursor-pointer w-3 h-3"
-                                />
-                                <span className="text-[10px] text-gray-700 font-bold truncate">{opt}</span>
-                            </label>
-                        ))}
-                        {filteredList.length === 0 && <div className="text-[10px] text-gray-400 text-center py-2 italic">Tidak ditemukan</div>}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-// --- MODAL TTV & GCS Calculator ---
-const TtvModal = ({ onClose, onSave }) => {
-    const [ttv, setTtv] = useState({ td: '', n: '', s: '', rr: '', spo2: '' });
-    const [gcs, setGcs] = useState({ e: 4, v: 5, m: 6 });
-
-    const totalGcs = gcs.e + gcs.v + gcs.m;
-
-    // Simple interpretation logic
-    const getGcsInterp = (score) => {
-        if (score >= 14) return 'Composmentis';
-        if (score >= 12) return 'Apatis';
-        if (score >= 10) return 'Delirium';
-        if (score >= 7) return 'Somnolen';
-        if (score >= 5) return 'Sopor';
-        if (score === 4) return 'Semi-coma';
-        return 'Coma';
-    };
-
-    const handleSave = () => {
-        const gcsString = `GCS E${gcs.e}V${gcs.v}M${gcs.m} (${totalGcs}) - ${getGcsInterp(totalGcs)}`;
-        const formatted = `TD ${ttv.td} mmHg, \nN ${ttv.n} x/m, \nS ${ttv.s} C, \nRR ${ttv.rr} x/m, \nSpO2 ${ttv.spo2}%, \n${gcsString}`;
-        onSave(formatted);
-    };
-
-    const GcsOption = ({ label, val, current, onChange }) => (
-        <button
-            type="button"
-            onClick={() => onChange(val)}
-            className={`flex-1 text-[9px] py-1 border border-r-0 last:border-r first:rounded-l last:rounded-r ${current === val ? 'bg-indigo-600 text-white font-bold' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
-        >
-            {label} ({val})
-        </button>
-    );
-
-    return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-4 border-2 border-green-100">
-                <h3 className="text-sm font-bold text-green-800 mb-3 border-b pb-1">Input Tanda Vital & GCS</h3>
-
-                {/* TTV Inputs */}
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                    <CustomInput label="TD (mmHg)" value={ttv.td} onChange={e => setTtv({ ...ttv, td: e.target.value })} placeholder="120/80" />
-                    <CustomInput label="Nadi (x/m)" value={ttv.n} onChange={e => setTtv({ ...ttv, n: e.target.value })} placeholder="80" />
-                    <CustomInput label="Suhu (C)" value={ttv.s} onChange={e => setTtv({ ...ttv, s: e.target.value })} placeholder="36.5" />
-                    <CustomInput label="RR (x/m)" value={ttv.rr} onChange={e => setTtv({ ...ttv, rr: e.target.value })} placeholder="20" />
-                    <CustomInput label="SpO2 (%)" value={ttv.spo2} onChange={e => setTtv({ ...ttv, spo2: e.target.value })} placeholder="98" />
-                </div>
-
-                {/* GCS Calculator */}
-                <div className="bg-indigo-50 p-2 rounded border border-indigo-100 mb-4">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-[10px] font-bold text-indigo-800">Kalkulator GCS</span>
-                        <span className="text-xs font-extrabold text-indigo-700 bg-white px-2 py-0.5 rounded shadow-sm border border-indigo-200">
-                            Total: {totalGcs} ({getGcsInterp(totalGcs)})
-                        </span>
-                    </div>
-
-                    <div className="space-y-1">
-                        <div className="flex items-center">
-                            <span className="w-4 text-[10px] font-bold">E</span>
-                            <div className="flex flex-1 ml-1">
-                                {[4, 3, 2, 1].map(v => <GcsOption key={v} label={v === 4 ? 'Spont' : v === 3 ? 'Sound' : v === 2 ? 'Pain' : 'None'} val={v} current={gcs.e} onChange={(val) => setGcs({ ...gcs, e: val })} />)}
-                            </div>
-                        </div>
-                        <div className="flex items-center">
-                            <span className="w-4 text-[10px] font-bold">V</span>
-                            <div className="flex flex-1 ml-1">
-                                {[5, 4, 3, 2, 1].map(v => <GcsOption key={v} label={v === 5 ? 'Orient' : v === 4 ? 'Conf' : v === 3 ? 'Word' : v === 2 ? 'Sound' : 'None'} val={v} current={gcs.v} onChange={(val) => setGcs({ ...gcs, v: val })} />)}
-                            </div>
-                        </div>
-                        <div className="flex items-center">
-                            <span className="w-4 text-[10px] font-bold">M</span>
-                            <div className="flex flex-1 ml-1">
-                                {[6, 5, 4, 3, 2, 1].map(v => <GcsOption key={v} label={v === 6 ? 'Obey' : v === 5 ? 'Loc' : v === 4 ? 'Flex' : v === 3 ? 'Abn' : v === 2 ? 'Ext' : 'None'} val={v} current={gcs.m} onChange={(val) => setGcs({ ...gcs, m: val })} />)}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="flex justify-end space-x-2">
-                    <button onClick={onClose} className="px-3 py-1 text-xs border rounded hover:bg-gray-100">Batal</button>
-                    <button onClick={handleSave} className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 font-bold">Simpan ke O</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// --- MODAL PILIHAN PULANG / PINDAH / MENINGGAL ---
-const DischargeModal = ({ patientName, onCancel, onPindah, onPulang, onMeninggal }) => (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-xs p-4 border-2 border-red-100 animate-in zoom-in-95 duration-200">
-            <h3 className="text-sm font-bold text-red-800 mb-3 border-b pb-1 uppercase">Keluar: {patientName}</h3>
-            <p className="text-[11px] text-gray-600 mb-4">Pilih kategori keluar pasien untuk akurasi laporan:</p>
-            <div className="flex flex-col gap-2">
-                <button onClick={onPindah} className="w-full px-3 py-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow-sm flex items-center justify-center gap-2">
-                    🏥 Pindah Ruangan
-                </button>
-                <button onClick={onPulang} className="w-full px-3 py-2 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 font-bold shadow-sm flex items-center justify-center gap-2">
-                    🏠 Pulang (KRS/BLPL)
-                </button>
-                <button onClick={onMeninggal} className="w-full px-3 py-2 text-xs bg-gray-800 text-white rounded hover:bg-black font-bold shadow-sm flex items-center justify-center gap-2">
-                    💀 Meninggal Dunia
-                </button>
-            </div>
-            <button onClick={onCancel} className="mt-4 w-full px-3 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-100 text-gray-700 font-bold text-center">
-                Batal
-            </button>
-        </div>
-    </div>
-);
-
-// --- MODAL PILIHAN LAPOR (SHIFT / CS) ---
-const LaporModal = ({ onCancel, onLaporShift, onLaporCS }) => (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-xs p-4 border-2 border-indigo-100 animate-in zoom-in-95 duration-200">
-            <h3 className="text-sm font-bold text-indigo-800 mb-3 border-b pb-1 uppercase">Pilih Jenis Laporan</h3>
-            <div className="flex flex-col gap-2">
-                <button onClick={onLaporShift} className="w-full px-3 py-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow-sm flex items-center justify-center gap-2">
-                    📝 Laporan Shift
-                </button>
-                <button onClick={onLaporCS} className="w-full px-3 py-2 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 font-bold shadow-sm flex items-center justify-center gap-2">
-                    🧹 Lapor CS (Cleaning Service)
-                </button>
-            </div>
-            <button onClick={onCancel} className="mt-4 w-full px-3 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-100 text-gray-700 font-bold text-center">
-                Batal
-            </button>
-        </div>
-    </div>
-);
-
-// --- Confirmation Modal ---
-const ConfirmationModal = ({ message, onConfirm, onCancel, title, children }) => {
-    return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-xs p-4 border-2 border-red-100">
-                <h3 className="text-sm font-bold text-red-800 mb-3 border-b pb-1">{title}</h3>
-                <p className="text-sm mb-4">{message}</p>
-                {children}
-                <div className="flex justify-end space-x-2">
-                    <button onClick={onCancel} className="px-3 py-1 text-xs border rounded hover:bg-gray-100">Batal</button>
-                    <button onClick={onConfirm} className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 font-bold">Konfirmasi</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// --- MODAL LAPOR WA (UPDATE: TOMBOL FORWARD) ---
-const LaporConfirmationModal = ({ onLaporDpjp, onLaporJaga, onCancel, patientName, dpjpNumber }) => {
-    // Helper format nomor
-    const formatPhone = (raw) => raw ? '+' + String(raw).replace(/\D/g, '') : '-';
-
-    return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-xs p-4 border-2 border-green-100">
-                <h3 className="text-sm font-bold text-green-800 mb-3 border-b pb-1">Lapor Pasien: {patientName}</h3>
-                <p className="text-xs text-gray-600 mb-3">Pilih tujuan pengiriman laporan:</p>
-
-                <div className="flex flex-col gap-2">
-                    {/* TOMBOL 1: KE DPJP (Otomatis nomor dari database) */}
-                    <div className="w-full">
-                        <button onClick={onLaporDpjp} disabled={!dpjpNumber} className={`w-full px-3 py-2 text-xs ${dpjpNumber ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-400 cursor-not-allowed'} rounded font-bold shadow-sm flex justify-between items-center`}>
-                            <span>Ke DPJP Utama</span>
-                            <span>🚀</span>
-                        </button>
-                        <div className="text-[9px] text-gray-400 text-right mt-0.5">{dpjpNumber ? formatPhone(dpjpNumber) : 'No. HP Kosong'}</div>
-                    </div>
-
-                    {/* TOMBOL 2: KE SIAPA SAJA / FORWARD (Jaga/Raber/Grup) */}
-                    <div className="w-full relative">
-                        <div className="absolute -top-2 -right-1 bg-yellow-300 text-[8px] font-bold px-1 rounded text-black animate-pulse">BARU</div>
-                        <button onClick={() => onLaporJaga()} className="w-full px-3 py-2 text-xs bg-green-600 text-white hover:bg-green-700 rounded font-bold shadow-sm flex justify-between items-center">
-                            <span>Ke Dr. Jaga / Raber / Grup</span>
-                            <span>⏩</span>
-                        </button>
-                        <div className="text-[9px] text-gray-400 text-right mt-0.5 italic">Pilih kontak sendiri di WA (Forward)</div>
-                    </div>
-                </div>
-
-                <button onClick={onCancel} className="mt-4 w-full px-3 py-1.5 text-xs border rounded hover:bg-gray-100 text-gray-600 font-bold">Batal</button>
-            </div>
-        </div>
-    );
-};
-
-// ✨ HELPER BARU: KONVERSI TEKS KARTU DASHBOARD MENJADI [HARI INI]
-const formatTextToHariIni = (text, rec) => {
-    if (!text) return '';
-    const today = new Date();
-
-    const namaHariIni = today.toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
-    const d = today.getDate();
-    const m = today.getMonth() + 1;
-    const y2 = today.getFullYear().toString().slice(-2);
-    const y4 = today.getFullYear();
-
-    const tglVariasi = [
-        `${d}/${m}`, `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`,
-        `${d}/${m}/${y2}`, `${d}/${m}/${y4}`
-    ];
-
-    const lastUpdate = rec.updatedAt?.toDate ? rec.updatedAt.toDate() : (rec.updatedAt ? new Date(rec.updatedAt) : new Date());
-
-    // Cek apakah data ini di-input kemarin
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const isUpdatedYesterday = lastUpdate.getDate() === yesterday.getDate() && lastUpdate.getMonth() === yesterday.getMonth();
-
-    let cleaned = text;
-
-    // 1. Jika mengandung tanggal hari ini, langsung kunci jadi [Hari Ini]
-    const todayRegex = new RegExp(`\\[[^\\]]*(${tglVariasi.join('|')}|sekarang|hari ini)[^\\]]*\\]`, 'gi');
-    if (todayRegex.test(cleaned)) {
-        return cleaned.replace(todayRegex, '[Hari Ini]');
-    }
-
-    // 2. Jika ditulis kemarin dan mengandung kata "besok/bsk", ubah jadi [Hari Ini]
-    if (isUpdatedYesterday && /\b(besok|bsk)\b/i.test(cleaned)) {
-        // Ganti format kurung siku besok menjadi [Hari Ini]
-        cleaned = cleaned.replace(/\[\s*(besok|bsk)[^\]]*\]/gi, '[Hari Ini]');
-        // Toleransi jika ditulis tanpa kurung siku
-        cleaned = cleaned.replace(/\b(besok|bsk)\b/gi, '[Hari Ini]');
-    }
-
-    return cleaned;
-};
-
-const PrintLayout = ({ record, historyLogs = [] }) => {
-    if (!record) return null;
-
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateString = tomorrow.toLocaleDateString('id-ID', {
-        day: 'numeric', month: 'numeric', year: 'numeric'
-    });
-
-    // ✨ FIX CETAK: Pisau pencukur stempel nama & logo jam khusus untuk kertas cetak
-    const stripAuthorTags = (text) => (text || '').replace(/(?:🕒\s*)?\[[^\]]+,\s*[\d\/]+\s+[\d:]+\]\s*/g, '').trim();
-
-    // Semua (S, O, A, P) sekarang dilewatkan ke mesin pencukur stempel!
-    const safeSubjective = stripAuthorTags(record.subjective);
-    const safeObjective = stripAuthorTags(record.objective);
-    const safeAnalysis = stripAuthorTags(record.analysis);
-    const safePlanning = stripAuthorTags(record.planning);
-
-    // 💊 RESEP OBAT PERSISTEN
-    const safeCurrentPrescription = (() => {
-        if (record.currentPrescription && record.currentPrescription.trim()) {
-            return record.currentPrescription.trim();
-        }
-        const legacyMatch = (record.planning || '').match(/\[RESEP OBAT\]:([\s\S]*)/i);
-        return legacyMatch ? legacyMatch[1].trim() : '';
-    })();
-
-    // ✨ FIX PRINT: Filter steril agar baris resep obat tidak ikut tercetak ganda di Planning atas
-    const filteredPlanningForPrint = useMemo(() => {
-        if (!safePlanning) return '';
-        return safePlanning.split('\n').filter(line => {
-            const trimmed = line.trim();
-            // Jika baris dimulai dengan dash '-' dan ada di dalam master resep obat, eliminasi dari planning atas
-            if (trimmed.startsWith('-') && safeCurrentPrescription.toLowerCase().includes(trimmed.toLowerCase())) {
-                return false;
-            }
-            return true;
-        }).join('\n').trim();
-    }, [safePlanning, safeCurrentPrescription]);
-
-    const { others, labs, rads, tms, rxs, itemAuthors } = useMemo(() => {
-        if (!filteredPlanningForPrint) return { others: [], labs: [], rads: [], tms: [], rxs: [], itemAuthors: {} };
-        return parsePlanning(filteredPlanningForPrint);
-    }, [filteredPlanningForPrint]);
-
-    const hasSubjective = safeSubjective && safeSubjective !== '-' && safeSubjective.trim() !== '';
-
-    // Build multi-date lab table from historyLogs + current
-    const buildLabTable = () => {
-        const allLogs = [
-            { objective: safeObjective, updatedAt: new Date() },
-            ...historyLogs.map(log => ({ objective: log.objective || '', updatedAt: log.updatedAt }))
-        ].filter(log => log.objective);
-
-        const labData = {}; // { Hb: [{date: '17/06', val: '11.2', numVal: 11.2}, ...], ... }
-        const dateSet = new Set();
-
-        allLogs.forEach(log => {
-            const dateObj = log.updatedAt && log.updatedAt.seconds
-                ? new Date(log.updatedAt.seconds * 1000)
-                : (log.updatedAt || new Date());
-            const dateStr = dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' });
-            dateSet.add(dateStr);
-
-            Object.keys(LAB_PATTERNS).forEach(key => {
-                // ✨ FIX PERBAIKAN 3 TEMPAT B (Baris 1): Gram/Sputum diizinkan tampil di lembar print
-                if (key === 'TCM' || key === 'HIV' || key === 'HBsAg' || key === 'Anti-HCV' || key === 'Widal' || key === 'Kultur' || key === 'MDT') return;
-                const match = log.objective.match(LAB_PATTERNS[key]);
-                if (match) {
-                    if (!labData[key]) labData[key] = [];
-                    const numVal = parseFloat(match[1].replace(',', '.'));
-                    labData[key].push({ date: dateStr, val: match[1], numVal });
-                }
-            });
-        });
-
-        // Sort dates from newest to oldest
-        const headers = Array.from(dateSet).sort((a, b) => {
-            const [d1, m1] = a.split('/');
-            const [d2, m2] = b.split('/');
-            const dateA = new Date(2024, parseInt(m1) - 1, parseInt(d1));
-            const dateB = new Date(2024, parseInt(m2) - 1, parseInt(d2));
-            return dateB - dateA;
-        });
-
-        // Build rows with latest value per date (avoid duplicates)
-        const rows = {};
-        Object.keys(LAB_PATTERNS).forEach(key => {
-            // ✨ FIX PERBAIKAN 3 TEMPAT B (Baris 2): Gram/Sputum lolos seleksi baris tabel print
-            if (key === 'TCM' || key === 'HIV' || key === 'HBsAg' || key === 'Anti-HCV' || key === 'Widal' || key === 'Kultur' || key === 'MDT') return;
-            if (labData[key] && labData[key].length > 0) {
-                rows[key] = {};
-                // Take the latest entry per date
-                const seen = new Set();
-                [...labData[key]].reverse().forEach(item => {
-                    if (!seen.has(item.date)) {
-                        rows[key][item.date] = item;
-                        seen.add(item.date);
-                    }
-                });
-            }
-        });
-
-        return { headers, rows };
-    };
-
-    const { headers, rows } = buildLabTable();
-    const hasLabData = headers.length > 0 && Object.keys(rows).length > 0;
-
-    // Helper for color coding - ✏️ FIX: Pakai LAB_NORMAL_RANGES (konsisten dengan FormattedObjective)
-    const getLabColor = (key, val) => {
-        const range = LAB_NORMAL_RANGES[key];
-        if (!range) return 'text-gray-800';
-        const num = parseFloat(val);
-        if (isNaN(num)) return 'text-gray-800';
-        if (num > range.max) return 'text-red-600 font-bold bg-red-50';
-        if (num < range.min) return 'text-blue-600 font-bold bg-blue-50';
-        return 'text-gray-800';
-    };
-
-    // ✨ MULTIUSER & ANTIBIOTIK: Render daftar item digabung jadi satu baris
-    const renderItemsWithAuthors = (items, itemAuthors, isRx = false) => {
-        return items.map((item, idx) => {
-            const authors = itemAuthors[item] || [];
-
-            // ✨ FITUR BARU: Tampilkan Hari Antibiotik di Cetakan
-            let abBadge = null;
-            if (isRx && typeof getAntibioticDay === 'function') {
-                const cleanMedName = item.split(/\s+\d/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
-                const hCode = getAntibioticDay(cleanMedName, record.medicationLogs || {});
-                if (hCode) {
-                    abBadge = <span className="ml-1 text-[9px] font-bold text-black border border-black bg-gray-100 px-1 py-[1px] rounded">🚨 {hCode}</span>;
-                }
-            }
-
-            return (
-                <span key={item}>
-                    {idx > 0 && ', '}
-                    {item}
-                    {abBadge}
-                    {authors.length > 1 && (
-                        <span className="font-normal text-[9px] opacity-70 normal-case">
-                            {' '}({authors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' & ')})
-                        </span>
-                    )}
-                </span>
-            );
-        });
-    };
-
-    const renderHighlightedOthers = (textArray) => {
-        return textArray.map((line, idx) => {
-            const lower = line.toLowerCase();
-            const dischargeKeywords = ['blpl', 'rblpl', 'pulang', 'boleh pulang'];
-            if (dischargeKeywords.some(k => lower.includes(k))) {
-                return (
-                    <div key={idx} className="font-bold border border-black bg-gray-100 px-1 py-0.5 my-1 rounded text-black text-xs leading-tight w-fit">
-                        🎉 {line.toUpperCase()}
-                    </div>
-                );
-            }
-            const alertKeywords = ['lab', 'radiologi', 'rontgen', 'usg', 'ct-scan', 'cek darah', 'konsul', 'puasa', 'operasi', 'cito', 'hd'];
-            if (alertKeywords.some(k => lower.includes(k))) {
-                return (
-                    <div key={idx} className="font-bold border border-black bg-gray-100 px-1 py-0.5 my-1 rounded text-black text-xs leading-tight w-fit">
-                        ⚠️ {line.toUpperCase()}
-                    </div>
-                );
-            }
-            return <div key={idx} className="my-0.5">{line}</div>;
-        });
-    };
-
-    return (
-        <div className="bg-white p-0 text-sm font-sans leading-snug text-black h-full flex flex-col">
-            {/* HEADER ATAS */}
-            <div className="flex justify-between items-start border-b-2 border-black pb-1 mb-2 shrink-0">
-                <div className="flex-1">
-                    <div className="font-bold text-lg uppercase tracking-wide flex items-center gap-2">
-                        <span className="text-sm font-bold border-2 border-black px-2 py-0.5">
-                            {/* ✨ FIX PEMOTONG CETAK: Memotong akhiran KM atau P saat cetak lembar APOS */}
-                            {record.roomNumber ? record.roomNumber.replace(/(KM|P)$/, '') : ''}
-                        </span>
-                        <span>{record.name}</span>
-                    </div>
-                    <div className="text-[11px] mt-0.5 flex flex-wrap gap-x-4 items-center">
-
-                        {/* ✨ FIX CETAK APOS: DPJP Diperbesar (text-[13px]), Ditebalkan (font-black), plus background Abu-abu anti-hilang */}
-                        <span
-                            className="font-black text-[13px] bg-gray-200 px-1.5 py-0.5 rounded border border-gray-400"
-                            style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
-                        >
-                            DPJP: {record.dpjpName}
-                        </span>
-
-                        {(record.raberName || record.raber2Name) && (
-                            <span className="text-gray-600 font-medium italic">
-                                Raber: {[record.raberName, record.raber2Name].filter(Boolean).join(', ')}
-                            </span>
-                        )}
-                    </div>
-                </div>
-
-                {/* ✨ FIX 3: NAMA PERAWAT DIHILANGKAN (Sisa Info Durasi Hari Rawat Saja) */}
-                <div className="text-right flex flex-col items-end justify-start">
-                    {record.admissionDate && (
-                        <div className="text-[10px] text-gray-700 font-bold">
-                            {(() => {
-                                const start = new Date(record.admissionDate);
-                                if (isNaN(start)) return null;
-                                const now = new Date();
-                                const diffTime = now.getTime() - start.getTime();
-                                if (diffTime < 0) return null;
-                                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                                const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                                const fmtIn = (d) => d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' });
-                                const fmtOut = (d) => d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: '2-digit' });
-                                return `${fmtIn(start)} - ${fmtOut(now)} = ${diffDays} hr ${diffHours} jm`;
-                            })()}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* BODY GRID DATA */}
-            <div className="grid grid-cols-2 gap-4 flex-1 items-stretch">
-                <div className="border-r-2 border-gray-300 pr-2 flex flex-col">
-                    <div className="mb-2">
-                        {/* ✨ FIX 1: JUDUL A DITAMBAHKAN "Dx :" */}
-                        <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">A (ANALISA) / Dx :</div>
-                        <div className="whitespace-pre-wrap font-sans mb-1 pl-1">{safeAnalysis || '-'}</div>
-                    </div>
-
-                    <div className="border-t-2 border-dashed border-gray-400 pt-2 mt-1">
-                        <div className="font-bold underline mb-2 bg-gray-100 inline-block px-1 text-xs">P (PLANNING)</div>
-                        <div className="font-sans pl-1">
-                            {others.length > 0 && (
-                                <div className="mb-3 leading-relaxed whitespace-pre-wrap">
-                                    {renderHighlightedOthers(others)}
-                                </div>
-                            )}
-
-                            {/* ✨ PENYELAMATAN NAMA AUTHOR & KONVERSI [HARI INI] */}
-                            {(labs.length > 0 || rads.length > 0 || tms.length > 0 || rxs.length > 0) && (() => {
-                                // 1. Konversi array ke format [Hari Ini] (Ubah rec menjadi record)
-                                const displayLabs = labs.map(item => formatTextToHariIni(item, record));
-                                const displayRads = rads.map(item => formatTextToHariIni(item, record));
-                                const displayTms = tms.map(item => formatTextToHariIni(item, record));
-
-                                // 2. Sinkronisasi ulang dictionary author agar nama perawat tidak hilang
-                                const displayItemAuthors = {};
-                                if (typeof itemAuthors !== 'undefined' && itemAuthors) {
-                                    Object.keys(itemAuthors).forEach(key => {
-                                        displayItemAuthors[formatTextToHariIni(key, record)] = itemAuthors[key];
-                                    });
-                                }
-
-                                // 3. Render HTML dengan data yang sudah bersih
-                                return (
-                                    <div className="space-y-1 mt-2 border-t border-dotted border-gray-400 pt-2 text-xs">
-                                        {displayLabs.length > 0 && (
-                                            <div className="flex items-start bg-rose-100 border border-rose-300 text-rose-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                                                <span className="font-bold w-10 flex-shrink-0 uppercase">Lab.</span>
-                                                <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(displayLabs, displayItemAuthors)}</span>
-                                            </div>
-                                        )}
-                                        {displayRads.length > 0 && (
-                                            <div className="flex items-start bg-sky-100 border border-sky-300 text-sky-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                                                <span className="font-bold w-10 flex-shrink-0 uppercase">Rad.</span>
-                                                <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(displayRads, displayItemAuthors)}</span>
-                                            </div>
-                                        )}
-                                        {displayTms.length > 0 && (
-                                            <div className="flex items-start bg-emerald-100 border border-emerald-300 text-emerald-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                                                <span className="font-bold w-12 flex-shrink-0 uppercase">Tndkn.</span>
-                                                <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(displayTms, displayItemAuthors)}</span>
-                                            </div>
-                                        )}
-                                        {rxs.length > 0 && (
-                                            <div className="flex items-start bg-amber-100 border border-amber-300 text-amber-900 px-1 py-0.5 rounded w-fit max-w-full leading-tight" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
-                                                <span className="font-bold w-12 flex-shrink-0 uppercase">Terapi.</span>
-                                                {/* Obat/Terapi dibiarkan aslinya karena tidak pakai tag [Besok] */}
-                                                <span className="flex-1 font-bold underline">: {renderItemsWithAuthors(rxs, itemAuthors, true)}</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
-                        </div>
-                    </div>
-
-                    {/* 💊 RESEP OBAT PERSISTEN — Terpisah dan Bersih dari Duplikasi */}
-                    {safeCurrentPrescription && (
-                        <div className="border-t-2 border-dashed border-rose-400 pt-2 mt-2">
-                            <div
-                                className="font-bold underline mb-1 inline-block px-1 text-xs text-rose-900 bg-rose-100 border border-rose-300 rounded"
-                                style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
-                            >
-                                💊 RESEP OBAT
-                            </div>
-
-                            {/* ✨ FIX PRINT: Membaca baris demi baris resep obat untuk memunculkan Badge Antibiotik di kertas cetak */}
-                            <div className="font-mono text-xs pl-1 leading-relaxed text-gray-900 space-y-0.5">
-                                {safeCurrentPrescription.split('\n').map((line, lIdx) => {
-                                    const trimmed = line.trim();
-                                    let abBadge = null;
-
-                                    if (typeof getAntibioticDay === 'function') {
-                                        const cleanMedName = trimmed.replace(/^[-\*\s\u2022\d.]+\s*/, '').split(/\s+\d/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
-                                        if (ANTIBIOTICS_DB.some(ab => cleanMedName.toLowerCase().includes(ab)) || /\bH\d+\b/i.test(trimmed)) {
-                                            const hCode = getAntibioticDay(trimmed, record.medicationLogs || {});
-                                            if (hCode) {
-                                                abBadge = <span className="ml-2 text-[9px] font-black border border-black bg-gray-100 px-1 py-[px] rounded">🚨 {hCode}</span>;
-                                            }
-                                        }
-                                    }
-                                    return (
-                                        <div key={lIdx} className="flex items-center flex-wrap">
-                                            <span>{line}</span>
-                                            {abBadge}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-                    <div className="flex-1"></div>
-                </div>
-
-                <div className="flex flex-col">
-                    <div className="mb-2">
-                        <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">O (OBJEKTIF)</div>
-                        <div className="mb-2 font-mono text-sm border border-black p-1.5 rounded bg-white leading-snug">
-                            <div className="grid grid-cols-2 gap-x-4">
-                                <div>TD : ____</div><div>N  : ____</div><div>S  : ____</div><div>RR : ____</div><div>SpO2: ___</div><div>GCS : ___</div>
-                            </div>
-                        </div>
-                        <div className="font-sans pl-1 mt-1">
-                            <FormattedObjective text={safeObjective} />
-                        </div>
-                    </div>
-
-                    {hasSubjective && (
-                        <div className="border-t-2 border-dashed border-gray-400 pt-2 mt-1">
-                            <div className="font-bold underline mb-1 bg-gray-100 inline-block px-1 text-xs">S (SUBJEKTIF)</div>
-                            <div className="whitespace-pre-wrap font-sans mb-3 pl-1">{safeSubjective}</div>
-                        </div>
-                    )}
-                    <div className="flex-1"></div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const PrintView = ({ record, closePrint, historyLogs = [] }) => {
-    const onPrintA5 = () => {
-        handlePrintWindow('printable-area', `Cetak APOS - ${record.name}`, 'A5');
-    };
-    const onPrintA4 = () => {
-        handlePrintWindow('printable-area', `Cetak APOS - ${record.name}`, 'A4');
-    };
-
-    return (
-        <div className="fixed inset-0 bg-white z-[80] p-0 overflow-y-auto">
-            {/* Header Controls */}
-            <div className="p-4 bg-gray-100 flex justify-between items-center no-print sticky top-0 border-b shadow-sm">
-                <h1 className="font-bold text-gray-700">Preview Cetak (APOS)</h1>
-                <div className="flex gap-2">
-                    <button onClick={onPrintA5} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 flex items-center transition">
-                        🖨️ Cetak A5
-                    </button>
-                    <button onClick={onPrintA4} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 flex items-center transition" title="Pilih A4 jika ingin print 2-per-lembar">
-                        🖨️ Cetak A4
-                    </button>
-                    <button onClick={closePrint} className="px-4 py-2 bg-red-500 text-white rounded text-sm font-bold hover:bg-red-600 transition">Tutup</button>
-                </div>
-            </div>
-
-            <div id="printable-area" className="p-4 flex justify-center">
-                <div className="w-full max-w-4xl">
-                    <PrintLayout record={record} historyLogs={historyLogs} />
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const BulkPrintView = ({ records, onClose }) => {
-    // POIN 2: Urutkan berdasarkan kamar sebelum ditampilkan di preview
-    const sortedToPrint = useMemo(() => {
-        return [...records].sort((a, b) =>
-            a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' })
-        );
-    }, [records]);
-
-    const onPrintA5 = () => {
-        handlePrintWindow('bulk-printable-area', 'Cetak Banyak - APOS', 'A5');
-    };
-    const onPrintA4 = () => {
-        handlePrintWindow('bulk-printable-area', 'Cetak Banyak - APOS', 'A4');
-    };
-
-    return (
-        // POIN 3: z-[150] agar melayang di atas header utama (z-100)
-        <div className="fixed inset-0 bg-white z-[150] overflow-y-auto">
-            <div className="p-4 bg-indigo-50 flex justify-between items-center no-print sticky top-0 z-50 border-b shadow-sm">
-                <div>
-                    <h1 className="font-bold text-indigo-900">Cetak Banyak ({sortedToPrint.length} Pasien)</h1>
-                    <p className="text-[10px] text-gray-500 italic">*Urutan otomatis berdasarkan nomor kamar</p>
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={onPrintA5} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 flex items-center transition">
-                        🖨️ Cetak A5
-                    </button>
-                    <button onClick={onPrintA4} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 flex items-center transition" title="Gunakan setting printer '2 Pages per Sheet' jika ingin A5 di kertas A4">
-                        🖨️ Cetak A4
-                    </button>
-                    <button onClick={onClose} className="px-4 py-2 bg-gray-500 text-white rounded text-sm font-bold hover:bg-gray-600 transition">Tutup</button>
-                </div>
-            </div>
-
-            <div id="bulk-printable-area" className="p-4 bg-gray-50">
-                {sortedToPrint.map((rec, index) => (
-                    <div key={rec.id} className="print-page bg-white shadow mb-8 mx-auto print-break">
-                        <div className="no-print bg-gray-200 text-gray-500 text-[10px] p-1 text-center font-bold uppercase mb-2">
-                            Halaman {index + 1}: {rec.roomNumber} - {rec.name}
-                        </div>
-                        <PrintLayout record={rec} />
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-// --- COMPONENT: DENAH KAMAR (RESPONSIVE: MOBILE, TABLET, LAPTOP) ---
-const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList, onSwapBed }) => {
-
-    // ✨ LOGIKA BARU MOBILE: Selang-seling Kiri & Kanan agar Kolom Kiri = Sisi Kiri, Kolom Kanan = Sisi Kanan
-    const mobileRoomList = useMemo(() => {
-        const left = leftRooms || LEFT_ROOMS;
-        const right = rightRooms || RIGHT_ROOMS;
-        const combined = [];
-        const maxLength = Math.max(left.length, right.length);
-
-        for (let i = 0; i < maxLength; i++) {
-            if (i < left.length) combined.push(left[i]);
-            if (i < right.length) combined.push(right[i]);
-        }
-        return combined;
-    }, [leftRooms, rightRooms]);
-
-    // =================================================================================
-    // ✨ AREA REVISI FINAL: IMPLEMENTASI KEDIP BORDER (2.1) & SVG GINJAL + BALON TIP (2.2)
-    // =================================================================================
-    const renderRoom = (roomNumber) => {
-        const record = activeRecords.find(r => r.roomNumber === roomNumber);
-        const booked = waitingList?.find(w => w.plannedRoom === roomNumber);
-        const isHidden = roomFilter.length !== roomList.length && !roomFilter.includes(roomNumber);
-
-        if (isHidden) return null;
-
-        // Logika Status & Warna Sisa Bed
-        let statusText = 'Kosong';
-        let statusColor = 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100';
-
-        // ✨ SENSOR TETANGGA: Menyesuaikan deteksi tetangga kasur format KM dan P
-        const match = roomNumber.match(/^(K\d+)(KM|P)$/);
-        if (!record && !booked && match) {
-            const roomCode = match[1];
-            const neighborBed = match[2] === 'KM' ? 'P' : 'KM';
-            const neighborRoom = `${roomCode}${neighborBed}`;
-            const neighborRecord = activeRecords.find(r => r.roomNumber === neighborRoom);
-            if (neighborRecord) {
-                if (neighborRecord.gender === 'L') {
-                    statusText = 'Sisa Lk';
-                    statusColor = 'bg-sky-100 border-sky-400 text-sky-800 hover:bg-sky-200';
-                } else {
-                    statusText = 'Sisa Pr';
-                    statusColor = 'bg-purple-100 border-purple-400 text-purple-800 hover:bg-purple-200';
-                }
-            }
-        }
-
-        // 1. RENDER: TERISI (PASIEN)
-        if (record) {
-            const isMale = record.gender === 'L';
-
-            // 🕒 DETEKSI HARI INI (Bahasa Indonesia: 'senin', 'selasa', dll)
-            const hariIni = new Date().toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
-
-            // 🤖 SENSOR UTAMA
-            const gabunganTeksSOAP = `${record.diagnosis || ''} ${record.analysis || ''} ${record.planning || ''}`.toLowerCase();
-
-            // 🛑 PENGECUALIAN 1: Status Suspek/DD (Tn. Tatang)
-            const statusProvisional = gabunganTeksSOAP.includes('dd ckd') || gabunganTeksSOAP.includes('susp ckd') || gabunganTeksSOAP.includes('susp. ckd') || gabunganTeksSOAP.includes('dd hd') || gabunganTeksSOAP.includes('aki dd');
-
-            // 🛑 PENGECUALIAN 2: Pasien Menolak Tindakan (Saran Mandor Abi untuk Bu Marsem)
-            const statusMenolak = gabunganTeksSOAP.includes('menolak') || gabunganTeksSOAP.includes('tolak') || gabunganTeksSOAP.includes('tidak mau') || gabunganTeksSOAP.includes('belum bersedia');
-
-            // ✨ EKSEKUSI SENSOR: Balon HD dilarang muncul jika pasien berstatus Suspek ATAU Menolak!
-            const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP) && !statusProvisional && !statusMenolak;
-
-            // =========================================================================
-            // ⚡ MESIN SENSOR HD MULTI-KATEGORI
-            // =========================================================================
-            let isHDMenyalaHariIni = false;
-            let shouldBlinkBorder = false;
-            let hdLabel = 'HD';
-            let balloonColor = 'bg-rose-600';
-            let arrowColor = 'border-t-rose-600';
-
-            if (isHD) {
-                if (gabunganTeksSOAP.includes('extra') || gabunganTeksSOAP.includes('ekstra') || gabunganTeksSOAP.includes('cito')) {
-                    // Kategori A: HD Cito
-                    isHDMenyalaHariIni = true;
-                    shouldBlinkBorder = true;
-                    hdLabel = 'HD Extra';
-                    balloonColor = 'bg-red-600';
-                    arrowColor = 'border-t-red-600';
-                } else if (gabunganTeksSOAP.includes('inisiasi')) {
-                    // Kategori B: HD Inisiasi
-                    isHDMenyalaHariIni = true;
-                    shouldBlinkBorder = true;
-                    hdLabel = 'HD Inisiasi';
-                    balloonColor = 'bg-purple-600';
-                    arrowColor = 'border-t-purple-600';
-                } else if (gabunganTeksSOAP.includes('edukasi')) {
-                    // ✨ Kategori C: Edukasi HD (Hanya menyala untuk pasien yang sedang diedukasi dan BELUM menolak)
-                    isHDMenyalaHariIni = true;
-                    shouldBlinkBorder = false;
-                    hdLabel = 'Edukasi HD';
-                    balloonColor = 'bg-amber-500';
-                    arrowColor = 'border-t-amber-500';
-                } else {
-                    // Kategori D: HD Rutin Terjadwal
-                    let isJadwalCocok = false;
-                    if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
-                        isJadwalCocok = ['senin', 'kamis'].includes(hariIni);
-                    } else if (gabunganTeksSOAP.includes('selasa-jumat') || gabunganTeksSOAP.includes('selasa jumat')) {
-                        isJadwalCocok = ['selasa', 'jumat'].includes(hariIni);
-                    } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
-                        isJadwalCocok = ['rabu', 'sabtu'].includes(hariIni);
-                    } else {
-                        isJadwalCocok = true;
-                    }
-
-                    if (isJadwalCocok) {
-                        isHDMenyalaHariIni = true;
-                        shouldBlinkBorder = true;
-                        hdLabel = 'HD';
-                        balloonColor = 'bg-rose-600';
-                        arrowColor = 'border-t-rose-600';
-                    }
-                }
-            }
-            // =========================================================================
-
-            // 👨‍⚕️ SUNTIKAN OTOMATIS dr. Edi di Layar
-            let raberArray = [record.raberName, record.raber2Name].filter(Boolean);
-            if (isHD && !raberArray.some(r => r.toLowerCase().includes('edi'))) {
-                raberArray.push('dr. Edi');
-            }
-            const raberTextDisplay = raberArray.join(', ');
-
-            return (
-                <div
-                    key={roomNumber}
-                    onClick={() => onEditRoom(record)}
-                    // ✨ KONTROL BORDER BERKEDIP DINAMIS BERDASARKAN KATEGORI AKTIF
-                    className={`relative flex flex-col p-1.5 rounded-lg border-2 cursor-pointer transition-all hover:shadow-md ${shouldBlinkBorder
-                        ? 'animate-border-hd border-[2.5px] shadow-md ring-2 ring-slate-950/5'
-                        : (isMale ? 'border-blue-400 shadow-sm' : 'border-rose-400 shadow-sm')
-                        } ${isMale ? 'bg-blue-200' : 'bg-rose-100'}`}
-                >
-
-                    {/* ✨ BALON TIP MELAYANG MULTI-KATEGORI (DIKENDALIKAN PROGRAM) */}
-                    {isHDMenyalaHariIni && (
-                        <div className={`absolute -top-3 -right-2 ${balloonColor} text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-md flex items-center gap-1 z-30 animate-in zoom-in-95 duration-200 uppercase tracking-tight`}>
-                            {/* Ikon Ginjal Medis Putih */}
-                            <svg className="w-2.5 h-2.5 fill-current text-white animate-pulse shrink-0" viewBox="0 0 24 24">
-                                <path d="M12 2c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 17.2c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l.59-.59C7.93 19.26 9.88 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 14c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z" />
-                            </svg>
-                            {hdLabel}
-                            {/* Ekor Segitiga Menyesuaikan Warna Balon */}
-                            <div className={`absolute -bottom-[5px] right-2.5 border-l-[4px] border-r-[4px] border-t-[6px] border-l-transparent border-r-transparent ${arrowColor} drop-shadow-sm`}></div>
-                        </div>
-                    )}
-
-                    <div className="flex justify-between items-center mb-0.5 border-b border-white/60 pb-0.5">
-                        <span className={`font-extrabold text-[11px] ${shouldBlinkBorder ? 'text-slate-950 font-black' : (isMale ? 'text-blue-900' : 'text-rose-900')}`}>
-                            {roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2')}
-                        </span>
-
-                        <div className="flex gap-1 items-center">
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (onSwapBed) onSwapBed(record);
-                                }}
-                                className="text-[9px] bg-white/60 hover:bg-white/90 rounded px-1 shadow-sm transition cursor-pointer"
-                                title="Tukar Bed">
-                                🔀
-                            </button>
-                            <span className="text-[9px] bg-white/50 rounded px-1">{isMale ? '🚹' : '🚺'}</span>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 flex flex-col justify-center">
-                        <span className="font-bold text-xs text-gray-800 leading-none truncate mb-0.5">{record.name}</span>
-                        <span className="text-[9px] text-gray-600 font-medium truncate">{record.dpjpName}</span>
-                        {/* Menampilkan Raber yang sudah disuntik dr. Edi */}
-                        {raberArray.length > 0 && (
-                            <span className="text-[7px] bg-yellow-200 text-yellow-800 px-1 rounded w-fit mt-0.5">Raber: {raberTextDisplay}</span>
-                        )}
-                    </div>
-                </div>
-            );
-        }
-
-        // 2. RENDER: DIBOOKING (WAITING LIST)
-        if (booked) {
-            return (
-                <div key={roomNumber} className="relative flex flex-col p-1.5 rounded-lg border-2 bg-yellow-50 border-yellow-400 shadow-sm cursor-not-allowed opacity-90 animate-pulse">
-                    <div className="flex justify-between items-center mb-0.5 border-b border-yellow-300 pb-0.5">
-                        <span className="font-extrabold text-[11px] text-yellow-900">{roomNumber}</span>
-                        <span className="text-[9px]">⏳</span>
-                    </div>
-                    <div className="flex-1 flex flex-col justify-center items-center text-center">
-                        <span className="font-bold text-[10px] text-yellow-800 leading-tight">Dipesan a.n</span>
-                        <span className="text-[9px] text-yellow-900 font-medium truncate w-full">{booked.name}</span>
-                    </div>
-                </div>
-            );
-        }
-
-        // 3. RENDER: KOSONG / SISA BED
-        return (
-            <div key={roomNumber} onClick={() => onSelectRoom(roomNumber)} className={`relative flex flex-col items-center justify-center p-1 rounded-lg border-2 border-dashed cursor-pointer transition-all ${statusColor}`}>
-                <span className="font-extrabold text-[11px] mb-0.5">{roomNumber.replace(/^(K\d+)(KM|P)$/, '$1 • $2')}</span>
-                <span className="text-[9px] font-bold px-1.5 py-px rounded-full bg-white/80 shadow-sm">{statusText}</span>
-            </div>
-        );
-    };
-
-    return (
-        <div className="flex justify-center w-full px-1 py-1">
-            <div className="w-full max-w-5xl">
-                {/* MOBILE: Menggunakan susunan mobileRoomList yang sudah dianyam kiri-kanan ✨ */}
-                <div className="grid grid-cols-2 gap-1.5 mb-2 md:hidden bg-white p-1.5 rounded-xl shadow-inner border border-gray-100">
-                    {mobileRoomList.map(renderRoom)}
-                </div>
-
-                {/* DESKTOP/TABLET: Menggunakan data bangsal dinamis bawaan config ✨ */}
-                <div className="hidden md:flex w-full gap-2 md:gap-3 bg-white p-1.5 rounded-xl shadow-inner border border-gray-100 justify-center">
-
-                    {/* SISI KIRI: Dinamis (Melati 2 Kolom, Dahlia 1 Kolom) ✨ */}
-                    <div className={`grid ${(leftRooms || LEFT_ROOMS).length <= 5 ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 w-full`}>
-                        {(leftRooms || LEFT_ROOMS).map(renderRoom)}
-                    </div>
-
-                    <div className="hidden md:flex flex-col justify-center items-center w-6 bg-gray-100 rounded-full border border-gray-200 shadow-inner relative flex-shrink-0">
-                        <div className="absolute top-10 text-gray-300 text-[9px] font-bold tracking-[0.3em]" style={{ writingMode: 'vertical-rl' }}>LORONG</div>
-                    </div>
-
-                    {/* SISI KANAN: Dinamis (Melati 2 Kolom, Dahlia 1 Kolom) ✨ */}
-                    <div className={`grid ${(rightRooms || RIGHT_ROOMS).length <= 5 ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 w-full`}>
-                        {(rightRooms || RIGHT_ROOMS).map(renderRoom)}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const DigitalClock = () => {
-    const [time, setTime] = useState(new Date());
-    useEffect(() => {
-        const timer = setInterval(() => setTime(new Date()), 1000);
-        return () => clearInterval(timer);
-    }, []);
-    return (
-        <div className="flex flex-col items-end leading-none select-none">
-            <div className="text-lg font-mono font-bold text-indigo-900">
-                {time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </div>
-            <div className="text-[9px] text-gray-500 uppercase font-bold">
-                {time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
-            </div>
-        </div>
-    );
-};
-
 // --- LOGIC UTAMA (MEDICAL RECORD APP - LEVEL 4 COMPLETED) ---
 const MedicalRecordApp = ({
     db, userId, appId, isOnline, onLogout,
     currentUser, setAppMode, cashflowRole, onSwitchWard
 }) => {
-    
+
     // ✨ 1. STATE PENAMPUNG DENAH DINAMIS (FASE 2)
     const [dynamicWards, setDynamicWards] = useState({});
 
     // ✨ 2. SUNTIKAN TAHAP 3: MASTER KEY BANGSAL (DINAMIS DARI FIREBASE)
     const currentWardName = currentUser?.ward || 'MELATI';
-    
+
     // 👇 FIX: Cari key denah yang cocok walaupun huruf besar/kecilnya beda (Case-Insensitive Failsafe)
     const matchingKey = Object.keys(dynamicWards).find(
         k => k.toLowerCase() === currentWardName.toLowerCase()
     ) || currentWardName;
-    
-    const currentWardConfig = dynamicWards[matchingKey] || WARD_CONFIG[currentWardName] || { 
-        name: currentWardName.charAt(0) + currentWardName.slice(1).toLowerCase(), 
-        roomList: [], leftRooms: [], rightRooms: [] 
+
+    const currentWardConfig = dynamicWards[matchingKey] || WARD_CONFIG[currentWardName] || {
+        name: currentWardName.charAt(0) + currentWardName.slice(1).toLowerCase(),
+        roomList: [], leftRooms: [], rightRooms: []
     };
 
     // ✨ 3. FITUR BARU: BUILDER DENAH MANUAL DI SETELAN
@@ -1201,26 +92,26 @@ const MedicalRecordApp = ({
     // ✨ FASE 2: UNIVERSAL ROOM BUILDER & SPAWNER (SUPERADMIN CONTROL)
     const handleRebuildWard = async (e) => {
         e.preventDefault();
-        
+
         // Tentukan target eksekusi (Gunakan input form, jika kosong fallback ke lokasi admin aktif)
         const targetRs = (rebuildForm.rsTarget || currentUser.hospital || 'RSUD BAYU ASIH').toUpperCase().trim();
         const targetWard = (rebuildForm.wardTarget || currentUser.ward || 'MELATI').toUpperCase().trim();
 
-        if(!targetRs || !targetWard) return alert("Nama Rumah Sakit dan Ruangan tidak boleh kosong!");
-        if(!confirm(`Apakah Anda yakin ingin membangun/memodifikasi denah Ruang ${targetWard} di ${targetRs}?`)) return;
+        if (!targetRs || !targetWard) return alert("Nama Rumah Sakit dan Ruangan tidak boleh kosong!");
+        if (!confirm(`Apakah Anda yakin ingin membangun/memodifikasi denah Ruang ${targetWard} di ${targetRs}?`)) return;
 
         const count = rebuildForm.bedCount || 20;
         const format = rebuildForm.bedFormat || 'K1';
         const layout = rebuildForm.layout || '2baris';
         const rooms = [];
-        
+
         // 1. Generate Array Nama Kasur
         for (let i = 1; i <= count; i++) {
             if (format === 'K1') rooms.push(`K${i}`);
-            else if (format === '1A') rooms.push(`${Math.ceil(i/2)}${i%2===1?'A':'B'}`);
+            else if (format === '1A') rooms.push(`${Math.ceil(i / 2)}${i % 2 === 1 ? 'A' : 'B'}`);
             else rooms.push(`${i}`);
         }
-        
+
         // 2. Pembagian Lorong
         let left = [], right = [];
         if (layout === '1baris') {
@@ -1240,8 +131,8 @@ const MedicalRecordApp = ({
             const snap = await getDoc(configRef);
             let existingWards = snap.exists() && snap.data().wards ? snap.data().wards : {};
             existingWards[targetWard] = newWardConfig; // Daftarkan atau timpa denah ruangan target
-            
-            await setDoc(configRef, { 
+
+            await setDoc(configRef, {
                 wards: existingWards,
                 // Jika RS ini baru pertama kali dilahirkan oleh Abi, inisialisasi laci datanya agar kosong melompong (Anti-Bocor!)
                 ...(snap.exists() ? {} : {
@@ -1251,10 +142,10 @@ const MedicalRecordApp = ({
             }, { merge: true });
 
             alert(`🎉 Sukses! Denah Ruang ${targetWard} di ${targetRs} berhasil dibangun.`);
-            
+
             // Bersihkan form input target khusus superadmin
             setRebuildForm(prev => ({ ...prev, rsTarget: '', wardTarget: '' }));
-        } catch(e) {
+        } catch (e) {
             alert("Gagal membangun denah: " + e.message);
         }
     };
@@ -1270,8 +161,8 @@ const MedicalRecordApp = ({
     // --- STATE LEVEL 4: MANAJEMEN USER (BARU) ---
     const [allUsers, setAllUsers] = useState([]); // Daftar user (Admin Only)
     const [profileForm, setProfileForm] = useState({ name: '', pass: '' }); // Form Profil Sendiri
-    const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' }); 
-    
+    const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' });
+
     // ✨ STATE NAVIGASI KEYBOARD UNTUK MENU DROPDOWN UTAMA
     const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
     const [mainMenuHighlight, setMainMenuHighlight] = useState(-1);
@@ -1288,7 +179,7 @@ const MedicalRecordApp = ({
             'RSUD BAYU ASIH': {
                 originalName: 'RSUD BAYU ASIH',
                 wards: new Map([
-                    ['MELATI', 'MELATI'], ['DAHLIA', 'DAHLIA'], ['TERATAI', 'TERATAI'], 
+                    ['MELATI', 'MELATI'], ['DAHLIA', 'DAHLIA'], ['TERATAI', 'TERATAI'],
                     ['ANYELIR', 'ANYELIR'], ['ANGGREK', 'ANGGREK']
                 ])
             }
@@ -1297,20 +188,20 @@ const MedicalRecordApp = ({
             // ✨ FIX 1: Beri label otomatis untuk akun jadul yang belum punya RS/Ruangan
             const safeHosp = u.hospital || 'RSUD BAYU ASIH';
             const safeWard = u.ward || 'MELATI';
-            
+
             const hKey = safeHosp.toUpperCase();
             const wKey = safeWard.toUpperCase();
-            
+
             if (!hw[hKey]) {
                 hw[hKey] = { originalName: safeHosp, wards: new Map() };
             }
             if (!hw[hKey].wards.has(wKey)) {
-                hw[hKey].wards.set(wKey, safeWard); 
+                hw[hKey].wards.set(wKey, safeWard);
             }
         });
-        
+
         const result = {};
-        Object.keys(hw).forEach(k => { 
+        Object.keys(hw).forEach(k => {
             result[k] = {
                 originalName: hw[k].originalName,
                 wards: Array.from(hw[k].wards.values()).sort()
@@ -1329,7 +220,36 @@ const MedicalRecordApp = ({
             alert("Gagal ACC: " + e.message);
         }
     };
-    
+
+    // ✨ FITUR BARU: TOMBOL PENGHANCUR RS (KHUSUS SUPERADMIN)
+    const handleDeleteHospital = async (rsKey, rsOriginalName) => {
+        if (rsKey === 'RSUD BAYU ASIH') {
+            return alert("❌ RSUD BAYU ASIH adalah rumah sakit pusat bawaan sistem utama dan TIDAK BOLEH dihapus!");
+        }
+
+        if (!confirm(`⚠️ PERINGATAN SANGAT KERAS, MANDOR! ⚠️\n\nApakah Anda yakin ingin menghapus RUMAH SAKIT "${rsOriginalName}" secara permanen?\n\nTindakan ini akan otomatis menyapu bersih:\n1. Cetak biru denah seluruh ruangan di RS ini.\n2. Seluruh akun perawat/staf yang bernaung di RS ini.\n\nData yang sudah terhapus tidak akan bisa dikembalikan lagi!`)) return;
+
+        try {
+            setLoading(true);
+            const safeHospName = rsKey.replace(/\s+/g, '_').toUpperCase();
+
+            // 1. Hapus Dokumen Konfigurasi Denah & Master Data RS di Firebase
+            const configRef = doc(db, `artifacts/${appId}/public/data/settings_${safeHospName}`, 'mainConfig');
+            await deleteDoc(configRef);
+
+            // 2. Sapu Bersih Semua User yang Terikat dengan RS ini agar hilang dari Accordion UI
+            const rsUsers = allUsers.filter(u => (u.hospital || 'RSUD BAYU ASIH').toUpperCase() === rsKey);
+            const deletePromises = rsUsers.map(u => deleteDoc(doc(db, 'users', u.id)));
+            await Promise.all(deletePromises);
+
+            alert(`✅ Sukses Besar! Rumah Sakit "${rsOriginalName}" beserta seluruh akun anggotanya telah dihapus bersih dari sistem.`);
+        } catch (e) {
+            alert("Gagal menghapus Rumah Sakit: " + e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Auto-close menu jika pengguna klik di luar area menu
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -1406,7 +326,7 @@ const MedicalRecordApp = ({
     // Helper pembuat huruf Kapital awal kata
     const toTitleCase = (str) => str.toLowerCase().replace(/(?:^|\s)\w/g, m => m.toUpperCase());
 
-// --- STATE LAMA (TETAP ADA) ---
+    // --- STATE LAMA (TETAP ADA) ---
     const [records, setRecords] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [activeRecords, setActiveRecords] = useState([]);
@@ -1427,7 +347,7 @@ const MedicalRecordApp = ({
             const localData = JSON.parse(localStorage.getItem(`backupDpjp_${safeHospName}`));
             if (localData && localData.length > 0) return localData;
         } catch (e) { }
-        
+
         // Hanya berikan dokter bawaan pabrik jika usernya terdaftar di RSUD Bayu Asih
         const isBayuAsih = currentUser?.hospital?.toUpperCase() === 'RSUD BAYU ASIH';
         return isBayuAsih ? initialDpjpProfiles.map(p => ({ ...p, name: p.name })) : [];
@@ -1525,9 +445,9 @@ const MedicalRecordApp = ({
     const [dpjpFilter, setDpjpFilter] = useState([]);
     const [selectedRoomFilter, setSelectedRoomFilter] = useState(currentWardConfig.roomList);
     // ✅ FIX MASALAH 1: Paksa filter untuk auto-select semua kamar saat denah baru selesai diload
-        useEffect(() => {
-            setSelectedRoomFilter(currentWardConfig.roomList || []);
-        }, [currentWardConfig.roomList]);
+    useEffect(() => {
+        setSelectedRoomFilter(currentWardConfig.roomList || []);
+    }, [currentWardConfig.roomList]);
 
     const [showRaber1, setShowRaber1] = useState(false);
     const [showRaber2, setShowRaber2] = useState(false);
@@ -1548,6 +468,13 @@ const MedicalRecordApp = ({
 
     const [newDpjpName, setNewDpjpName] = useState('');
     const [newDpjpWa, setNewDpjpWa] = useState('');
+
+    const [handoverConfig, setHandoverConfig] = useState({ isOpen: false, agenda: null, viewModeData: null });
+    const [isBulkHandoverOpen, setIsBulkHandoverOpen] = useState(false); // Saklar Nampan Masal
+    const [isBukuEkspedisiOpen, setIsBukuEkspedisiOpen] = useState(false); // Saklar Laci Debat
+
+    // ✨ STATE SAKLAR GESER PAPAN AGENDA (RENCANA AKSI vs LACAK HASIL)
+    const [agendaSubTab, setAgendaSubTab] = useState('rencana'); // 'rencana' | 'lacak'
 
     // --- [LEVEL 4] LOGIC: USER MONITORING & ACTIONS ---
 
@@ -1726,10 +653,10 @@ const MedicalRecordApp = ({
     // ✨ FASE 3: ISOLASI DATABASE SETELAN MULTI-RS
     const getConfigRef = useCallback(() => {
         if (!db) return null;
-        
+
         // Baca nama RS user yang login
         const hosp = currentUser?.hospital || 'RSUD BAYU ASIH';
-        
+
         // 🛡️ Backward Compatibility: Biar data Bayu Asih yang lama tidak hilang
         if (hosp === 'RSUD BAYU ASIH' || hosp === 'RSUD Bayu Asih') {
             return doc(db, `artifacts/${appId}/public/data/settings`, 'mainConfig');
@@ -1757,7 +684,7 @@ const MedicalRecordApp = ({
                 const unsubscribe = onSnapshot(ref, (snap) => {
                     if (snap.exists()) {
                         const data = snap.data();
-                        
+
                         // ✨ FASE 2: Tarik Denah Dinamis
                         if (data.wards) setDynamicWards(data.wards);
 
@@ -1785,15 +712,15 @@ const MedicalRecordApp = ({
                         const safeHospName = (currentUser?.hospital || 'RSUD BAYU ASIH').replace(/\s+/g, '_').toUpperCase();
                         setDpjpProfiles(finalDpjp);
                         localStorage.setItem(`backupDpjp_${safeHospName}`, JSON.stringify(finalDpjp));
-                        
+
                         if (data.masterLabs && Array.isArray(data.masterLabs)) { setMasterLabs(data.masterLabs); localStorage.setItem('masterLabs', JSON.stringify(data.masterLabs)); }
                         if (data.masterRads && Array.isArray(data.masterRads)) { setMasterRads(data.masterRads); localStorage.setItem('masterRads', JSON.stringify(data.masterRads)); }
                         if (data.masterProcedures && Array.isArray(data.masterProcedures)) { setMasterProcedures(data.masterProcedures); localStorage.setItem('masterProcedures', JSON.stringify(data.masterProcedures)); }
                         if (data.masterMedications && Array.isArray(data.masterMedications)) { setMasterMedications(data.masterMedications); localStorage.setItem('masterMedications', JSON.stringify(data.masterMedications)); }
-                        
+
                         setIsSettingsLoaded(true);
                         setSettingsError(null);
-                        retryCount = 0; 
+                        retryCount = 0;
                     } else {
                         // ⚠️ Dokumen RS Baru belum ada isinya: Buat kosong melompong (Anti Bocor)
                         const isBayuAsih = currentUser?.hospital?.toUpperCase() === 'RSUD BAYU ASIH';
@@ -2054,11 +981,12 @@ const MedicalRecordApp = ({
         setFormData(p => ({ ...p, [name]: value }));
     };
 
+    // ✅ SESUDAHNYA (Dikosongkan):
     const resetForm = () => {
         setFormData({
             roomNumber: '', name: '', rmNumber: '', gender: '', dpjpName: '', raberName: '', raber2Name: '',
             subjective: '', objective: '', analysis: '', planning: '', isDischarged: false,
-            admissionDate: new Date().toISOString(), evidenceImages: [], bpjsClass: ''
+            admissionDate: '', evidenceImages: [], bpjsClass: ''
         });
         setIsEditing(false);
         setShowRaber1(false); setShowRaber2(false);
@@ -2116,9 +1044,135 @@ const MedicalRecordApp = ({
             console.error("Error swapping bed:", error);
             alert("❌ Terjadi kesalahan saat memindahkan bed. Cek koneksi internet.");
         }
+    }; // <--- INI ADALAH PENUTUP FUNGSI TUKAR BED
+
+        // 🧪 HELPER OTOMATIS: PINDAHKAN ITEM DARI PLANNING KE OBJEKTIF SAAT TTD
+    const autoTransferPlanningToObjective = (currentPlanning = '', currentObjective = '', actionText = '') => {
+        // 1. Ambil nama pembersih untuk menghapus dari P (Planning)
+        const cleanAction = actionText.replace(/\[.*?\]/g, '').trim();
+
+        // 2. Ambil jam TTD saat ini
+        const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+
+        // 3. Format teks resmi LACAK/LAPOR sesuai kenyamanan perawat (Format Nomor 1)
+        const lacakText = `⚠️ LACAK/LAPOR: ${actionText} (${timeStr} WIB)`;
+        
+        let updatedObjective = currentObjective || '';
+        
+        if (!updatedObjective.includes(cleanAction)) {
+            updatedObjective = updatedObjective.trim() 
+                ? `${updatedObjective}\n${lacakText}` 
+                : lacakText;
+        }
+
+        // 4. Hapus baris pemeriksaan tersebut dari P (PLANNING)
+        const planningLines = (currentPlanning || '').split('\n');
+        const filteredLines = planningLines.filter(line => !line.toLowerCase().includes(cleanAction.toLowerCase()));
+        
+        let updatedPlanning = filteredLines.join('\n');
+        updatedPlanning = updatedPlanning
+            .replace(/🔬\s*LAB:\s*\n(?=\n|$|💉|🩻)/gi, '') // Hapus header LAB jika isinya sudah habis
+            .replace(/\n\s*\n/g, '\n')                     // Bersihkan enter dobel
+            .trim();
+
+        return { updatedPlanning, updatedObjective };
     };
 
-    // ✨ FIX FINAL: MESIN PENGELOMPOK ADVIS OTOMATIS BERDASARKAN HARI/WAKTU YANG SAMA (V3)
+    // ✨ FUNGSI MENYIMPAN TTD TUNGGAL + OTOMATIS TARIK KE OBJEKTIF + HITUNG TRANSFUSI BDRS
+    const handleSaveHandover = async (handoverData) => {
+        try {
+            setLoading(true);
+            const recId = handoverConfig.agenda.id;
+            const rec = activeRecords.find(r => r.id === recId);
+            
+            // 1. Eksekusi perpindahan dari Planning ke Objektif
+            let { updatedPlanning, updatedObjective } = autoTransferPlanningToObjective(
+                rec.planning, 
+                rec.objective, 
+                handoverData.action
+            );
+
+            // 2. 🩸 SENSOR BDRS: Perbarui hitungan kantong jika agenda merupakan transfusi darah
+            const isTransfusion = /trnfs|transfusi|prc|wb|tc|ffp/i.test(handoverData.action || '');
+            if (isTransfusion) {
+                updatedPlanning = updateTransfusionText(updatedPlanning, handoverData.action);
+            }
+
+            const currentVerified = rec.verifiedAgendas || [];
+            const updatedVerified = [...currentVerified, handoverData];
+            
+            // 3. Simpan permanen ke Firestore
+            const ref = doc(db, `artifacts/${appId}/public/data/medicalRecords`, recId);
+            await updateDoc(ref, { 
+                planning: updatedPlanning,
+                objective: updatedObjective,
+                verifiedAgendas: updatedVerified 
+            });
+            
+            setHandoverConfig({ isOpen: false, agenda: null, viewModeData: null });
+            alert("✅ SAH! TTD disimpan, item dipindahkan ke O (Objektif), dan status kantong darah diperbarui.");
+        } catch (e) {
+            alert("Gagal menyimpan bukti: " + e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    // ✨ FUNGSI MENYIMPAN TTD NAMPAN MASAL + OTOMATIS TARIK KE OBJEKTIF + HITUNG TRANSFUSI BDRS
+    const handleSaveBulkHandover = async (chosenAgendas, handoverCommon) => {
+        try {
+            setLoading(true);
+            
+            // Kelompokkan item berdasarkan ID Pasien
+            const groupedByPatientId = {};
+            chosenAgendas.forEach(item => {
+                if (!groupedByPatientId[item.id]) groupedByPatientId[item.id] = [];
+                groupedByPatientId[item.id].push(item.action);
+            });
+
+            // Eksekusi massal ke Firestore
+            const updatePromises = Object.entries(groupedByPatientId).map(async ([recId, actions]) => {
+                const rec = activeRecords.find(r => r.id === recId);
+                let currentPlanning = rec.planning || '';
+                let currentObjective = rec.objective || '';
+
+                actions.forEach(actionText => {
+                    const result = autoTransferPlanningToObjective(currentPlanning, currentObjective, actionText);
+                    currentPlanning = result.updatedPlanning;
+                    currentObjective = result.updatedObjective;
+
+                    // 🩸 Eksekusi kalkulasi kantong jika item nampan adalah darah
+                    if (/trnfs|transfusi|prc|wb|tc|ffp/i.test(actionText)) {
+                        currentPlanning = updateTransfusionText(currentPlanning, actionText);
+                    }
+                });
+
+                const newEntries = actions.map(action => ({
+                    ...handoverCommon,
+                    action: action
+                }));
+
+                const currentVerified = rec.verifiedAgendas || [];
+                const docRef = doc(db, `artifacts/${appId}/public/data/medicalRecords`, recId);
+
+                return updateDoc(docRef, { 
+                    planning: currentPlanning,
+                    objective: currentObjective,
+                    verifiedAgendas: [...currentVerified, ...newEntries] 
+                });
+            });
+
+            await Promise.all(updatePromises);
+            setIsBulkHandoverOpen(false);
+            alert("🎉 SUKSES NAMPAN! Semua sampel/kantong terverifikasi & data berhasil diperbarui.");
+        } catch (e) {
+            alert("Gagal memproses serah terima masal: " + e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ✨ FIX FINAL: MESIN PENGELOMPOK ADVIS OTOMATIS BERDASARKAN HARI/WAKTU YANG SAMA (V3 - REVISI SEKAT NEWLINE TERAPI & TINDAKAN)
     const appendText = (field, text) => {
         setFormData(p => {
             const current = p[field] || '';
@@ -2131,7 +1185,6 @@ const MedicalRecordApp = ({
             }
 
             // 2. Pecah komponen teks yang baru masuk (Prefix, Nama Item, dan Keterangan Waktu)
-            // Regex mencari: Prefix (Lab. R/ dll), Nama Pemeriksaan, dan Kurung Siku [Waktu] di akhir
             const incomingMatch = text.match(/^(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)\s*(.*?)\s*(\[[^\]]+\])?$/i);
 
             // Jika teks yang masuk tidak menggunakan prefix standar, lakukan append normal ke baris baru paling bawah
@@ -2145,43 +1198,45 @@ const MedicalRecordApp = ({
                 return { ...p, [field]: `${current.trim()}\n${text.trim()}` };
             }
 
-            const prefix = incomingMatch[1];                 // Contoh: "Lab. R/"
-            const itemName = incomingMatch[2].trim();         // Contoh: "Tubex"
+            const prefix = incomingMatch[1];                 // Contoh: "Lab. R/" / "Th."
+            const itemName = incomingMatch[2].trim();         // Contoh: "Tubex" / "Drip pantoprazole..."
             const timeTag = (incomingMatch[3] || '').trim();   // Contoh: "[Sore Ini]"
 
             let lines = current.split('\n');
             let isMerged = false;
 
-            // 3. Scan dari baris paling bawah ke atas untuk mencari pasangan yang cocok
-            for (let i = lines.length - 1; i >= 0; i--) {
-                const line = lines[i].trim();
-                const lineMatch = line.match(/^(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)\s*(.*?)\s*(\[[^\]]+\])?$/i);
+            // 🔥 BARU: SEKAT PENGECUALIAN (Jika prefix adalah Terapi (Th.) atau Tindakan (TM.), BYPASS penggabungan koma!)
+            const shouldBypassMerge = prefix.toLowerCase().startsWith('th') || prefix.toLowerCase().startsWith('tm');
 
-                if (lineMatch) {
-                    const lPrefix = lineMatch[1];
-                    const lItems = lineMatch[2].trim();
-                    const lTimeTag = (lineMatch[3] || '').trim();
+            // 3. Scan dari baris paling bawah ke atas untuk mencari pasangan yang cocok (HANYA JIKA BUKAN TERAPI/TINDAKAN)
+            if (!shouldBypassMerge) {
+                for (let i = lines.length - 1; i >= 0; i--) {
+                    const line = lines[i].trim();
+                    const lineMatch = line.match(/^(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)\s*(.*?)\s*(\[[^\]]+\])?$/i);
 
-                    // Normalisasi spasi double agar pencocokan waktu super akurat
-                    const normLTime = lTimeTag.toLowerCase().replace(/\s+/g, ' ');
-                    const normTime = timeTag.toLowerCase().replace(/\s+/g, ' ');
+                    if (lineMatch) {
+                        const lPrefix = lineMatch[1];
+                        const lItems = lineMatch[2].trim();
+                        const lTimeTag = (lineMatch[3] || '').trim();
 
-                    // ⚡ SYARAT GABUNG: Prefix harus sama (misal sama-sama Lab) DAN Waktunya wajib kembar!
-                    if (lPrefix.toLowerCase() === prefix.toLowerCase() && normLTime === normTime) {
+                        // Normalisasi spasi double agar pencocokan waktu super akurat
+                        const normLTime = lTimeTag.toLowerCase().replace(/\s+/g, ' ');
+                        const normTime = timeTag.toLowerCase().replace(/\s+/g, ' ');
 
-                        // Cek pencegahan duplikat agar nama pemeriksaan yang sama tidak tertulis dua kali
-                        const existingItems = lItems.split(',').map(item => item.trim().toLowerCase());
-                        if (!existingItems.includes(itemName.toLowerCase())) {
-                            // Masukkan ke baris yang sama, pisahkan dengan koma, pasang kembali label waktunya di ekor
-                            lines[i] = `${lPrefix} ${lItems}, ${itemName}${timeTag ? ' ' + timeTag : ''}`;
+                        // ⚡ SYARAT GABUNG LAB/RAD: Prefix harus sama DAN Waktunya wajib kembar!
+                        if (lPrefix.toLowerCase() === prefix.toLowerCase() && normLTime === normTime) {
+                            const existingItems = lItems.split(',').map(item => item.trim().toLowerCase());
+                            if (!existingItems.includes(itemName.toLowerCase())) {
+                                lines[i] = `${lPrefix} ${lItems}, ${itemName}${timeTag ? ' ' + timeTag : ''}`;
+                            }
+                            isMerged = true;
+                            break; // Stop pencarian karena sudah berhasil digabungkan
                         }
-                        isMerged = true;
-                        break; // Stop pencarian karena sudah berhasil digabungkan
                     }
                 }
             }
 
-            // 4. Jika setelah di-scan tidak ditemukan hari/waktu yang cocok, buat baris baru di bawah
+            // 4. Jika tidak digabung (atau di-bypass karena Terapi/Tindakan), otomatis buat baris baru di bawah
             if (!isMerged) {
                 const lastLine = lines[lines.length - 1];
 
@@ -2887,7 +1942,6 @@ const MedicalRecordApp = ({
         setShowInputModal(true);
     };
 
-    // ✨ PUBLIKASIKAN KE RUANGAN: Merge catatan pribadi perawat ke root SOAP (catatan gabungan).
     // Bisa dipanggil dari tombol di kartu Ontang-anting (Cara C) ATAU tombol di header
     // modal form saat mode personal aktif (Cara A).
     // ✨ PUBLIKASIKAN KE RUANGAN: Merge catatan pribadi perawat ke root SOAP (catatan gabungan).
@@ -3035,7 +2089,15 @@ const MedicalRecordApp = ({
     // --- FUNGSI KLIK LAPOR SHIFT ---
     const handleLaporShift = () => {
         try {
-            const waLink = generateShiftReport(activeRecords, records, waitingList, dpjpProfiles, currentWardConfig.name, currentWardConfig.roomList);
+            // 🚀 OPER archivedRecords AGAR PASIEN PULANG/PINDAH/MENINGGAL DAPAT DIHITUNG
+            const waLink = generateShiftReport(
+                activeRecords, 
+                archivedRecords, 
+                waitingList, 
+                dpjpProfiles, 
+                currentWardConfig.name, 
+                currentWardConfig.roomList
+            );
             window.open(`https://wa.me/?text=${waLink}`, '_blank');
         } catch (err) {
             alert("Gagal memproses laporan: " + err.message);
@@ -3345,193 +2407,6 @@ const MedicalRecordApp = ({
         }
     };
 
-    const handlePrintTTV = () => {
-        const element = document.getElementById('ttv-table-area');
-        if (!element) return alert("Tabel tidak ditemukan.");
-        const content = element.innerHTML;
-
-        const html = `
-        <!DOCTYPE html>
-        <html><head><title>Print TTV Berwarna</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-            @page { size: A4 portrait; margin: 8mm; }
-            body { 
-                font-family: Arial, sans-serif; 
-                zoom: 0.85; 
-                margin: 0; padding: 0; 
-                -webkit-print-color-adjust: exact !important; 
-                print-color-adjust: exact !important; 
-            }
-            
-            /* FIX GARIS: Gunakan border-collapse dan satuan pt agar tidak hilang saat zoom out */
-            table { 
-                width: 100%; 
-                border-collapse: collapse !important; 
-                font-size: 8.5pt; 
-                table-layout: fixed; 
-                border: 0.75pt solid black !important;
-            }
-            
-            th, td { 
-                border: 0.5pt solid black !important; /* Garis tipis tapi konsisten */
-                padding: 3px 4px !important; 
-                vertical-align: top; 
-                background-color: white !important;
-            }
-            
-            th { 
-                font-weight: bold; 
-                text-transform: uppercase;
-                text-align: center;
-                font-size: 8pt;
-            }
-
-            /* FIX WARNA HARI RAWAT: Paksa jadi hitam (Kolom ke-5) */
-            td:nth-child(5) { 
-                color: black !important; 
-                font-weight: bold; 
-                text-align: center;
-            }
-            
-            /* Penyesuaian Lebar Kolom */
-            td:nth-child(1) { width: 130px; } 
-            td:nth-child(2) { width: 60px; text-align: center; font-family: monospace; } 
-            td:nth-child(3) { width: 35px; text-align: center; } 
-            td:nth-child(4) { width: 100px; text-align: center; font-family: monospace; } 
-            td:nth-child(5) { width: 60px; } 
-            td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10) { width: 42px; text-align: center; } 
-            td:nth-child(11) { width: 110px; } 
-            
-            .no-print { display: none !important; } 
-            input { display: none !important; } 
-            span.hidden { display: inline !important; }
-            h3 { text-align: center; margin: 0 0 10px 0; font-size: 14pt; font-weight: bold; color: black; } 
-            .date-print { text-align: center; font-size: 8pt; margin-bottom: 10px; color: #555; }
-        </style></head><body>
-        <h3>Lembar Observasi Tanda Vital & Rencana Harian</h3>
-        <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
-        ${content}
-        </body></html>
-    `;
-        cetakPWA(html, 'Print TTV');
-    };
-
-    const handlePrintSOAP = () => {
-        const element = document.getElementById('ttv-table-area');
-        if (!element) return alert("Tabel tidak ditemukan.");
-        const content = element.innerHTML;
-
-        const html = `
-        <!DOCTYPE html>
-        <html><head><title>Print Laporan SOAP</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        
-        <style>
-            /* Margin kertas diperkecil maksimal (1 Lembar Portrait) */
-            @page { size: A4 portrait; margin: 5mm; }
-            
-            body { 
-                font-family: Arial, sans-serif; 
-                zoom: 0.65; /* Skala dikecilkan drastis agar muat 1 lembar */
-                margin: 0; 
-                padding: 0; 
-                /* 2. WAJIB AGAR BACKGROUND & WARNA TERCETAK OLEH PRINTER */
-                -webkit-print-color-adjust: exact !important; 
-                print-color-adjust: exact !important; 
-            }
-            
-            /* Font dasar diturunkan ke 7pt */
-            table { 
-                width: 100%; 
-                border-collapse: collapse !important; 
-                font-size: 7pt; 
-                table-layout: fixed; 
-            }
-            
-            /* Padding dikurangi, line-height dirapatkan */
-            th, td { 
-                border: 1px solid black !important; 
-                padding: 3px !important; 
-                vertical-align: top; 
-                line-height: 1.15; 
-            }
-            
-            th { 
-                background-color: #e5e7eb !important; 
-                text-align: center; 
-                font-size: 8pt !important; 
-                font-weight: bold !important; 
-            }
-            
-            /* Lebar Kolom Proporsional di Portrait */
-            th:nth-child(1), td:nth-child(1) { width: 18%; } /* Identitas */
-            th:nth-child(2), td:nth-child(2) { width: 15%; } /* S */
-            th:nth-child(3), td:nth-child(3) { width: 30%; } /* O */
-            th:nth-child(4), td:nth-child(4) { width: 12%; } /* A */
-            th:nth-child(5), td:nth-child(5) { width: 25%; } /* P */
-            th:nth-child(6), td:nth-child(6) { display: none !important; } /* Sembunyikan Aksi */
-            
-            .no-print { display: none !important; } 
-            input { display: none !important; } 
-            span.hidden { display: inline !important; }
-            
-            td { white-space: pre-wrap; word-wrap: break-word; }
-            
-            h3 { text-align: center; margin: 5px 0 2px 0; font-size: 14pt; text-transform: uppercase; color: #1e3a8a; } 
-            .date-print { text-align: center; font-size: 8pt; margin-bottom: 10px; color: #555; }
-        </style></head><body>
-        <h3>Laporan Operan SOAP - Ruang ${currentWardConfig.name}</h3>
-        <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>
-        ${content}
-        </body></html>
-    `;
-
-        cetakPWA(html, 'Print SOAP');
-    };
-
-    // ✨ FUNGSI HANTU: Mengamankan prop CPO lintas komponen agar tidak blank putih
-    const handlePrintCPO = () => { };
-
-    const handlePrintBukuCM = () => {
-        const content = document.getElementById('buku-cm-print');
-        if (!content) return alert("Konten tidak ditemukan.");
-
-        const html = `
-        <html><head><title>Cetak Buku Register (CM)</title>
-        <style>
-            @page { size: A4 portrait; margin: 5mm; }
-            body { font-family: Arial, sans-serif; margin: 0; padding: 10px; zoom: 0.9; }
-            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-            th, td { border: 1px solid black; padding: 4px; font-size: 8.5pt; text-align: center; overflow: hidden; }
-            th { background-color: #f3f4f6; font-weight: bold; text-transform: uppercase; font-size: 7.5pt; }
-            .text-left { text-align: left !important; padding-left: 5px; }
-            
-            /* Penyesuaian Lebar Kolom (Total 650px agar pas di A4) */
-            th:nth-child(1), td:nth-child(1) { width: 30px; }   /* No */
-            th:nth-child(2), td:nth-child(2) { width: 160px; }  /* Nama Pasien */
-            th:nth-child(3), td:nth-child(3) { width: 40px; }   /* KMR */
-            th:nth-child(4), td:nth-child(4) { width: 75px; }   /* No. RM */
-            th:nth-child(5), td:nth-child(5) { width: 110px; }  /* Dokter */
-            th:nth-child(6), td:nth-child(6) { width: 35px; }   /* Kls */
-            th:nth-child(7), td:nth-child(7) { width: 125px; }  /* Tgl Masuk */
-            th:nth-child(8), td:nth-child(8) { width: 75px; }   /* Hr (Lama Rawat) */
-            
-            input { display: none !important; } 
-            span.print-text { display: inline !important; } 
-            .no-print { display: none !important; }
-            h3 { text-align: center; margin-bottom: 10px; font-size: 14pt; color: #065f46; }
-        </style></head><body>
-        <h3>BUKU REGISTER RUANGAN (CM) - ${currentWardConfig.name}</h3>
-        ${content.innerHTML}
-        </body></html>
-    `;
-        cetakPWA(html, 'Cetak Buku Register (CM)');
-    };
-
-    // ✨ FUNGSI HANTU: Menjaga prop React agar tidak crash/blank putih
-    const handlePrintLabel = () => { };
-
     const handleExportExcel = () => {
         if (!records || records.length === 0) return alert("Tidak ada data.");
         const exported = records.filter(r => !r.isDischarged);
@@ -3689,7 +2564,7 @@ const MedicalRecordApp = ({
         return s;
     }, [records, activeRecords, archivedRecords, currentUser]);
 
-    // ✨ FITUR BARU: MESIN PEMINDAI AGENDA + AUTO SORTING + RESPONSIF FILTER DASHBOARD (V10 - FINAL)
+    // ✨ FITUR BARU: MESIN PEMINDAI AGENDA + AUTO SORTING + RESPONSIF FILTER DASHBOARD (V11 - SUPORT PAGI INI, BLPL & TRANSFUSI DARAH)
     const agendaHariIni = useMemo(() => {
         const agendas = [];
         const today = new Date();
@@ -3709,8 +2584,13 @@ const MedicalRecordApp = ({
         filteredActiveRecords.forEach(rec => {
             if (!rec.planning) return;
 
-            const { labs, rads, tms } = parsePlanning(rec.planning);
-            const allActions = [...labs, ...rads, ...tms];
+            // 1. Ekstrak data planning lengkap (termasuk rxs untuk Terapi / Transfusi)
+            const { labs, rads, tms, rxs, others } = parsePlanning(rec.planning);
+            const blplItems = (others || []).filter(line => /\b(blpl|rblpl|pulang|boleh pulang|rencana blpl)\b/i.test(line));
+            const trnfsItems = [...(rxs || []), ...(others || [])].filter(line => /trnfs|transfusi|prc|wb|tc|ffp/i.test(line));
+            
+            // Gabungkan seluruh tindakan, penunjang, rencana pulang, dan transfusi
+            const allActions = [...labs, ...rads, ...tms, ...blplItems, ...trnfsItems];
 
             const lastUpdate = rec.updatedAt?.toDate ? rec.updatedAt.toDate() : (rec.updatedAt ? new Date(rec.updatedAt) : new Date());
             const isUpdatedToday = lastUpdate.getDate() === today.getDate() && lastUpdate.getMonth() === today.getMonth();
@@ -3723,12 +2603,18 @@ const MedicalRecordApp = ({
                 const lowerAction = action.toLowerCase();
                 let isTargetToday = false;
 
+                // Radar Transfusi: Transfusi aktif otomatis masuk agenda hari ini jika tidak bertanggal besok/lusa
+                if (trnfsItems.includes(action)) {
+                    const isFuture = /\b(besok|bsk|lusa)\b/i.test(lowerAction) && isUpdatedToday;
+                    if (!isFuture) isTargetToday = true;
+                }
+
                 // Radar A: Deteksi Hari & Tanggal Angka murni
                 if (lowerAction.includes(namaHariIni)) isTargetToday = true;
                 if (tglVariasi.some(tgl => lowerAction.includes(tgl))) isTargetToday = true;
 
-                // Radar B: Deteksi Sore/Malam dinas berjalan
-                if (isUpdatedToday && (lowerAction.includes('sore') || lowerAction.includes('malam') || lowerAction.includes('nanti'))) {
+                // Radar B: Deteksi Pagi/Siang/Sore/Malam dinas berjalan
+                if (isUpdatedToday && (lowerAction.includes('pagi') || lowerAction.includes('siang') || lowerAction.includes('sore') || lowerAction.includes('malam') || lowerAction.includes('nanti'))) {
                     isTargetToday = true;
                 }
 
@@ -3737,8 +2623,8 @@ const MedicalRecordApp = ({
                     isTargetToday = true;
                 }
 
-                // Radar D: Deteksi kata kustom manual dari Smart Planning
-                if (lowerAction.includes('sekarang') || lowerAction.includes('hari ini')) {
+                // Radar D: Deteksi kata kustom manual dari Smart Planning / Tag
+                if (lowerAction.includes('sekarang') || lowerAction.includes('hari ini') || lowerAction.includes('pagi ini') || lowerAction.includes('sore ini') || lowerAction.includes('nanti malam')) {
                     isTargetToday = true;
                 }
 
@@ -3747,15 +2633,20 @@ const MedicalRecordApp = ({
                     if (rads.includes(action)) icon = '🩻';
                     else if (labs.includes(action)) icon = '🩸';
                     else if (tms.includes(action)) icon = '💉';
+                    else if (trnfsItems.includes(action)) icon = '🩸';
+                    else if (blplItems.includes(action) || lowerAction.includes('blpl') || lowerAction.includes('pulang')) icon = '🎉';
 
                     let cleanedAction = action;
-                    const todayRegex = new RegExp(`\\[[^\\]]*(${tglVariasi.join('|')}|sekarang|hari ini)[^\\]]*\\]`, 'gi');
+                    const todayRegex = new RegExp(`\\[[^\\]]*(${tglVariasi.join('|')}|sekarang|hari ini|pagi ini|sore ini|nanti malam)[^\\]]*\\]`, 'gi');
 
                     if (todayRegex.test(cleanedAction)) {
                         cleanedAction = cleanedAction.replace(todayRegex, '[Hari Ini]');
-                    } else {
-                        cleanedAction = cleanedAction.replace(/\b(besok|bsk|sekarang|hari ini)\b/gi, '[Hari Ini]');
+                    } else if (lowerAction.includes('besok') || lowerAction.includes('sekarang') || lowerAction.includes('hari ini') || lowerAction.includes('pagi ini')) {
+                        cleanedAction = cleanedAction.replace(/\b(besok|bsk|sekarang|hari ini|pagi ini|sore ini|nanti malam)\b/gi, '[Hari Ini]');
                     }
+
+                    // ✨ SENSOR PINTAR: Cek apakah agenda ini sudah ada di dalam array TTD
+                    const verifiedData = (rec.verifiedAgendas || []).find(v => v.action === cleanedAction);
 
                     agendas.push({
                         id: rec.id,
@@ -3763,7 +2654,9 @@ const MedicalRecordApp = ({
                         name: rec.name,
                         dpjp: rec.dpjpName,
                         action: cleanedAction,
-                        icon: icon
+                        icon: icon,
+                        isVerified: !!verifiedData, // True jika ketemu
+                        verifiedData: verifiedData || null // Simpan isi gambarnya
                     });
                 }
             });
@@ -3782,6 +2675,57 @@ const MedicalRecordApp = ({
 
         return agendas;
     }, [filteredActiveRecords]); // ⚡ DEPENDENCY UTAMA DIKUNCI KE DATA FILTERED
+
+    // 🔍 SENSOR RADAR: SIKLUS LACAK HASIL DARI KOLOM O (OBJEKTIF)
+    const lacakHariIni = useMemo(() => {
+        const list = [];
+
+        filteredActiveRecords.forEach(rec => {
+            if (!rec.objective) return;
+
+            const lines = rec.objective.split('\n');
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+
+                const lower = trimmed.toLowerCase();
+                // Deteksi baris yang memuat instruksi Lacak / Lapor / Simbol ⚠️
+                if (lower.startsWith('lacak') || lower.startsWith('⚠️') || lower.includes('lacak/lapor') || lower.includes('lacak:')) {
+                    const cleanText = trimmed
+                        .replace(/^⚠️\s*/, '')
+                        .replace(/^lacak\/lapor:\s*/i, '')
+                        .replace(/^lacak:\s*/i, '')
+                        .trim();
+
+                    // Tentukan ikon berdasarkan nama pemeriksaan
+                    let icon = '🔍';
+                    if (/lab|darah|tubex|urin|gds|urcr|elek|elektrolit|lipid|sgot|sgpt|tcm/i.test(lower)) icon = '🧪';
+                    else if (/rad|rontgen|thorax|usg|ct scan|bno|foto/i.test(lower)) icon = '🩻';
+                    else if (/trnfs|transfusi|prc|darah|wb|tc/i.test(lower)) icon = '🩸';
+
+                    list.push({
+                        id: rec.id,
+                        room: rec.roomNumber || '',
+                        name: rec.name,
+                        dpjp: rec.dpjpName,
+                        action: cleanText,
+                        icon: icon,
+                        record: rec
+                    });
+                }
+            });
+        });
+
+        // Urutkan berdasarkan nomor kamar
+        list.sort((a, b) => {
+            const numA = parseInt((a.room.match(/\d+/)?.[0] || '999'), 10);
+            const numB = parseInt((b.room.match(/\d+/)?.[0] || '999'), 10);
+            if (numA !== numB) return numA - numB;
+            return a.room.localeCompare(b.room);
+        });
+
+        return list;
+    }, [filteredActiveRecords]);
 
     // --- RENDER DASHBOARD ---
     const renderDashboard = () => (
@@ -3805,20 +2749,10 @@ const MedicalRecordApp = ({
                                 </div>
                             </div>
 
-                            {/* BARIS FILTER (Sekarang pakai flex-row agar berjejer 1 baris) */}
+                            {/* BARIS FILTER: Cari Nama/RM -> Semua DPJP -> Semua Kamar */}
                             <div className="flex flex-row gap-1.5 items-center w-full md:w-auto flex-1 md:ml-2">
 
-                                {/* Filter Kamar */}
-                                <div className="w-[85px] md:w-40 relative z-[55]">
-                                    <RoomFilterDropdown allRooms={currentWardConfig.roomList} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
-                                </div>
-
-                                {/* Filter DPJP Multi-Select */}
-                                <div className="w-[100px] md:w-48 relative z-[50]">
-                                    <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
-                                </div>
-
-                                {/* Search Bar (Nama / RM) */}
+                                {/* 1. Search Bar (Nama / RM) */}
                                 <div className="relative flex-1">
                                     <span className="absolute left-2.5 top-2 text-gray-400 text-[10px]">🔍</span>
                                     <input
@@ -3836,6 +2770,16 @@ const MedicalRecordApp = ({
                                             ✕
                                         </button>
                                     )}
+                                </div>
+
+                                {/* 2. Filter DPJP Multi-Select */}
+                                <div className="w-[100px] md:w-48 relative z-[50]">
+                                    <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
+                                </div>
+
+                                {/* 3. Filter Kamar */}
+                                <div className="w-[85px] md:w-40 relative z-[55]">
+                                    <RoomFilterDropdown allRooms={currentWardConfig.roomList} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
                                 </div>
                             </div>
                         </div>
@@ -3926,28 +2870,155 @@ const MedicalRecordApp = ({
                         <div className="space-y-3">
 
                             {/* ========================================================= */}
-                            {/* 🔔 ALARM AGENDA PENUNJANG HARI INI (PASANG DI SINI)       */}
+                            {/* 🔔 PAPAN PANTAUAN DINAS (SAKLAR GESER: RENCANA vs LACAK)   */}
                             {/* ========================================================= */}
-                            {agendaHariIni.length > 0 && (
-                                <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 shadow-sm animate-in fade-in slide-in-from-top-2">
-                                    <h3 className="text-xs font-black text-amber-900 uppercase flex items-center gap-1.5 mb-2 border-b border-amber-200 pb-1.5">
-                                        <span className="animate-bounce">🔔</span> Agenda Penunjang Terjadwal Hari Ini!
-                                    </h3>
-                                    <div className="space-y-1.5">
-                                        {agendaHariIni.map((agenda, i) => (
-                                            <div key={i} className="flex items-start gap-2 bg-white px-2 py-1.5 rounded border border-amber-200 shadow-sm cursor-pointer hover:bg-amber-100 transition" onClick={() => handleEdit(activeRecords.find(r => r.id === agenda.id))}>
-                                                <span className="text-sm shrink-0 leading-none pt-0.5">{agenda.icon}</span>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="text-[11px] font-bold text-slate-800 leading-tight">
-                                                        {agenda.action}
-                                                    </div>
-                                                    <div className="text-[9px] text-slate-500 font-medium mt-0.5">
-                                                        {agenda.room ? agenda.room.replace(/^(K\d+)(KM|P)$/, '$1•$2') : ''} a.n <span className="font-bold text-amber-700">{agenda.name}</span> ({agenda.dpjp})
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
+                            {(agendaHariIni.length > 0 || lacakHariIni.length > 0) && (
+                                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl p-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+                                    
+                                    {/* HEADER: JUDUL + SAKLAR GESER TAB */}
+                                    <div className="flex justify-between items-center border-b border-amber-200/80 pb-2 mb-2 flex-wrap gap-2">
+                                        
+                                        {/* SISI KIRI: SAKLAR GESER DUA MODE */}
+                                        <div className="flex items-center bg-amber-200/60 p-0.5 rounded-lg border border-amber-300 shadow-inner">
+                                            <button
+                                                type="button"
+                                                onClick={() => setAgendaSubTab('rencana')}
+                                                className={`px-2.5 py-1 rounded-md text-[10px] font-black transition flex items-center gap-1.5 ${
+                                                    agendaSubTab === 'rencana'
+                                                        ? 'bg-amber-600 text-white shadow-sm'
+                                                        : 'text-amber-900 hover:bg-amber-100/70'
+                                                }`}
+                                            >
+                                                <span className="inline-block animate-bounce text-xs">🔔</span>
+                                                <span>AGENDA HARI INI</span>
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono ${agendaSubTab === 'rencana' ? 'bg-amber-800 text-white' : 'bg-amber-300 text-amber-900'}`}>
+                                                    {agendaHariIni.length}
+                                                </span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setAgendaSubTab('lacak')}
+                                                className={`px-2.5 py-1 rounded-md text-[10px] font-black transition flex items-center gap-1.5 ${
+                                                    agendaSubTab === 'lacak'
+                                                        ? 'bg-orange-600 text-white shadow-sm'
+                                                        : 'text-orange-950 hover:bg-orange-100/70'
+                                                }`}
+                                            >
+                                                <span className="inline-block text-xs">🔍</span>
+                                                <span>Lacak Hasil</span>
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono ${agendaSubTab === 'lacak' ? 'bg-orange-800 text-white' : 'bg-orange-300 text-orange-950'}`}>
+                                                    {lacakHariIni.length}
+                                                </span>
+                                            </button>
+                                        </div>
+
+                                        {/* SISI KANAN: TOMBOL SERAH TERIMA MASAL (Hanya muncul saat tab Rencana & ada sampel belum TTD) */}
+                                        {agendaSubTab === 'rencana' && agendaHariIni.some(a => !a.isVerified) && (
+                                            <button 
+                                                onClick={() => setIsBulkHandoverOpen(true)}
+                                                className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg text-[9px] font-black shadow-sm transition animate-in zoom-in-95 flex items-center gap-1"
+                                            >
+                                                🧫 Serah Terima Masal
+                                            </button>
+                                        )}
                                     </div>
+
+                                    {/* KONTEN TAB 1: RENCANA AKSI (PLANNING) */}
+                                    {agendaSubTab === 'rencana' && (
+                                        <div className="space-y-1.5 animate-in fade-in duration-200">
+                                            {agendaHariIni.length === 0 ? (
+                                                <div className="text-center py-3 text-amber-700/70 text-[10px] italic font-medium bg-white/50 rounded-lg border border-amber-200">
+                                                    ✨ Tidak ada rencana tindakan/pemeriksaan tersisa hari ini.
+                                                </div>
+                                            ) : (
+                                                agendaHariIni.map((agenda, i) => (
+                                                    <div 
+                                                        key={i} 
+                                                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border shadow-sm transition ${agenda.isVerified ? 'bg-emerald-50/90 border-emerald-300' : 'bg-white border-amber-200 hover:bg-amber-100/60 cursor-pointer'}`} 
+                                                        onClick={() => !agenda.isVerified && handleEdit(activeRecords.find(r => r.id === agenda.id))}
+                                                    >
+                                                        <div className="flex items-start gap-2 flex-1 min-w-0">
+                                                            <span className="text-sm shrink-0 leading-none pt-0.5">{agenda.isVerified ? '✅' : agenda.icon}</span>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className={`text-[11px] font-bold leading-tight ${agenda.isVerified ? 'text-emerald-800 line-through opacity-70' : 'text-slate-800'}`}>
+                                                                    {agenda.action}
+                                                                </div>
+                                                                <div className={`text-[9px] font-medium mt-0.5 ${agenda.isVerified ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                                                    {agenda.room ? agenda.room.replace(/^(K\d+)(KM|P)$/, '$1•$2') : ''} a.n <span className={`font-bold ${agenda.isVerified ? 'text-emerald-700' : 'text-amber-700'}`}>{agenda.name}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* TOMBOL AKSI SERAH TERIMA */}
+                                                        <div className="shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+                                                            {!agenda.isVerified ? (
+                                                                <button 
+                                                                    onClick={() => setHandoverConfig({ isOpen: true, agenda, viewModeData: null })} 
+                                                                    className="bg-amber-100 hover:bg-amber-200 text-amber-800 px-2 py-1 rounded text-[9px] font-black border border-amber-300 shadow-sm transition animate-pulse"
+                                                                >
+                                                                    ✍️ TTD Bukti
+                                                                </button>
+                                                            ) : (
+                                                                <button 
+                                                                    onClick={() => setHandoverConfig({ isOpen: true, agenda, viewModeData: agenda.verifiedData })} 
+                                                                    className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-1 rounded text-[9px] font-black border border-emerald-300 shadow-sm transition"
+                                                                >
+                                                                    👁️ Lihat TTD
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* KONTEN TAB 2: LACAK HASIL (OBJEKTIF) */}
+                                    {agendaSubTab === 'lacak' && (
+                                        <div className="space-y-1.5 animate-in fade-in duration-200">
+                                            {lacakHariIni.length === 0 ? (
+                                                <div className="text-center py-4 text-orange-800/70 text-[10px] italic font-medium bg-white/50 rounded-lg border border-orange-200">
+                                                    🎉 Semua hasil pemeriksaan laboratorium & radiologi sudah selesai diinput!
+                                                </div>
+                                            ) : (
+                                                lacakHariIni.map((lacak, i) => (
+                                                    <div 
+                                                        key={i} 
+                                                        onClick={() => handleEdit(lacak.record)}
+                                                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-orange-200 bg-white hover:bg-orange-50/80 cursor-pointer shadow-sm transition group"
+                                                        title="Klik untuk buka SOAP dan input hasil lab/rad"
+                                                    >
+                                                        <div className="flex items-start gap-2 flex-1 min-w-0">
+                                                            <span className="text-sm shrink-0 leading-none pt-0.5 animate-pulse">{lacak.icon}</span>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="text-[11px] font-bold text-orange-950 leading-tight flex items-center gap-1.5">
+                                                                    <span>{lacak.action}</span>
+                                                                    <span className="bg-orange-100 text-orange-700 border border-orange-200 px-1 py-0.2 rounded text-[8px] font-mono font-bold">
+                                                                        MENUNGGU HASIL
+                                                                    </span>
+                                                                </div>
+                                                                <div className="text-[9px] text-slate-500 font-medium mt-0.5">
+                                                                    {lacak.room ? lacak.room.replace(/^(K\d+)(KM|P)$/, '$1•$2') : ''} a.n <span className="font-bold text-orange-800">{lacak.name}</span> <span className="text-slate-400">({lacak.dpjp})</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* TOMBOL INPUT HASIL */}
+                                                        <div className="shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+                                                            <button 
+                                                                onClick={() => handleEdit(lacak.record)}
+                                                                className="bg-orange-500 hover:bg-orange-600 text-white px-2.5 py-1 rounded text-[9px] font-black shadow-sm transition flex items-center gap-1"
+                                                            >
+                                                                ✏️ Input Hasil
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+
                                 </div>
                             )}
                             {/* ========================================================= */}
@@ -3975,7 +3046,7 @@ const MedicalRecordApp = ({
                                     // ✨ PERBAIKAN: Gunakan stripAuthorTags agar SEMUA stempel terhapus dari tampilan E-Ontang-Anting
                                     const safeSubjective = isActuallyEmpty(rawSubj) ? '' : stripAuthorTags(rawSubj);
                                     const safeObjective = isActuallyEmpty(rawObj) ? '' : stripAuthorTags(rawObj);
-                                    const safePlanning = isActuallyEmpty(rawPlan) ? '' : rawPlan;
+                                    const safePlanning = isActuallyEmpty(rawPlan) ? '' : stripAuthorTags(rawPlan);
 
                                     // Analisa tetap kita paksa bersih tanpa stempel (sesuai desain aslimu)
                                     const safeAnalysis = stripAuthorTags(rawAna);
@@ -4015,31 +3086,58 @@ const MedicalRecordApp = ({
                                                 {/* Sisi Kanan Header: Tanggal & Inisial Dinas Ns */}
                                                 <div className="text-right flex flex-col items-end justify-start font-bold text-[10px] text-slate-800 shrink-0">
 
-                                                    {/* ✨ BOX BARU: Membuat tombol Cetak & Publis manis berdampingan ke samping */}
-                                                    <div className="flex flex-row gap-1.5 mb-1.5">
-                                                        {/* ✨ TOMBOL TUKAR BED DI E-ONTANG-ANTING (FIXED) */}
+                                                    {/* ✨ BOX BARU: Deretan Tombol Mandor (Lapor, Tukar, Cetak, Keluar) berdampingan */}
+                                                    <div className="flex flex-row gap-1.5 mb-1.5 items-center flex-wrap">
+                                                        {/* 1. TOMBOL TUKAR BED */}
                                                         <button
                                                             type="button"
                                                             onClick={(e) => {
                                                                 e.stopPropagation(); // Mencegah layar form edit SOAP terbuka otomatis
-                                                                setPatientToSwap(rec); // Memakai variabel 'rec' yang valid di baris ini[cite: 3]
-                                                                setShowSwapModal(true); // Langsung nyalakan modal penukar bed[cite: 3]
+                                                                setPatientToSwap(rec); // Memakai variabel 'rec' yang valid di baris ini[cite: 2]
+                                                                setShowSwapModal(true); // Langsung nyalakan modal penukar bed[cite: 2]
                                                             }}
                                                             className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 shadow-sm transition flex items-center gap-1 text-[10px] font-bold"
                                                             title="Tukar / Pindah Bed Pasien"
                                                         >
                                                             🔀 Tukar
                                                         </button>
-                                                        {/* TOMBOL CETAK APOS */}
+                                                        {/* 2. TOMBOL LAPOR/KONSUL */}
                                                         <button
+                                                            type="button"
                                                             onClick={(e) => {
-                                                                e.stopPropagation(); // Mencegah layar Edit SOAP terbuka tak sengaja
-                                                                setSelectedRecordForPrint(rec); // 🚀 Memanggil Modal Print APOS bawaan SIMPAN!
+                                                                e.stopPropagation(); // Mencegah layar form edit SOAP terbuka otomatis
+                                                                setRecordForLapor(rec); // 🚀 Picu modal pilihan lapor WA spesifik pasien
                                                             }}
-                                                            className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 shadow-sm transition flex items-center gap-1"
+                                                            className="bg-green-50 hover:bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200 shadow-sm transition flex items-center gap-1 text-[10px] font-bold"
+                                                            title="Lapor / Konsul Pasien ke WA"
+                                                        >
+                                                            📱 Lapor
+                                                        </button>
+
+                                                        {/* 3. TOMBOL CETAK APOS */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation(); // Mencegah layar Edit SOAP terbuka tak sengaja[cite: 2]
+                                                                setSelectedRecordForPrint(rec); // 🚀 Memanggil Modal Print APOS bawaan SIMPAN![cite: 2]
+                                                            }}
+                                                            className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 shadow-sm transition flex items-center gap-1 text-[10px] font-bold"
                                                             title="Buka Preview Cetak APOS"
                                                         >
                                                             🖨️ Cetak
+                                                        </button>
+
+                                                        {/* 4. 🔥 TOMBOL KELUAR/DISCHARGE CEPAT (BARU) */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation(); // Biar gak buka form SOAP pas diklik[cite: 2]
+                                                                handleDischarge(rec.id, rec.name, rec.roomNumber); // 🚀 Picu modal kategori KRS/Pindah Ruangan/Meninggal[cite: 2]
+                                                            }}
+                                                            className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-1.5 py-0.5 rounded text-[10px] font-bold shadow-sm transition"
+                                                            title="Pulangkan / Pindahkan Pasien (KRS)"
+                                                        >
+                                                            🚪 KRS
                                                         </button>
 
                                                         {/* TOMBOL PUBLIKASIKAN */}
@@ -4092,9 +3190,9 @@ const MedicalRecordApp = ({
 
                                                     <div className="border-t border-dashed border-slate-300 pt-1.5">
                                                         <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">P (PLANNING)</div>
-                                                        {/* ✨ FIX 2: Hidupkan Badge Warna-Warni & Kedip di Planning */}
+                                                        {/* ✨ FIX: Menggunakan render lokal agar Terapi & Tindakan ter-enter sempurna */}
                                                         <div className="pl-1">
-                                                            {safePlanning ? renderPlanningCell(safePlanning, rec.medicationLogs) : <span className="text-slate-800 text-[11px] font-medium">-</span>}
+                                                            {safePlanning ? renderPlanningCell(autoSmartDateTransformer(safePlanning), rec?.medicationLogs) : <span className="text-slate-800 text-[11px] font-medium">-</span>}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -4103,7 +3201,6 @@ const MedicalRecordApp = ({
                                                 <div className="flex flex-col justify-between gap-2">
                                                     <div>
                                                         <div className="font-bold underline mb-1 bg-slate-100 inline-block px-1 text-[9px] border border-slate-200 rounded text-slate-700">O (OBJEKTIF)</div>
-                                                        {/* ✨ FIX 3: Hidupkan Lacak Kedip Oranye & Nilai Lab Merah/Biru */}
                                                         <div className="pl-1 text-slate-800 leading-tight text-[11px]">
                                                             {safeObjective ? (
                                                                 <div className="bg-slate-50 p-1.5 border border-slate-200 rounded text-slate-700 leading-normal">
@@ -4122,7 +3219,6 @@ const MedicalRecordApp = ({
                                                         </div>
                                                     )}
                                                 </div>
-
                                             </div>
 
                                             {/* ✨ TAB ROW: Lab | Rontgen | USG | CT | EKG | Luka */}
@@ -4507,7 +3603,7 @@ const MedicalRecordApp = ({
 
                                     <button onClick={() => { setView('dashboard'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'dashboard') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>🏠 Dashboard</button>
                                     <button onClick={() => { setView('patient-list'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'patient-list') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>📋 Daftar Pasien</button>
-                                    
+
                                     {/* ✨ MENU SETELAN + BADGE ANGKA NOTIFIKASI */}
                                     <button onClick={() => { setView('settings'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center justify-between text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'settings') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>
                                         <span>⚙️ Setelan</span>
@@ -4537,7 +3633,7 @@ const MedicalRecordApp = ({
                                             <div className="px-3 py-1 bg-purple-50">
                                                 <span className="text-[9px] font-bold text-purple-700 uppercase tracking-wider">👑 God Mode (Multi-RS)</span>
                                             </div>
-                                            
+
                                             {/* RENDER FOLDER RUMAH SAKIT */}
                                             <div className="max-h-48 overflow-y-auto custom-scrollbar">
                                                 {Object.keys(hospitalWardsList).sort().map(hospKey => {
@@ -4546,11 +3642,11 @@ const MedicalRecordApp = ({
                                                     return (
                                                         <div key={hospKey} className="flex flex-col">
                                                             {/* NAMA RS (SEBAGAI FOLDER) */}
-                                                            <button 
+                                                            <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation(); // Biar menu utama gak ketutup
                                                                     setExpandedHospital(expandedHospital === hospKey ? null : hospKey);
-                                                                }} 
+                                                                }}
                                                                 className="w-full text-left px-4 py-2 text-xs flex items-center justify-between font-bold hover:bg-slate-50 text-slate-800 border-b border-slate-50/50"
                                                             >
                                                                 <span className="truncate pr-2">🏥 {hospName}</span>
@@ -4613,18 +3709,36 @@ const MedicalRecordApp = ({
                                             <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-bold">{filteredActiveRecords.length} Pasien</span>
                                         </div>
 
-                                        {/* 2. BAGIAN FILTER (Sudah dimodifikasi agar selalu 1 baris di HP) */}
+                                        {/* 2. BAGIAN FILTER: Cari -> Semua DPJP -> Semua Kamar */}
                                         <div className="flex flex-row gap-1.5 items-center w-full md:w-auto flex-1 md:mx-2">
-                                            <div className="w-[85px] md:w-40 relative z-50">
-                                                <RoomFilterDropdown allRooms={currentWardConfig.roomList} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
+                                            {/* 1. Search Bar */}
+                                            <div className="relative flex-1">
+                                                <span className="absolute left-2.5 top-2 text-gray-400 text-xs">🔍</span>
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Cari Nama/RM..." 
+                                                    value={searchTerm} 
+                                                    onChange={(e) => setSearchTerm(e.target.value)} 
+                                                    className="w-full pl-8 pr-6 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 h-[32px] outline-none" 
+                                                />
+                                                {searchTerm && (
+                                                    <button 
+                                                        onClick={() => setSearchTerm('')} 
+                                                        className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                )}
                                             </div>
+
+                                            {/* 2. Filter DPJP */}
                                             <div className="w-[100px] md:w-48 relative z-50">
                                                 <DpjpFilterDropdown allOptions={dpjpOptions} selectedOptions={dpjpFilter} onChange={setDpjpFilter} />
                                             </div>
-                                            <div className="relative flex-1">
-                                                <span className="absolute left-2.5 top-2 text-gray-400 text-xs">🔍</span>
-                                                <input type="text" placeholder="Cari..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-8 pr-6 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 h-[32px] outline-none" />
-                                                {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-red-500 font-bold text-xs">✕</button>}
+
+                                            {/* 3. Filter Kamar */}
+                                            <div className="w-[85px] md:w-40 relative z-50">
+                                                <RoomFilterDropdown allRooms={currentWardConfig.roomList} selectedRooms={selectedRoomFilter} onChange={setSelectedRoomFilter} />
                                             </div>
                                         </div>
 
@@ -4656,12 +3770,12 @@ const MedicalRecordApp = ({
                                         onDischarge={handleDischarge}
                                         onBulkPrint={() => setShowBulkPrint(true)}
                                         roomSortOrder={selectedRoomFilter}
-                                        onPrintTTV={handlePrintTTV}
-                                        onPrintSOAP={handlePrintSOAP}
+                                        onPrintTTV={() => handlePrintTTV(currentWardConfig.name)}
+                                        onPrintSOAP={() => handlePrintSOAP(currentWardConfig.name)}
                                         onQuickTtv={(rec) => { setQuickTtvTarget(rec); setShowTtvModal(true); }}
                                         onBulkDischarge={handleBulkDischarge}
                                         updateRecord={updateRecord}
-                                        onPrintBukuCM={handlePrintBukuCM}
+                                        onPrintBukuCM={() => handlePrintBukuCM(currentWardConfig.name)}
                                         onPrintLabel={() => { }}
                                         db={db}
                                         currentUser={currentUser}
@@ -4676,6 +3790,7 @@ const MedicalRecordApp = ({
                                         renderPlanningCell={renderPlanningCell}
                                         BukuCMTable={BukuCMTable}
                                         GlobalMedicationBoard={GlobalMedicationBoard}
+                                        onOpenEkspedisi={() => setIsBukuEkspedisiOpen(true)}
                                     />
                                 </div>
                             </div>
@@ -4710,7 +3825,7 @@ const MedicalRecordApp = ({
                                 </div>
 
                                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-                                    
+
                                     {/* PANEL KIRI (4 KOLOM): DATA PRIBADI PERAWAT */}
                                     <div className="xl:col-span-4 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
                                         <h3 className="font-black text-xs text-slate-700 uppercase tracking-wider flex items-center justify-between border-b pb-2">
@@ -4730,7 +3845,7 @@ const MedicalRecordApp = ({
 
                                     {/* PANEL KANAN (8 KOLOM): MANAGEMENT GLOBAL MULTI-RS */}
                                     <div className="xl:col-span-8 space-y-6">
-                                        
+
                                         {/* MANAGEMENT PANEL USER (DIREKTRIS STRUKTUR RS & RUANGAN) */}
                                         {['admin', 'karu', 'PPJA'].includes(currentUser.role) && (
                                             <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-200 space-y-4">
@@ -4741,9 +3856,9 @@ const MedicalRecordApp = ({
                                                     {/* Form Input Kilat Perawat Baru */}
                                                     <div className="bg-white p-2 rounded-lg border border-indigo-100 text-[10px] font-bold text-indigo-700">
                                                         Total Terdaftar: {
-                                                            currentUser.role === 'admin' 
-                                                            ? allUsers.length 
-                                                            : allUsers.filter(u => u.hospital?.toUpperCase() === (currentUser.hospital || 'RSUD BAYU ASIH').toUpperCase() && u.ward?.toUpperCase() === currentUser.ward?.toUpperCase()).length
+                                                            currentUser.role === 'admin'
+                                                                ? allUsers.length
+                                                                : allUsers.filter(u => u.hospital?.toUpperCase() === (currentUser.hospital || 'RSUD BAYU ASIH').toUpperCase() && u.ward?.toUpperCase() === currentUser.ward?.toUpperCase()).length
                                                         } User
                                                     </div>
                                                 </div>
@@ -4765,9 +3880,9 @@ const MedicalRecordApp = ({
                                                             {currentUser.role === 'admin' && <option value="admin">God Admin</option>}
                                                         </select>
                                                         {/* ✨ FIX: Dropdown ruangan Terkunci jika Karu/PPJA */}
-                                                        <select 
-                                                            value={['karu', 'PPJA'].includes(currentUser.role) ? currentUser.ward : (adminUserForm.ward || 'MELATI')} 
-                                                            onChange={e => setAdminUserForm({ ...adminUserForm, ward: e.target.value.toUpperCase() })} 
+                                                        <select
+                                                            value={['karu', 'PPJA'].includes(currentUser.role) ? currentUser.ward : (adminUserForm.ward || 'MELATI')}
+                                                            onChange={e => setAdminUserForm({ ...adminUserForm, ward: e.target.value.toUpperCase() })}
                                                             disabled={['karu', 'PPJA'].includes(currentUser.role)}
                                                             className="p-2 border rounded text-xs bg-white font-extrabold text-indigo-700 outline-none disabled:bg-slate-100 disabled:text-slate-400"
                                                         >
@@ -4788,85 +3903,103 @@ const MedicalRecordApp = ({
                                                     {Object.keys(hospitalWardsList)
                                                         .filter(rsKey => currentUser.role === 'admin' || rsKey === (currentUser.hospital || 'RSUD BAYU ASIH').toUpperCase())
                                                         .sort().map(rsKey => {
-                                                        const hospData = hospitalWardsList[rsKey];
-                                                        const hospName = hospData.originalName || rsKey;
-                                                        const isExpanded = expandedHospital === rsKey || currentUser.role !== 'admin'; // Auto expand if not admin
-                                                        
-                                                        return (
-                                                        <div key={rsKey} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                                                            <button 
-                                                                onClick={() => { if(currentUser.role === 'admin') setExpandedHospital(isExpanded ? null : rsKey) }}
-                                                                className={`w-full flex items-center justify-between bg-slate-50 px-3 py-2 border-b border-slate-200 transition outline-none ${currentUser.role === 'admin' ? 'hover:bg-slate-100 cursor-pointer' : 'cursor-default'}`}
-                                                            >
-                                                                <span className="text-xs font-black text-slate-800">🏥 {hospName}</span>
-                                                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1">
-                                                                    Grup Institusi {currentUser.role === 'admin' ? (isExpanded ? '▼' : '▶') : ''}
-                                                                </span>
-                                                            </button>
-                                                            
-                                                            {isExpanded && (
-                                                                <div className="p-3 space-y-2 bg-white">
-                                                                    {Array.from(hospData.wards || [])
-                                                                        .filter(wardName => currentUser.role === 'admin' || wardName.toUpperCase() === (currentUser.ward || 'MELATI').toUpperCase())
-                                                                        .map(wardName => {
-                                                                        const roomUsers = allUsers.filter(u => 
-                                                                            (u.hospital || 'RSUD BAYU ASIH').toUpperCase() === rsKey && 
-                                                                            (u.ward || 'MELATI').toUpperCase() === wardName.toUpperCase()
-                                                                        );
-                                                                        if (roomUsers.length === 0) return null;
+                                                            const hospData = hospitalWardsList[rsKey];
+                                                            const hospName = hospData.originalName || rsKey;
+                                                            const isExpanded = expandedHospital === rsKey || currentUser.role !== 'admin'; // Auto expand if not admin
 
-                                                                        return (
-                                                                            <div key={wardName} className="ml-1 pl-2 border-l-2 border-indigo-200 space-y-1.5">
-                                                                                <div className="text-[11px] font-extrabold text-indigo-700 flex items-center gap-1">
-                                                                                    📂 Ruang {toTitleCase(wardName)} ({roomUsers.length} Staf)
-                                                                                </div>
-                                                                                
-                                                                                <div className="overflow-x-auto rounded-lg border border-slate-100">
-                                                                                    <table className="w-full text-[11px] text-left bg-white">
-                                                                                        <thead className="bg-slate-50 text-slate-600 font-bold border-b text-[10px]">
-                                                                                            <tr>
-                                                                                                <th className="p-2">ID</th>
-                                                                                                <th className="p-2">Nama</th>
-                                                                                                <th className="p-2">Role</th>
-                                                                                                <th className="p-2">Pass</th>
-                                                                                                <th className="p-2 text-center">Status</th>
-                                                                                                <th className="p-2 text-center">Aksi</th>
-                                                                                            </tr>
-                                                                                        </thead>
-                                                                                        <tbody className="divide-y divide-slate-100">
-                                                                                            {roomUsers.map(u => (
-                                                                                                <tr key={u.id} className="hover:bg-indigo-50/40">
-                                                                                                    <td className="p-2 font-mono text-slate-500">{u.id}</td>
-                                                                                                    <td className="p-2 font-bold text-slate-800">{u.name}</td>
-                                                                                                    <td className="p-2">
-                                                                                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : u.role === 'karu' ? 'bg-amber-100 text-amber-700' : u.role === 'PPJA' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{u.role === 'member' || u.role === 'Pelaksana' ? 'pelaksana' : u.role}</span>
-                                                                                                    </td>
-                                                                                                    <td className="p-2 font-mono text-slate-400">{u.pass}</td>
-                                                                                                    <td className="p-2 text-center">
-                                                                                                        {u.status === 'pending' ? (
-                                                                                                            <button onClick={() => handleAccUser(u.id)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-2 py-0.5 rounded text-[9px] font-black animate-pulse shadow-sm transition">✓ ACC</button>
-                                                                                                        ) : (
-                                                                                                            <span className="text-emerald-600 font-bold text-[9px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">Aktif</span>
-                                                                                                        )}
-                                                                                                    </td>
-                                                                                                    <td className="p-2 text-center flex justify-center gap-1.5">
-                                                                                                        <button onClick={() => setAdminUserForm({ ...u })} className="text-yellow-600 hover:scale-110 transition-transform">✏️</button>
-                                                                                                        {u.id !== currentUser.id && (
-                                                                                                            <button onClick={() => handleAdminDeleteUser(u.id)} className="text-red-500 hover:scale-110 transition-transform">🗑️</button>
-                                                                                                        )}
-                                                                                                    </td>
-                                                                                                </tr>
-                                                                                            ))}
-                                                                                        </tbody>
-                                                                                    </table>
-                                                                                </div>
-                                                                            </div>
-                                                                        );
-                                                                    })}
+                                                            return (
+                                                                <div key={rsKey} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                                                    {/* ✨ TOMBOL HEADER ACCORDION DENGAN SUNTIKAN TOMBOL TRASH */}
+                                                                    <div
+                                                                        onClick={() => { if (currentUser.role === 'admin') setExpandedHospital(isExpanded ? null : rsKey) }}
+                                                                        className={`w-full flex items-center justify-between bg-slate-50 px-3 py-2 border-b border-slate-200 transition select-none ${currentUser.role === 'admin' ? 'hover:bg-slate-100 cursor-pointer' : 'cursor-default'}`}
+                                                                    >
+                                                                        <span className="text-xs font-black text-slate-800">🏥 {hospName}</span>
+
+                                                                        {/* Wadah Aksi Kanan (Locker stopPropagation agar klik hapus tidak memicu buka-tutup accordion) */}
+                                                                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                                                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1">
+                                                                                Grup Institusi {currentUser.role === 'admin' ? (isExpanded ? '▼' : '▶') : ''}
+                                                                            </span>
+
+                                                                            {/* 🔥 TOMBOL EKSEKUSI MATI RS (Hanya muncul di mata Superadmin Abi) */}
+                                                                            {currentUser.role === 'admin' && rsKey !== 'RSUD BAYU ASIH' && (
+                                                                                <button
+                                                                                    onClick={() => handleDeleteHospital(rsKey, hospName)}
+                                                                                    className="bg-red-50 hover:bg-red-600 text-red-600 hover:text-white px-2 py-0.5 rounded-md border border-red-200 font-black text-[9px] transition-all shadow-sm"
+                                                                                    title={`Hapus Permanen Institusi ${hospName}`}
+                                                                                >
+                                                                                    🗑️ Hapus RS
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* ISI FOLDER (RUANGAN & USER) */}
+                                                                    {isExpanded && (
+                                                                        <div className="p-3 space-y-2 bg-white">
+                                                                            {Array.from(hospData.wards || [])
+                                                                                .filter(wardName => currentUser.role === 'admin' || wardName.toUpperCase() === (currentUser.ward || 'MELATI').toUpperCase())
+                                                                                .map(wardName => {
+                                                                                    const roomUsers = allUsers.filter(u =>
+                                                                                        (u.hospital || 'RSUD BAYU ASIH').toUpperCase() === rsKey &&
+                                                                                        (u.ward || 'MELATI').toUpperCase() === wardName.toUpperCase()
+                                                                                    );
+                                                                                    if (roomUsers.length === 0) return null;
+
+                                                                                    return (
+                                                                                        <div key={wardName} className="ml-1 pl-2 border-l-2 border-indigo-200 space-y-1.5">
+                                                                                            <div className="text-[11px] font-extrabold text-indigo-700 flex items-center gap-1">
+                                                                                                📂 Ruang {toTitleCase(wardName)} ({roomUsers.length} Staf)
+                                                                                            </div>
+
+                                                                                            <div className="overflow-x-auto rounded-lg border border-slate-100">
+                                                                                                <table className="w-full text-[11px] text-left bg-white">
+                                                                                                    <thead className="bg-slate-50 text-slate-600 font-bold border-b text-[10px]">
+                                                                                                        <tr>
+                                                                                                            <th className="p-2">ID</th>
+                                                                                                            <th className="p-2">Nama</th>
+                                                                                                            <th className="p-2">Role</th>
+                                                                                                            <th className="p-2">Pass</th>
+                                                                                                            <th className="p-2 text-center">Status</th>
+                                                                                                            <th className="p-2 text-center">Aksi</th>
+                                                                                                        </tr>
+                                                                                                    </thead>
+                                                                                                    <tbody className="divide-y divide-slate-100">
+                                                                                                        {roomUsers.map(u => (
+                                                                                                            <tr key={u.id} className="hover:bg-indigo-50/40">
+                                                                                                                <td className="p-2 font-mono text-slate-500">{u.id}</td>
+                                                                                                                <td className="p-2 font-bold text-slate-800">{u.name}</td>
+                                                                                                                <td className="p-2">
+                                                                                                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : u.role === 'karu' ? 'bg-amber-100 text-amber-700' : u.role === 'PPJA' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{u.role === 'member' || u.role === 'Pelaksana' ? 'pelaksana' : u.role}</span>
+                                                                                                                </td>
+                                                                                                                <td className="p-2 font-mono text-slate-400">{u.pass}</td>
+                                                                                                                <td className="p-2 text-center">
+                                                                                                                    {u.status === 'pending' ? (
+                                                                                                                        <button onClick={() => handleAccUser(u.id)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-2 py-0.5 rounded text-[9px] font-black animate-pulse shadow-sm transition">✓ ACC</button>
+                                                                                                                    ) : (
+                                                                                                                        <span className="text-emerald-600 font-bold text-[9px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">Aktif</span>
+                                                                                                                    )}
+                                                                                                                </td>
+                                                                                                                <td className="p-2 text-center flex justify-center gap-1.5">
+                                                                                                                    <button onClick={() => setAdminUserForm({ ...u })} className="text-yellow-600 hover:scale-110 transition-transform">✏️</button>
+                                                                                                                    {u.id !== currentUser.id && (
+                                                                                                                        <button onClick={() => handleAdminDeleteUser(u.id)} className="text-red-500 hover:scale-110 transition-transform">🗑️</button>
+                                                                                                                    )}
+                                                                                                                </td>
+                                                                                                            </tr>
+                                                                                                        ))}
+                                                                                                    </tbody>
+                                                                                                </table>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                            )}
-                                                        </div>
-                                                    )})}
+                                                            );
+                                                        })}
                                                 </div>
                                             </div>
                                         )}
@@ -4879,7 +4012,7 @@ const MedicalRecordApp = ({
                                                         {currentUser.role === 'admin' ? '🏗️ Builder Denah Ruangan Universal (SaaS Spawner)' : `🏗️ Builder Denah Ruangan (${currentWardConfig.name})`}
                                                     </h3>
                                                     <p className="text-[10px] text-sky-700 mt-0.5">
-                                                        {currentUser.role === 'admin' 
+                                                        {currentUser.role === 'admin'
                                                             ? 'Sebagai Superadmin, Anda bebas melahirkan RS baru atau membangun denah ruangan mana pun di Indonesia dari panel ini.'
                                                             : 'Modifikasi jumlah kasur dan tata letak denah ruangan Anda di sini.'}
                                                     </p>
@@ -4890,14 +4023,14 @@ const MedicalRecordApp = ({
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                         <div>
                                                             <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Target Rumah Sakit</label>
-                                                            <input 
-                                                                type="text" 
-                                                                list="existing-hospitals" 
-                                                                placeholder="Misal: RS KELUARGA REKSOSUDOMO" 
-                                                                value={currentUser.role === 'admin' ? (rebuildForm.rsTarget || '') : currentUser.hospital || 'RSUD BAYU ASIH'} 
-                                                                onChange={e => setRebuildForm({...rebuildForm, rsTarget: e.target.value})} 
+                                                            <input
+                                                                type="text"
+                                                                list="existing-hospitals"
+                                                                placeholder="Misal: RS KELUARGA REKSOSUDOMO"
+                                                                value={currentUser.role === 'admin' ? (rebuildForm.rsTarget || '') : currentUser.hospital || 'RSUD BAYU ASIH'}
+                                                                onChange={e => setRebuildForm({ ...rebuildForm, rsTarget: e.target.value })}
                                                                 disabled={currentUser.role !== 'admin'}
-                                                                className="w-full p-2 border rounded text-xs font-extrabold text-slate-800 outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50/50 uppercase disabled:bg-slate-100 disabled:text-slate-500" 
+                                                                className="w-full p-2 border rounded text-xs font-extrabold text-slate-800 outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50/50 uppercase disabled:bg-slate-100 disabled:text-slate-500"
                                                             />
                                                             {currentUser.role === 'admin' && (
                                                                 <datalist id="existing-hospitals">
@@ -4907,13 +4040,13 @@ const MedicalRecordApp = ({
                                                         </div>
                                                         <div>
                                                             <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Target Nama Ruangan</label>
-                                                            <input 
-                                                                type="text" 
-                                                                placeholder="Misal: KRESNA / MELATI / ICU" 
-                                                                value={currentUser.role === 'admin' ? (rebuildForm.wardTarget || '') : currentUser.ward || 'MELATI'} 
-                                                                onChange={e => setRebuildForm({...rebuildForm, wardTarget: e.target.value})} 
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Misal: KRESNA / MELATI / ICU"
+                                                                value={currentUser.role === 'admin' ? (rebuildForm.wardTarget || '') : currentUser.ward || 'MELATI'}
+                                                                onChange={e => setRebuildForm({ ...rebuildForm, wardTarget: e.target.value })}
                                                                 disabled={currentUser.role !== 'admin'}
-                                                                className="w-full p-2 border rounded text-xs font-extrabold text-indigo-700 outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50/50 uppercase disabled:bg-slate-100 disabled:text-slate-500" 
+                                                                className="w-full p-2 border rounded text-xs font-extrabold text-indigo-700 outline-none focus:ring-1 focus:ring-sky-500 bg-slate-50/50 uppercase disabled:bg-slate-100 disabled:text-slate-500"
                                                             />
                                                         </div>
                                                     </div>
@@ -4922,11 +4055,11 @@ const MedicalRecordApp = ({
                                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end pt-1">
                                                         <div>
                                                             <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Total Kasur Bed</label>
-                                                            <input type="number" min="1" max="100" value={rebuildForm.bedCount} onChange={e => setRebuildForm({...rebuildForm, bedCount: parseInt(e.target.value) || 20})} className="w-full p-1.5 border rounded text-xs text-center font-bold" />
+                                                            <input type="number" min="1" max="100" value={rebuildForm.bedCount} onChange={e => setRebuildForm({ ...rebuildForm, bedCount: parseInt(e.target.value) || 20 })} className="w-full p-1.5 border rounded text-xs text-center font-bold" />
                                                         </div>
                                                         <div>
                                                             <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Format Nama</label>
-                                                            <select value={rebuildForm.bedFormat} onChange={e => setRebuildForm({...rebuildForm, bedFormat: e.target.value})} className="w-full p-1.5 border rounded text-xs bg-white font-bold">
+                                                            <select value={rebuildForm.bedFormat} onChange={e => setRebuildForm({ ...rebuildForm, bedFormat: e.target.value })} className="w-full p-1.5 border rounded text-xs bg-white font-bold">
                                                                 <option value="K1">Awalan "K" (K1, K2)</option>
                                                                 <option value="1">Angka Saja (1, 2, 3)</option>
                                                                 <option value="1A">Format Blok (1A, 1B)</option>
@@ -4934,7 +4067,7 @@ const MedicalRecordApp = ({
                                                         </div>
                                                         <div>
                                                             <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Layout Lorong</label>
-                                                            <select value={rebuildForm.layout} onChange={e => setRebuildForm({...rebuildForm, layout: e.target.value})} className="w-full p-1.5 border rounded text-xs bg-white font-bold">
+                                                            <select value={rebuildForm.layout} onChange={e => setRebuildForm({ ...rebuildForm, layout: e.target.value })} className="w-full p-1.5 border rounded text-xs bg-white font-bold">
                                                                 <option value="1baris">1 Baris Berjejer</option>
                                                                 <option value="2baris">2 Baris (Kiri & Kanan)</option>
                                                             </select>
@@ -4953,7 +4086,7 @@ const MedicalRecordApp = ({
                                                 <h3 className="font-black text-slate-700 text-xs uppercase tracking-wider">🗂️ Master Data Medis Ruangan</h3>
                                                 <span className="text-[10px] bg-slate-100 px-2 py-0.5 text-slate-500 font-bold rounded">Isi Otomatis Mengikuti RS Terpilih</span>
                                             </div>
-                                            
+
                                             {/* Baris Input DPJP Baru */}
                                             <div className="flex space-x-2 mb-3">
                                                 <input type="text" placeholder="Nama Dokter Baru..." value={newDpjpName} onChange={(e) => setNewDpjpName(e.target.value)} className="border p-2 rounded text-xs w-1/2 outline-none focus:ring-1 focus:ring-indigo-500" />
@@ -5106,8 +4239,6 @@ const MedicalRecordApp = ({
                         setRecordForLapor={setRecordForLapor}
                         isFormReady={formData.name && formData.roomNumber && formData.dpjpName} loading={loading}
                         ALL_PLANNING_OPTIONS={combinedPlanningOptions}
-                        onPrintCPO={() => handlePrintCPO({ ...formData, id: currentRecordId })}
-                        onPrintLabel={handlePrintLabel}
                         masterLabs={masterLabs} masterRads={masterRads}
                         masterProcedures={masterProcedures}
                         masterMedications={masterMedications}
@@ -5224,667 +4355,39 @@ const MedicalRecordApp = ({
                     </div>
                 </div>
             )}
+            {/* ^^^ INI ADALAH PENUTUP DARI BLOK showSwapModal ^^^ */}
+
+            {/* ✨ JENDELA MODAL KANVAS TTD SERAH TERIMA TUNGGAL */}
+            <HandoverModal 
+                isOpen={handoverConfig.isOpen}
+                onClose={() => setHandoverConfig({ isOpen: false, agenda: null, viewModeData: null })}
+                agenda={handoverConfig.agenda}
+                onSave={handleSaveHandover}
+                currentUser={currentUser}
+                viewModeData={handoverConfig.viewModeData}
+            />
+
+            {/* ✨ JENDELA MODAL KANVAS TTD SERAH TERIMA NAMPAN MASAL */}
+            <BulkHandoverModal 
+                isOpen={isBulkHandoverOpen}
+                onClose={() => setIsBulkHandoverOpen(false)}
+                unverifiedAgendas={agendaHariIni.filter(a => !a.isVerified)}
+                onSaveBulk={handleSaveBulkHandover}
+                currentUser={currentUser}
+            />
+
+            {/* ✨ JENDELA MODAL BUKU EKSPEDISI DIGITAL (LACI RIWAYAT DEBAT) */}
+            <BukuEkspedisiModal 
+                isOpen={isBukuEkspedisiOpen}
+                onClose={() => setIsBukuEkspedisiOpen(false)}
+                activeRecords={activeRecords}
+                archivedRecords={archivedRecords}
+            />
 
             {/* --- JAM MELAYANG TRANSPARAN (GLASSMORPHISM) DI KANAN BAWAH --- */}
             <div className="fixed bottom-4 right-4 bg-white/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 shadow-lg z-[50] select-none opacity-50">
                 <DigitalClock />
             </div>
-        </div>
-    );
-};
-
-// --- PANEL INPUT WAITING LIST (UPDATED: CTRL+S SHORTCUT & QUICK TAGS MENU) ---
-const WaitingListInputPanel = ({ show, onClose, onAdd, availableRooms, waitingList = [], onUpdateRoom, activeRecords = [] }) => {
-
-    // State Form Input
-    const [form, setForm] = useState({
-        name: '', plannedRoom: '', originRoom: '',
-        insuranceClass: '', waNumber: '', diagnosis: ''
-    });
-
-    // State Edit Kamar (Pensil)
-    const [editingId, setEditingId] = useState(null);
-    const [tempRoom, setTempRoom] = useState('');
-
-    // ✨ TAMBAHKAN DUA BARIS INI UNTUK KUNCI DROPDOWN TAILWIND PADA HP
-    const [isRoomDropdownOpen, setIsRoomDropdownOpen] = useState(false);
-    const roomSelectRef = useRef(null);
-
-    // ✨ AUTO CLOSE MENU SAAT KLIK DI LUAR AREA KOTAK DROPDOWN
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (roomSelectRef.current && !roomSelectRef.current.contains(event.target)) {
-                setIsRoomDropdownOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    // --- 1. SHORTCUT KEYBOARD: CTRL + S DI MENU ANTREAN ---
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (!show) return;
-
-            // Deteksi Ctrl + S atau Ctrl + Enter
-            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'Enter')) {
-                e.preventDefault(); // Cegah browser menyimpan halaman
-
-                if (form.name && form.plannedRoom) {
-                    onAdd(form);
-                    setForm({ name: '', plannedRoom: '', originRoom: '', insuranceClass: '', waNumber: '', diagnosis: '' });
-                    onClose();
-                } else {
-                    alert("Gagal! Nama Pasien dan Target Kamar wajib diisi.");
-                }
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [show, form, onAdd, onClose]);
-
-    if (!show) return null;
-
-    const handleSubmit = (e) => {
-        if (e) e.preventDefault();
-        if (!form.name || !form.plannedRoom) return alert("Nama dan Rencana Kamar wajib diisi!");
-        onAdd(form);
-        setForm({ name: '', plannedRoom: '', originRoom: '', insuranceClass: '', waNumber: '', diagnosis: '' });
-        onClose();
-    };
-
-    const startEditing = (item) => {
-        setEditingId(item.id);
-        setTempRoom(item.plannedRoom);
-    };
-
-    const saveEditing = () => {
-        if (onUpdateRoom && tempRoom) {
-            onUpdateRoom(editingId, tempRoom);
-        }
-        setEditingId(null);
-    };
-
-    // LOGIKA DOT WARNA DROPDOWN
-    const getRoomOptionStatus = (roomName) => {
-        const SINGLE_BED_ROOMS = ['K7', 'K8', 'K9', 'K11', 'K12', 'K14'];
-
-        const patient = activeRecords.find(r => r.roomNumber === roomName);
-        if (patient) {
-            // ✨ FIX FINAL: Bedakan ikon & warna untuk bed yang sudah TERISI sesuai gender
-            if (patient.gender === 'L') {
-                return { dot: '🚹', label: 'Terisi Lk', colorClass: 'text-blue-700 font-bold' };
-            } else {
-                // Default ke Perempuan (Atau jika kosong anggap merah/perempuan)
-                return { dot: '🚺', label: 'Terisi Pr', colorClass: 'text-rose-700 font-bold' };
-            }
-        }
-
-        const booking = waitingList?.find(w => w.plannedRoom === roomName);
-        if (booking) return { dot: '⏳', label: 'Antre', colorClass: 'text-yellow-700 font-bold' };
-
-        if (SINGLE_BED_ROOMS.includes(roomName)) return { dot: '🟢', label: 'Kosong', colorClass: 'text-green-700 font-bold' };
-
-        const match = roomName.match(/^(K\d+)(KM|P)$/);
-        if (match) {
-            const roomCode = match[1];
-            // Jika bed saat ini KM, cari tetangganya yang P, begitu sebaliknya
-            const neighborBed = match[2] === 'KM' ? 'P' : 'KM';
-            const neighborRoomName = `${roomCode}${neighborBed}`;
-
-            const neighbor = activeRecords.find(r => r.roomNumber === neighborRoomName);
-            if (neighbor) {
-                if (neighbor.gender === 'L') return { dot: '🔵', label: 'Sisa Lk', colorClass: 'text-sky-600 font-bold' };
-                if (neighbor.gender === 'P') return { dot: '🟣', label: 'Sisa Pr', colorClass: 'text-purple-600 font-bold' };
-            }
-        }
-        return { dot: '🟢', label: 'Kosong', colorClass: 'text-green-700 font-bold' };
-    };
-
-    // --- 2. DATA DAFTAR PILIHAN REKOMENDASI (QUICK TAGS) ---
-    const quickOrigins = ['IGD', 'Poli Dalam', 'Poli Paru', 'Poli Saraf', 'ICU', 'HD'];
-    const quickDiagnoses = ['DHF', 'Dyspnea', 'GEA', 'CKD', 'Stroke', 'CAD', 'DM Tipe 2', 'Hipertensi', 'Pneumonia'];
-
-    return (
-        <div className="flex flex-col h-full bg-white shadow-2xl border-r border-indigo-200 relative">
-
-            {/* HEADER */}
-            <div className="p-3 bg-indigo-700 text-white flex justify-between items-center shadow-md z-10">
-                <div className="flex flex-col">
-                    <h3 className="font-bold text-sm flex items-center gap-1">📝 Input Antrean</h3>
-                    <p className="text-[10px] opacity-80">Tekan Ctrl + S untuk simpan cepat</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={handleSubmit} className="px-3 py-1.5 text-[10px] bg-white text-indigo-700 font-bold rounded shadow hover:bg-indigo-50 transition flex items-center gap-1">
-                        💾 Simpan
-                    </button>
-                    <button onClick={onClose} className="text-white hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg">✕</button>
-                </div>
-            </div>
-
-            {/* AREA UTAMA */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50 flex flex-col">
-
-                {/* FORM INPUT */}
-                <div className="p-4 space-y-3 bg-white border-b border-gray-200 mb-2 shadow-sm">
-                    <div>
-                        {/* ✨ TIMPA DENGAN VERSI CUSTOM DROPDOWN (ANTI-POLOSAN HP & TAB) */}
-                        <div className="relative" ref={roomSelectRef}>
-                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Kamar *</label>
-
-                            {/* Tombol Utama Pemicu Dropdown */}
-                            <button
-                                type="button"
-                                onClick={() => setIsRoomDropdownOpen(!isRoomDropdownOpen)}
-                                className="w-full bg-white border border-gray-300 text-gray-800 text-xs font-bold py-2 px-2.5 rounded flex justify-between items-center hover:bg-gray-50 transition shadow-sm h-[34px] outline-none focus:ring-1 focus:ring-indigo-500"
-                            >
-                                {form.plannedRoom ? (
-                                    (() => {
-                                        const status = getRoomOptionStatus(form.plannedRoom);
-                                        return (
-                                            <span className={`flex items-center gap-1.5 ${status.colorClass}`}>
-                                                <span className="text-sm leading-none">{status.dot}</span>
-                                                <span>Bed {form.plannedRoom}</span>
-                                                <span className="text-[10px] opacity-75 font-semibold">({status.label})</span>
-                                            </span>
-                                        );
-                                    })()
-                                ) : (
-                                    <span className="text-gray-400 font-normal">- Pilih Kamar -</span>
-                                )}
-                                <span className="text-gray-400 text-[9px]">{isRoomDropdownOpen ? '▲' : '▼'}</span>
-                            </button>
-
-                            {/* Menu Floating List Kamar Warna-Warni Menembus Batas Mobile */}
-                            {isRoomDropdownOpen && (
-                                <div className="absolute top-full left-0 w-full bg-white border border-gray-300 shadow-2xl rounded-xl mt-1 z-[200] p-1 max-h-56 overflow-y-auto custom-scrollbar">
-                                    {[...availableRooms]
-                                        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-                                        .map(r => {
-                                            const status = getRoomOptionStatus(r);
-                                            const isSelected = form.plannedRoom === r;
-                                            return (
-                                                <button
-                                                    key={r}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setForm({ ...form, plannedRoom: r });
-                                                        setIsRoomDropdownOpen(false);
-                                                    }}
-                                                    className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition-all flex items-center gap-2 mb-0.5 last:mb-0 ${status.colorClass} ${isSelected
-                                                        ? 'bg-indigo-600 text-white border-indigo-600 font-black'
-                                                        : 'hover:bg-slate-100 border-transparent'
-                                                        }`}
-                                                >
-                                                    <span className="text-sm leading-none shrink-0">{status.dot}</span>
-                                                    <span className="font-extrabold tracking-tight flex-1">Bed {r}</span>
-                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-black/5 text-gray-600'}`}>
-                                                        {status.label}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nama Pasien *</label>
-                            <input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500 font-bold" placeholder="Nama..." value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-                        </div>
-
-                        {/* INPUT ASAL + MENU SHORTCUT REKOMENDASI TAG */}
-                        <div>
-                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Asal Pasien</label>
-                            <input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500 font-medium" placeholder="IGD/Poli..." value={form.originRoom} onChange={e => setForm({ ...form, originRoom: e.target.value })} />
-                            {/* Menu Tag Selector Asal */}
-                            <div className="flex flex-wrap gap-1 mt-1">
-                                {quickOrigins.map(ori => (
-                                    <button
-                                        key={ori} type="button"
-                                        onClick={() => setForm({ ...form, originRoom: ori })}
-                                        className="text-[8px] bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 px-1 py-0.5 rounded border border-slate-200 transition font-bold"
-                                    >
-                                        {ori}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Kelas Jaminan</label>
-                            <select className="w-full p-2 text-xs border rounded outline-none bg-white focus:ring-1 focus:ring-indigo-500" value={form.insuranceClass} onChange={e => setForm({ ...form, insuranceClass: e.target.value })}>
-                                <option value="">- Pilih -</option>
-                                <option value="BPJS Kls 1">BPJS Kls 1</option>
-                                <option value="BPJS Kls 2">BPJS Kls 2</option>
-                                <option value="BPJS Kls 3">BPJS Kls 3</option>
-                                <option value="Umum/Asuransi">Umum/Asuransi</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">No. HP Keluarga</label>
-                            <input type="text" className="w-full p-2 text-xs border rounded outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="08xxx..." value={form.waNumber} onChange={e => setForm({ ...form, waNumber: e.target.value })} />
-                        </div>
-                    </div>
-
-                    {/* INPUT DIAGNOSA + MENU SHORTCUT REKOMENDASI TAG */}
-                    <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Diagnosa Awal / Keluhan</label>
-                        <textarea rows="2" className="w-full p-2 text-xs border rounded outline-none resize-none focus:ring-1 focus:ring-indigo-500 font-medium" placeholder="Ketik diagnosa medis..." value={form.diagnosis} onChange={e => setForm({ ...form, diagnosis: e.target.value })}></textarea>
-                        {/* Menu Tag Selector Diagnosa */}
-                        <div className="flex flex-wrap gap-1 mt-1">
-                            {quickDiagnoses.map(diag => (
-                                <button
-                                    key={diag} type="button"
-                                    onClick={() => {
-                                        const currentDiag = form.diagnosis ? form.diagnosis.trim() : '';
-                                        // Jika kolom kosong langsung isi, jika ada isinya tambahkan koma spasi
-                                        setForm({
-                                            ...form,
-                                            diagnosis: currentDiag ? `${currentDiag}, ${diag}` : diag
-                                        });
-                                    }}
-                                    className="text-[8px] bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white px-1.5 py-0.5 rounded border border-indigo-100 transition font-bold"
-                                >
-                                    +{diag}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                {/* TABEL DAFTAR ANTREAN */}
-                <div className="p-2 flex-1">
-                    <h3 className="px-2 mb-1 text-[10px] font-bold text-indigo-800 uppercase tracking-wider">Daftar Antrean Saat Ini ({waitingList.length})</h3>
-                    {waitingList.length === 0 ? (
-                        <div className="text-center py-8 text-gray-400 italic text-xs border-2 border-dashed border-gray-200 rounded mt-2 bg-white">Belum ada pasien antre.</div>
-                    ) : (
-                        <div className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden">
-                            <table className="w-full text-left">
-                                <thead className="bg-indigo-50 border-b border-indigo-100 text-[10px] uppercase text-indigo-600 font-bold">
-                                    <tr>
-                                        <th className="p-2">Target Kamar</th>
-                                        <th className="p-2">Pasien</th>
-                                        <th className="p-2 text-center">Asal</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="text-xs divide-y divide-gray-100">
-                                    {waitingList.map((item) => (
-                                        <tr key={item.id} className="hover:bg-indigo-50/50 group transition-colors">
-                                            <td className="p-2 font-bold text-indigo-700 w-[130px] align-top">
-                                                {editingId === item.id ? (
-                                                    <div className="flex items-center gap-1 animate-in zoom-in-95 duration-100">
-                                                        <select
-                                                            className="w-full p-1 text-[10px] border border-indigo-300 rounded bg-white focus:ring-1 focus:ring-indigo-500 font-bold"
-                                                            value={tempRoom}
-                                                            onChange={e => setTempRoom(e.target.value)}
-                                                            autoFocus
-                                                        >
-                                                            {[...availableRooms]
-                                                                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-                                                                .map(r => {
-                                                                    const status = getRoomOptionStatus(r);
-                                                                    return <option key={r} value={r}>{status.dot} {r}</option>
-                                                                })}
-                                                        </select>
-                                                        <button onClick={saveEditing} className="bg-green-100 text-green-700 hover:bg-green-200 p-1 rounded border border-green-300" title="Simpan">✅</button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex justify-between items-center group">
-                                                        <span>{item.plannedRoom}</span>
-                                                        <button
-                                                            onClick={() => startEditing(item)}
-                                                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition p-1"
-                                                            title="Ganti Kamar"
-                                                        >
-                                                            ✏️
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="p-2 align-top">
-                                                <div className="font-bold text-gray-800">{item.name}</div>
-                                                <div className="text-[9px] text-gray-500 truncate max-w-[120px] leading-tight">{item.diagnosis || '-'}</div>
-                                            </td>
-                                            <td className="p-2 text-center text-gray-500 text-[10px] align-top pt-3 font-bold">
-                                                {item.originRoom || 'IGD'}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// --- KOMPONEN GAMBAR & RADIOLOGI (V2 - SMART PASTE ENABLED) ---
-const RadiologyGallery = ({ images = [], onAddImage, onRemoveImage, currentUser }) => {
-    const [activeCategory, setActiveCategory] = useState('Rontgen');
-    const [previewImage, setPreviewImage] = useState(null);
-
-    const CATEGORIES = ['Rontgen', 'USG', 'CT Scan', 'EKG', 'Luka', 'Lainnya'];
-
-    // Filter images by active category
-    const categoryImages = images.filter(img => img.category === activeCategory);
-
-    // ✨ FITUR MANDOR: ANTENA CLIPBOARD PENDETEKSI CTRL+V (DIRECT PASTE)
-    useEffect(() => {
-        const handleClipboardPaste = (e) => {
-            const items = e.clipboardData?.items;
-            if (!items) return;
-
-            // Pindai isi clipboard untuk mendeteksi apakah ada kiriman file gambar
-            for (let i = 0; i < items.length; i++) {
-                if (items[i].type.indexOf("image") !== -1) {
-                    const file = items[i].getAsFile();
-                    const reader = new FileReader();
-
-                    reader.onload = (event) => {
-                        const uploadedBy = (currentUser?.name || 'Perawat').split(' ')[0];
-                        const now = new Date();
-
-                        // Menjaga keseragaman format tanggal & waktu persisten sesuai V1
-                        const dateStr = now.toLocaleDateString('id-ID', {
-                            day: '2-digit', month: '2-digit', year: '2-digit'
-                        });
-                        const timeStr = now.toLocaleTimeString('id-ID', {
-                            hour: '2-digit', minute: '2-digit'
-                        });
-
-                        // Tembakkan langsung ke database lewat fungsi onAddImage bawaan kartu
-                        onAddImage([{
-                            category: activeCategory,
-                            imageUrl: event.target.result, // base64 link
-                            date: dateStr,
-                            time: timeStr,
-                            uploadedBy: uploadedBy,
-                            id: `img_${Date.now()}_${i}`
-                        }]);
-                    };
-                    reader.readAsDataURL(file);
-                }
-            }
-        };
-
-        // Pasang pendengar otomatis di jendela browser laptop RS
-        window.addEventListener('paste', handleClipboardPaste);
-        return () => window.removeEventListener('paste', handleClipboardPaste);
-    }, [activeCategory, currentUser, onAddImage]);
-
-    // Group images by date for display
-    const groupedByDate = useMemo(() => {
-        const groups = {};
-        categoryImages.forEach(img => {
-            const dateKey = img.date || 'Unknown';
-            if (!groups[dateKey]) groups[dateKey] = [];
-            groups[dateKey].push(img);
-        });
-        // Sort groups by date (newest first)
-        return Object.entries(groups).sort((a, b) => {
-            const dateA = new Date(a[0].split('/').reverse().join('-'));
-            const dateB = new Date(b[0].split('/').reverse().join('-'));
-            return dateB - dateA;
-        });
-    }, [categoryImages]);
-
-    const handleFileUpload = (e) => {
-        const files = Array.from(e.target.files);
-        if (files.length === 0) return;
-
-        const reader = new FileReader();
-        let loadedCount = 0;
-        const newImages = [];
-
-        files.forEach((file, idx) => {
-            reader.onload = (event) => {
-                const uploadedBy = (currentUser?.name || 'Perawat').split(' ')[0];
-                const now = new Date();
-                const dateStr = now.toLocaleDateString('id-ID', {
-                    day: '2-digit', month: '2-digit', year: '2-digit'
-                });
-                const timeStr = now.toLocaleTimeString('id-ID', {
-                    hour: '2-digit', minute: '2-digit'
-                });
-
-                newImages.push({
-                    category: activeCategory,
-                    imageUrl: event.target.result,
-                    date: dateStr,
-                    time: timeStr,
-                    uploadedBy: uploadedBy,
-                    id: `img_${Date.now()}_${idx}`
-                });
-
-                loadedCount++;
-                if (loadedCount === files.length) {
-                    onAddImage(newImages);
-                }
-            };
-            reader.readAsDataURL(files[idx]);
-        });
-        e.target.value = '';
-    };
-
-    const formatCategoryIcon = (cat) => {
-        switch (cat) {
-            case 'Rontgen': return '🩻';
-            case 'USG': return '🔊';
-            case 'CT Scan': return '💉';
-            case 'EKG': return '❤️';
-            case 'Luka': return '🩹';
-            default: return '📷';
-        }
-    };
-
-    return (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-gray-700 to-gray-600 px-3 py-2 flex items-center justify-between">
-                <h3 className="text-xs font-bold text-white flex items-center gap-2">
-                    📷 Gambar & Radiologi
-                </h3>
-                <span className="text-[10px] text-gray-300">
-                    {images.length} file tersimpan
-                </span>
-            </div>
-
-            {/* Category Tabs */}
-            <div className="flex flex-wrap gap-1 p-2 bg-gray-50 border-b border-gray-200">
-                {CATEGORIES.map(cat => {
-                    const count = images.filter(img => img.category === cat).length;
-                    return (
-                        <button
-                            key={cat}
-                            onClick={() => setActiveCategory(cat)}
-                            className={`px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 ${activeCategory === cat
-                                ? 'bg-indigo-600 text-white shadow-sm'
-                                : 'bg-white text-gray-600 border border-gray-200 hover:bg-indigo-50 hover:text-indigo-600'
-                                }`}
-                        >
-                            {formatCategoryIcon(cat)} {cat}
-                            {count > 0 && (
-                                <span className={`px-1 rounded-full text-[9px] ${activeCategory === cat ? 'bg-white/30' : 'bg-gray-200'}`}>
-                                    {count}
-                                </span>
-                            )}
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* Content Area */}
-            <div className="p-3 space-y-3">
-                {/* 🌟 UPGRADE DESAIN BOX: Ditambahkan panduan visual untuk Ctrl + V agar informatif */}
-                <div className="border-2 border-dashed border-indigo-300 bg-indigo-50/20 rounded-lg p-4 text-center hover:border-indigo-400 transition-all">
-                    <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        onChange={handleFileUpload}
-                        className="hidden"
-                        id={`rad-upload-${activeCategory}`}
-                    />
-                    <label
-                        htmlFor={`rad-upload-${activeCategory}`}
-                        className="cursor-pointer flex flex-col items-center gap-1.5"
-                    >
-                        <span className="text-2xl animate-pulse">📋</span>
-                        <span className="text-xs text-indigo-900 font-black">
-                            Tekan Ctrl + V untuk Paste Gambar Langsung!
-                        </span>
-                        <span className="text-[9px] text-slate-500 font-medium">
-                            Atau klik di sini untuk pilih file dari folder Windows
-                        </span>
-                    </label>
-                </div>
-
-                {/* Gallery */}
-                {groupedByDate.length > 0 ? (
-                    <div className="space-y-3">
-                        {groupedByDate.map(([date, imgs]) => (
-                            <div key={date} className="bg-gray-50 rounded-lg p-2 border border-gray-100">
-                                <div className="text-[10px] font-bold text-gray-500 mb-2 flex items-center gap-1">
-                                    📅 {date}
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {imgs.map((img, idx) => (
-                                        <div key={img.id || idx} className="relative group">
-                                            <img
-                                                src={img.imageUrl}
-                                                alt={`${img.category} ${idx + 1}`}
-                                                className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:border-indigo-400 hover:scale-105 transition-all shadow-sm"
-                                                onClick={() => setPreviewImage(img.imageUrl)}
-                                                title={`${img.uploadedBy} • ${img.time || ''}`}
-                                            />
-                                            <button
-                                                onClick={() => onRemoveImage(img.id || img.imageUrl)}
-                                                className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md hover:bg-red-600"
-                                                title="Hapus"
-                                            >
-                                                ✕
-                                            </button>
-                                            <div className="absolute -bottom-1 -right-1 bg-white/90 text-[8px] text-gray-500 px-1 rounded shadow-sm opacity-0 group-hover:opacity-100 transition">
-                                                {img.time}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-6 text-gray-400">
-                        <span className="text-3xl">🖼️</span>
-                        <p className="text-[10px] mt-1">Belum ada {activeCategory}</p>
-                        <p className="text-[9px]">Screenshot / Snip gambar lalu tekan Ctrl + V di sini</p>
-                    </div>
-                )}
-            </div>
-
-            {/* Fullscreen Preview Modal */}
-            {previewImage && (
-                <div
-                    className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4"
-                    onClick={() => setPreviewImage(null)}
-                >
-                    <button
-                        className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white w-10 h-10 rounded-full text-xl flex items-center justify-center transition"
-                        onClick={() => setPreviewImage(null)}
-                    >
-                        ✕
-                    </button>
-                    <img
-                        src={previewImage}
-                        alt="Preview"
-                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                </div>
-            )}
-        </div>
-    );
-};
-
-// ✨ 2. MESIN PEMBACA & PEWARNA OTOMATIS (V3: ANTI SALAH BACA ANGKA DI NAMA LAB)
-const FormattedObjective = ({ text }) => {
-    if (!text) return <span>-</span>;
-
-    const lines = text.split('\n');
-
-    return (
-        <div className="whitespace-pre-wrap">
-            {lines.map((line, idx) => {
-                const trimmedLine = line.trim();
-                const lowerLine = trimmedLine.toLowerCase();
-
-                // ✨ LINDUNGI HEADER WAKTU AGAR TERLUKIS RAPI
-                if (/^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*\]$/.test(trimmedLine)) {
-                    return (
-                        <div key={idx} className="text-[10px] font-extrabold text-indigo-500 border-b border-indigo-100 pb-0.5 mt-1.5 mb-1 first:mt-0">
-                            🕒 {trimmedLine}
-                        </div>
-                    );
-                }
-
-                // ✨ Pakai LAB_PATTERNS dari constants.js (regex robust, bukan startsWith)
-                let abnormalType = null;
-
-                for (const [key, pattern] of Object.entries(LAB_PATTERNS || {})) {
-                    // Skip multi-line patterns (Gram/Sputum, TCM, dll.)
-                    if (typeof pattern !== 'object' || !pattern.test) continue;
-
-                    const match = trimmedLine.match(pattern);
-                    if (match && match[1]) {
-                        const valStr = match[1].trim();
-                        const range = LAB_NORMAL_RANGES[key];
-                        const num = parseFloat(valStr.replace(',', '.'));
-
-                        if (!isNaN(num) && range) {
-                            if (num > range.max) abnormalType = 'high';
-                            else if (num < range.min) abnormalType = 'low';
-                            break;
-                        }
-                    }
-                }
-
-                if (!abnormalType) {
-                    const isDanger = /(positif|reaktif|detected|ditemukan|resistan)/i.test(lowerLine);
-                    const isSafe = /(negatif|non[- ]?reaktif|not detected|tidak ditemukan)/i.test(lowerLine);
-                    if (isDanger && !isSafe) abnormalType = 'text-bad';
-                }
-
-                let spanClass = "";
-                let arrow = "";
-
-                if (abnormalType === 'high') {
-                    spanClass = "text-red-600 font-bold bg-red-50 px-1 rounded inline-block shadow-sm";
-                    arrow = " ⬆️";
-                } else if (abnormalType === 'low') {
-                    spanClass = "text-blue-600 font-bold bg-blue-50 px-1 rounded inline-block shadow-sm";
-                    arrow = " ⬇️";
-                } else if (abnormalType === 'text-bad') {
-                    spanClass = "text-red-600 font-bold bg-red-50 px-1 rounded inline-block shadow-sm";
-                    arrow = " ⚠️";
-                }
-
-                return (
-                    <span key={idx}>
-                        <span className={spanClass}>
-                            {line}{arrow}
-                        </span>
-                        {idx !== lines.length - 1 && <br />}
-                    </span>
-                );
-            })}
         </div>
     );
 };
@@ -5926,47 +4429,8 @@ const App = () => {
             return null;
         }
     });
-    const [loginForm, setLoginForm] = useState({ id: '', pass: '' });
-    // ✨ STATE FASE 1: NAVIGASI ONBOARDING SAAS (SMART FORM)
-    const [authView, setAuthView] = useState('LOGIN'); // Hanya 2 opsi: 'LOGIN' atau 'REGISTER'
-    const [regForm, setRegForm] = useState({
-        fullname: '', id: '', pass: '', role: 'Pelaksana',
-        rsSelect: '', newRsName: '',
-        wardSelect: '', newWardName: '',
-        bedCount: 20, layout: '2baris', bedFormat: 'K1'
-    });
     const [appMode, setAppMode] = useState('MEDIS');
     const [allUsers, setAllUsers] = useState([]);
-
-    // ✨ RADAR RS & RUANGAN UNTUK HALAMAN PENDAFTARAN (SEBELUM LOGIN)
-    const [publicHospitals, setPublicHospitals] = useState({
-        'RSUD BAYU ASIH': ['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK']
-    });
-
-    useEffect(() => {
-        if (!db) return;
-        const fetchHospitals = async () => {
-            try {
-                const snap = await getDocs(collection(db, 'users'));
-                const hw = { 'RSUD BAYU ASIH': new Set(['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK']) };
-                snap.docs.forEach(d => {
-                    const data = d.data();
-                    if (data.hospital && data.ward) {
-                        const h = data.hospital.toUpperCase();
-                        const w = data.ward.toUpperCase();
-                        if (!hw[h]) hw[h] = new Set();
-                        hw[h].add(w);
-                    }
-                });
-                const result = {};
-                Object.keys(hw).forEach(k => { result[k] = Array.from(hw[k]).sort(); });
-                setPublicHospitals(result);
-            } catch (e) {
-                console.log("Radar RS Public error:", e);
-            }
-        };
-        fetchHospitals();
-    }, [db]);
 
     // --- INIT FIREBASE (VERSI BYPASS JARINGAN RS) ---
     useEffect(() => {
@@ -6028,184 +4492,13 @@ const App = () => {
         };
     }, [currentUser]);
 
-    // --- [LEVEL 3] LOGIC LOGIN VIA DATABASE (FINAL) ---
-    const handleLogin = async (e) => {
-        e.preventDefault();
-
-        // Cek koneksi db
-        if (!db) {
-            alert("Database belum siap. Coba refresh halaman.");
-            return;
-        }
-
-        try {
-            // 1. Cari User di Firestore berdasarkan ID (misal: 'abi')
-            // Kita paksa lowercase biar tidak case-sensitive
-            const targetId = loginForm.id.toLowerCase().trim();
-            const userDocRef = doc(db, 'users', targetId);
-
-            // Ambil data dari awan...
-            const userSnap = await getDoc(userDocRef);
-
-            if (userSnap.exists()) {
-                const userData = userSnap.data();
-
-                // 2. Cek Password & Status Approval
-                if (userData.pass === loginForm.pass) {
-                    
-                    // ✨ GEMBOK FASE 3: Cegah login jika akun masih pending
-                    if (userData.status === 'pending') {
-                        return alert("Mohon maaf, akun Anda masih berstatus PENDING. Minta Karu / Admin ruangan Anda untuk mengaktifkannya.");
-                    }
-
-                    // SUKSES!
-                    console.log("Login Berhasil via Firestore:", userData.name);
-
-                    // Berikan Cap Bangsal Default & Instansi
-                    const userWithWard = {
-                        ...userData,
-                        ward: userData.ward || 'MELATI',
-                        hospital: userData.hospital || 'RSUD Bayu Asih'
-                    };
-
-                    setCurrentUser(userWithWard);
-                    setAppMode('MEDIS');
-                    setUserId(userWithWard.id);
-
-                    // Kunci sesi di memori lokal
-                    localStorage.setItem('simpan_user', JSON.stringify(userWithWard));
-                    localStorage.setItem('simpan_uid', userWithWard.id);
-                    localStorage.setItem('simpan_last_active', new Date().getTime());
-                } else {
-                    alert('Password salah!');
-                }
-            } else {
-                alert('Username tidak ditemukan di Database!');
-            }
-        } catch (error) {
-            console.error("Login Error:", error);
-            alert("Terjadi kesalahan koneksi. Cek internet.");
-        }
-    };
-
-    // --- [FASE 3] LOGIC PENDAFTARAN SAAS (MULTI-TENANT) ---
-    const handleRegister = async (e) => {
-        e.preventDefault();
-        if (!db) return alert("Database belum siap. Cek koneksi!");
-
-        // 1. Tentukan Nama RS dan Ruangan (✨ PAKSA KAPITAL AGAR TIDAK DOUBLE!)
-        const finalRsName = (regForm.rsSelect === 'BUAT_BARU' ? regForm.newRsName.trim() : regForm.rsSelect).toUpperCase();
-        const finalWardName = (regForm.wardSelect === 'BUAT_BARU' ? regForm.newWardName.trim() : regForm.wardSelect).toUpperCase();
-
-        if (!finalRsName || !finalWardName) return alert("Rumah Sakit dan Ruangan wajib diisi!");
-
-        // 2. Standarisasi ID (Username kecil semua tanpa spasi)
-        const targetId = regForm.id.toLowerCase().trim().replace(/\s+/g, '_');
-
-        try {
-            // Cek apakah username sudah dipakai orang lain di seluruh Indonesia
-            const userDocRef = doc(db, 'users', targetId);
-            const userSnap = await getDoc(userDocRef);
-
-            if (userSnap.exists()) {
-                return alert(`Username "${targetId}" sudah dipakai! Silakan pilih username lain (misal ditambah angka).`);
-            }
-
-            // 3. Tentukan Role & Status
-            const isFounder = regForm.wardSelect === 'BUAT_BARU';
-            const finalRole = isFounder ? 'karu' : regForm.role; 
-            
-            // ✨ REVISI: SEMUA AKUN WAJIB PENDING! (Biar Abi bisa ACC RS/Ruangan Baru dari Setelan)
-            const finalStatus = 'pending'; 
-
-            // 4. Siapkan KTP Digital User Baru
-            const newUser = {
-                id: targetId,
-                name: regForm.fullname.trim(),
-                pass: regForm.pass,
-                role: finalRole,
-                hospital: finalRsName,
-                ward: finalWardName,
-                status: finalStatus,
-                createdAt: Timestamp.now()
-            };
-
-            // Simpan ke database (KTP User) - ✨ FIX: Hapus kode duplikat di sini
-            await setDoc(userDocRef, newUser);
-
-            // ✨ FASE 2: MESIN BUILDER DENAH RUANGAN & ISOLASI MASTER DATA
-            if (isFounder) {
-                // A. Rakit Array Kasur berdasarkan isian form
-                const count = regForm.bedCount || 20;
-                const format = regForm.bedFormat || 'K1';
-                const layout = regForm.layout || '2baris';
-                const rooms = [];
-                for (let i = 1; i <= count; i++) {
-                    if (format === 'K1') rooms.push(`K${i}`);
-                    else if (format === '1A') rooms.push(`${Math.ceil(i/2)}${i%2===1?'A':'B'}`);
-                    else rooms.push(`${i}`);
-                }
-                
-                // B. Rakit Layout Lorong
-                let left = [], right = [];
-                if (layout === '1baris') {
-                    left = rooms;
-                } else {
-                    const mid = Math.ceil(rooms.length / 2);
-                    left = rooms.slice(0, mid);
-                    right = rooms.slice(mid);
-                }
-                const newWardConfig = { roomList: rooms, leftRooms: left, rightRooms: right, name: finalWardName };
-
-                // C. Simpan ke Laci Khusus RS Baru
-                const safeHospName = finalRsName.replace(/\s+/g, '_').toUpperCase();
-                // ✨ FIX: Pastikan appId terbaca dengan aman
-                const safeAppId = firebaseConfig?.appId || '1:1097108054720:web:a53efbaf9882d5086d0325';
-                const configRef = doc(db, `artifacts/${safeAppId}/public/data/settings_${safeHospName}`, 'mainConfig');
-                
-                try {
-                    const snap = await getDoc(configRef);
-                    let existingWards = {};
-                    if (snap.exists() && snap.data().wards) existingWards = snap.data().wards;
-                    existingWards[finalWardName] = newWardConfig;
-
-                    await setDoc(configRef, {
-                        wards: existingWards,
-                        // D. Cegah Kebocoran Dokter! Jika ini bukan Bayu Asih, kosongkan semua DPJP & Lab.
-                        ...(snap.exists() ? {} : { 
-                            dpjpProfiles: finalRsName === 'RSUD BAYU ASIH' ? initialDpjpProfiles : [], 
-                            masterLabs: [], masterRads: [], masterProcedures: [], masterMedications: [] 
-                        })
-                    }, { merge: true });
-                } catch(e) { 
-                    console.error("Gagal build denah:", e); 
-                }
-            } // ✨ FIX: Ini adalah penutup kurung kurawal if(isFounder) yang sangat krusial
-
-            // 5. Notifikasi Keberhasilan (Sama Rata)
-            alert(`Pendaftaran Berhasil diajukan! 📝\n\nAkun Anda berstatus PENDING.\nSilakan hubungi Admin Pusat (Abi) / Karu ruangan untuk meminta persetujuan ACC sebelum Login.`);
-
-            // Kembalikan ke halaman login & bersihkan form
-            setAuthView('LOGIN');
-            setRegForm({
-                fullname: '', id: '', pass: '', role: 'Pelaksana',
-                rsSelect: '', newRsName: '', wardSelect: '', newWardName: '',
-                bedCount: 20, layout: '2baris', bedFormat: 'K1'
-            });
-
-        } catch (error) {
-            console.error("Gagal mendaftar:", error);
-            alert("Terjadi kesalahan saat mendaftar. Cek koneksi internet.");
-        }
-    };
-
     // ✨ TAHAP 4: FUNGSI SUPERADMIN UNTUK PINDAH RUANGAN & RUMAH SAKIT
     const handleSwitchWard = (targetWard, targetHospital) => {
         // Jika targetHospital dikirim, gunakan itu. Jika tidak, gunakan RS yang sedang aktif.
         const finalHospital = targetHospital || currentUser.hospital;
 
-        const updatedUser = { 
-            ...currentUser, 
+        const updatedUser = {
+            ...currentUser,
             ward: targetWard,
             hospital: finalHospital // 👇 Kunci sukses God Mode pindah RS!
         };
@@ -6213,7 +4506,7 @@ const App = () => {
 
         // Update juga brankas di browser agar tidak hilang saat di-refresh
         localStorage.setItem('simpan_user', JSON.stringify(updatedUser));
-        
+
         if (targetHospital) {
             alert(`Beralih ke pantauan Ruang ${targetWard} - ${targetHospital}`);
         } else {
@@ -6225,11 +4518,11 @@ const App = () => {
         setUserId(null);
         setLoginForm({ id: '', pass: '' });
         setAppMode('MEDIS');
-        
+
         localStorage.removeItem('simpan_user');
         localStorage.removeItem('simpan_uid');
         localStorage.removeItem('simpan_last_active');
-        
+
         // ✅ FIX 2A: Bersihkan Cache Data Master agar tidak terbawa ke RS Lain!
         localStorage.removeItem('backupDpjp');
         localStorage.removeItem('masterLabs');
@@ -6249,207 +4542,21 @@ const App = () => {
 
     // --- 1. TAMPILAN LOGIN & ONBOARDING (FASE 1 - SAAS MODE - COMPACT EDITION) ---
     if (!currentUser) {
-        // ✨ DUMMY_HOSPITALS SUDAH DIHAPUS, SEKARANG BACA DARI RADAR DATABASE
-        const availableHospitals = Object.keys(publicHospitals);
-        const availableWards = regForm.rsSelect && publicHospitals[regForm.rsSelect] ? publicHospitals[regForm.rsSelect] : [];
-
         return (
-            <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
-                {/* 🔄 UPGRADE: Mengurangi padding dari p-8 menjadi p-5 md:p-6 agar lebih padat di layar laptop kecil */}
-                <div className="bg-white p-5 md:p-6 rounded-2xl shadow-xl max-w-md w-full border border-slate-200 relative max-h-[95vh] overflow-y-auto custom-scrollbar transition-all duration-300">
-                    <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-purple-600"></div>
-
-                    {/* HEADER LOGO */}
-                    <div className="text-center mb-5 mt-0 flex flex-col items-center animate-in zoom-in-95 duration-500">
-                        {/* 🔄 UPGRADE: Logo diperbesar ke h-24 (sebelumnya h-16), tapi tetap aman untuk layar kecil */}
-                        <img src="/logo1.png" alt="Logo SIMPAN" className="h-24 md:h-28 object-contain drop-shadow-md mb-1.5" />
-                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1 border-t border-slate-100 pt-2 w-4/5 mx-auto">
-                            Sistem Manajemen Pelayanan Abi Nugroho
-                        </p>
-                    </div>
-
-                    {/* ---------------------------------------------------------------- */}
-                    {/* TAMPILAN A: LOGIN STANDAR */}
-                    {/* ---------------------------------------------------------------- */}
-                    {authView === 'LOGIN' && (
-                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                            {/* 🔄 UPGRADE: space-y-4 jadi space-y-3 */}
-                            <form onSubmit={handleLogin} className="space-y-3">
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Username</label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-2 text-slate-400">👤</span>
-                                        <input
-                                            type="text" placeholder="Ketik username..."
-                                            className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium"
-                                            value={loginForm.id} onChange={e => setLoginForm({ ...loginForm, id: e.target.value })} autoFocus
-                                        />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 ml-1">Password</label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-2 text-slate-400">🔒</span>
-                                        <input
-                                            type="password" placeholder="••••••"
-                                            className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium"
-                                            value={loginForm.pass} onChange={e => setLoginForm({ ...loginForm, pass: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-                                <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold hover:bg-indigo-700 transition shadow-md flex items-center justify-center gap-2 mt-2">
-                                    <span>🚀</span> Masuk
-                                </button>
-                            </form>
-
-                            <div className="mt-4 border-t border-slate-100 pt-3 text-center flex flex-col items-center">
-                                <p className="text-[11px] text-slate-500 mb-1.5">Belum punya akun?
-                                    <button
-                                        onClick={() => setAuthView('REGISTER')}
-                                        className="text-xs font-bold text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 px-5 py-1.5 rounded-lg transition-colors border border-indigo-100 w-fit"
-                                    >
-                                        Daftar di sini
-                                    </button>
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ---------------------------------------------------------------- */}
-                    {/* TAMPILAN B: REGISTRASI (SMART FORM) */}
-                    {/* ---------------------------------------------------------------- */}
-                    {authView === 'REGISTER' && (
-                        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                            <div className="flex items-center gap-2 mb-3 border-b border-slate-100 pb-1.5">
-                                <button onClick={() => setAuthView('LOGIN')} className="text-slate-400 hover:text-indigo-600 transition" title="Kembali">
-                                    <ChevronLeft size={18} />
-                                </button>
-                                <h3 className="font-black text-indigo-900 text-sm uppercase">📝 Pendaftaran Akun Baru</h3>
-                            </div>
-
-                            {/* 🔄 UPGRADE: space-y-3 jadi space-y-2 */}
-                            <form className="space-y-2" onSubmit={handleRegister}>
-
-                                {/* 1. IDENTITAS DIRI */}
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div><label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Nama Lengkap</label><input type="text" placeholder="Mis: Ns. Abi" className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-1 focus:ring-indigo-500" value={regForm.fullname} onChange={e => setRegForm({ ...regForm, fullname: e.target.value })} required /></div>
-                                    <div><label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Username Baru</label><input type="text" placeholder="Mis: abi.ns" className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-1 focus:ring-indigo-500" value={regForm.id} onChange={e => setRegForm({ ...regForm, id: e.target.value })} required /></div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div><label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Password</label><input type="password" placeholder="••••••" className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-1 focus:ring-indigo-500" value={regForm.pass} onChange={e => setRegForm({ ...regForm, pass: e.target.value })} required /></div>
-                                    <div>
-                                        <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Role / Jabatan</label>
-                                        <select className="w-full p-1.5 border rounded bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-bold text-indigo-800" value={regForm.role} onChange={e => setRegForm({ ...regForm, role: e.target.value })}>
-                                            <option value="Pelaksana">Perawat Pelaksana</option>
-                                            <option value="Karu">Kepala Ruangan (Karu)</option>
-                                            <option value="PPJA">Perawat - PPJA</option>
-                                            <option value="Dokter_Jaga">Dokter Jaga</option>
-                                            <option value="DPJP">Dokter DPJP</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                {/* 2. PILIH / BUAT INSTANSI (SMART DROPDOWN) */}
-                                <div className="p-2.5 border border-slate-200 bg-slate-50/50 rounded-lg space-y-2 mt-2">
-                                    {/* Rumah Sakit */}
-                                    <div>
-                                        <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Rumah Sakit</label>
-                                        <select
-                                            className="w-full p-1.5 border rounded bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                                            value={regForm.rsSelect}
-                                            onChange={e => setRegForm({ ...regForm, rsSelect: e.target.value, wardSelect: '' })}
-                                            required
-                                        >
-                                            <option value="">- Pilih Rumah Sakit -</option>
-                                            {availableHospitals.map(rs => <option key={rs} value={rs}>{rs}</option>)}
-                                            <option value="BUAT_BARU" className="font-bold text-indigo-600">+ 🏥 Buat RS Baru...</option>
-                                        </select>
-
-                                        {/* Auto-muncul jika RS Baru dipilih */}
-                                        {regForm.rsSelect === 'BUAT_BARU' && (
-                                            <div className="mt-1.5 animate-in fade-in slide-in-from-top-1">
-                                                <input type="text" placeholder="Ketik Nama Rumah Sakit Baru..." className="w-full p-1.5 border border-indigo-300 rounded bg-indigo-50/30 text-xs outline-none focus:ring-1 focus:ring-indigo-500" value={regForm.newRsName} onChange={e => setRegForm({ ...regForm, newRsName: e.target.value })} required />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Ruangan */}
-                                    <div>
-                                        <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Ruangan</label>
-                                        <select
-                                            className="w-full p-1.5 border rounded bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
-                                            value={regForm.wardSelect}
-                                            onChange={e => setRegForm({ ...regForm, wardSelect: e.target.value })}
-                                            disabled={!regForm.rsSelect}
-                                            required
-                                        >
-                                            <option value="">- Pilih Ruangan -</option>
-                                            {availableWards.map(w => <option key={w} value={w}>{w}</option>)}
-                                            <option value="BUAT_BARU" className="font-bold text-indigo-600">+ 🛏️ Buat Ruangan Baru...</option>
-                                        </select>
-                                    </div>
-
-                                    {/* Auto-muncul Builder Denah jika Ruangan Baru dipilih */}
-                                    {regForm.wardSelect === 'BUAT_BARU' && (
-                                        <div className="p-2 border border-indigo-200 bg-indigo-50 rounded-lg space-y-1.5 mt-1.5 animate-in fade-in zoom-in-95 duration-200">
-                                            <h4 className="text-[10px] font-black text-indigo-900 border-b border-indigo-100 pb-1 flex items-center gap-1">
-                                                ✨ Setup Denah Ruangan Baru
-                                            </h4>
-                                            <div>
-                                                <label className="block text-[8px] font-bold text-slate-500 uppercase mb-0.5">Nama Ruangan Baru</label>
-                                                <input type="text" placeholder="Mis: IGD / ICU / Melati" className="w-full p-1.5 border rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500" value={regForm.newWardName} onChange={e => setRegForm({ ...regForm, newWardName: e.target.value })} required />
-                                            </div>
-                                            <div className="grid grid-cols-3 gap-2">
-                                                <div><label className="block text-[8px] font-bold text-slate-500 uppercase mb-0.5">Total Bed</label><input type="number" min="1" max="100" className="w-full p-1.5 border rounded text-xs text-center" value={regForm.bedCount} onChange={e => setRegForm({ ...regForm, bedCount: parseInt(e.target.value) })} /></div>
-                                                <div className="col-span-2">
-                                                    <label className="block text-[8px] font-bold text-slate-500 uppercase mb-0.5">Format Bed</label>
-                                                    <select className="w-full p-1.5 border rounded text-xs bg-white" value={regForm.bedFormat} onChange={e => setRegForm({ ...regForm, bedFormat: e.target.value })}>
-                                                        <option value="K1">Awalan "K" (K1, K2)</option>
-                                                        <option value="1">Angka Saja (1, 2, 3)</option>
-                                                        <option value="1A">Format Blok (1A, 1B)</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label className="block text-[8px] font-bold text-slate-500 uppercase mb-0.5">Layout Lorong</label>
-                                                <select className="w-full p-1.5 border rounded text-xs bg-white" value={regForm.layout} onChange={e => setRegForm({ ...regForm, layout: e.target.value })}>
-                                                    <option value="1baris">1 Baris Berjejer</option>
-                                                    <option value="2baris">2 Baris (Sisi Kiri & Kanan)</option>
-                                                </select>
-                                            </div>
-                                            <p className="text-[8px] text-indigo-600 font-medium italic leading-tight">*Sebagai pembuat ruangan, Anda otomatis dijadikan Admin (Karu) di sini.</p>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* WARNING MESSAGE JIKA GABUNG RUANGAN */}
-                                {regForm.wardSelect && regForm.wardSelect !== 'BUAT_BARU' && (
-                                    <div className="text-[9px] text-amber-600 bg-amber-50 p-1.5 rounded border border-amber-200 font-medium leading-tight mt-2">
-                                        ⚠️ Akun Anda memerlukan persetujuan <b>Admin/Karu {regForm.wardSelect}</b> untuk dapat masuk.
-                                    </div>
-                                )}
-
-                                <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold hover:bg-emerald-700 transition shadow-md text-sm mt-3">
-                                    Daftar Sekarang 🚀
-                                </button>
-                            </form>
-                        </div>
-                    )}
-
-                    {/* FOOTER & LINK APRESIASI */}
-                    <div className="text-center mt-4 pt-3 border-t border-slate-100 animate-in fade-in duration-500">
-                        <a
-                            href="https://trakteer.id/481nugroho"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[10px] text-slate-400 hover:text-indigo-600 font-medium transition-colors inline-flex items-center gap-1 hover:underline pb-0.5"
-                        >
-                            ✨ Traktir Kopi?
-                        </a>
-                        <p className="text-[9px] text-slate-400">&copy; 2026 SIMPAN - E-Ontang-Anting</p>
-                    </div>
-                </div>
-            </div>
+            <AuthScreen 
+                db={db} 
+                appId={firebaseConfig.appId}
+                initialDpjpProfiles={initialDpjpProfiles}
+                firebaseConfig={firebaseConfig}
+                onLoginSuccess={(userData) => {
+                    setCurrentUser(userData);
+                    setAppMode('MEDIS');
+                    setUserId(userData.id);
+                    localStorage.setItem('simpan_user', JSON.stringify(userData));
+                    localStorage.setItem('simpan_uid', userData.id);
+                    localStorage.setItem('simpan_last_active', new Date().getTime());
+                }}
+            />
         );
     }
 

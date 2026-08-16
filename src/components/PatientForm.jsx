@@ -370,7 +370,7 @@ const PatientForm = ({
         setShowSmartPaste(false); setRawPasteData('');
     };
 
-    // --- SMART PASTE OBAT: OTOMATIS BABAT HABIS KALIMAT PANJANG ECALYPTUS ---
+    // --- SMART PASTE OBAT: SENSOR ANTI-PECAHAN DOSIS, SENSOR NEBU, & DETEKSI SACHET ---
     const processPlanningText = (rawText) => {
         const toTitleCase = (str) => str.toLowerCase().replace(/(?:^|\s)\w/g, match => match.toUpperCase());
         const cleanCase = (str) => { if (!str) return ''; return str.toLowerCase().replace(/(^\s*\w|[\.\!\?]\s*\w|\n\s*\w)/g, c => c.toUpperCase()); };
@@ -378,6 +378,16 @@ const PatientForm = ({
         let finalPlanning = [];
         let prescriptionList = [];
         const lines = rawText.split('\n');
+
+        // 🛡️ SENSOR ANTI-PECAHAN: Deteksi jika baris HANYA berisi angka/satuan dosis tanpa nama obat
+        const isOrphanDoseOnly = (str) => {
+            const clean = str.toLowerCase()
+                .replace(/^(?:nebu|inhalasi|uap|inj|tab|kaps|po|iv)\s*/i, '')
+                .replace(/\b(?:\d+(?:[.,]\d+)?|\/|\-|\+|\*|mg|gr|g|mcg|ml|iu|cc|vial|ampul|amp|kolf|fls|sachet|sac|tab|kaps|dd|x)\b/gi, '')
+                .replace(/[^a-z]/g, '')
+                .trim();
+            return clean.length < 2; // Jika sisa huruf < 2, berarti cuma angka/satuan murni
+        };
 
         lines.forEach((line, index) => {
             // Bersihkan bullet point bawaan ecal jika ada di awal teks copas
@@ -400,69 +410,124 @@ const PatientForm = ({
             if (tableMatch) {
                 if (index > 0) {
                     let prevLine = lines[index - 1].trim().replace(/^[•\-\*\u2022\.]+\s*/, '').replace(/Nama Obat|No\. Resep|-/gi, '').trim();
-                    if (prevLine.length > 2) { drugName = prevLine; dosage = `${tableMatch[1]}x${tableMatch[2]}`; isMedicine = true; }
+                    if (prevLine.length > 2 && !isOrphanDoseOnly(prevLine)) { 
+                        drugName = prevLine; 
+                        dosage = `${tableMatch[1]}x${tableMatch[2]}`; 
+                        isMedicine = true; 
+                    }
                 }
             }
-            else if (manualMatch) { drugName = manualMatch[1].trim(); dosage = manualMatch[2].trim().replace(/\s*[xX]\s*/, 'x'); if (drugName.length > 2) isMedicine = true; }
-            else if (infusMatch) { drugName = infusMatch[1].trim(); dosage = infusMatch[2].trim(); if (!drugName) drugName = "Cairan Infus"; isMedicine = true; }
-            else if (nebuMatch) { drugName = "Nebu " + nebuMatch[1].trim(); dosage = "Sesuai Jadwal"; isMedicine = true; }
-            else if (freqMatch) { drugName = freqMatch[1].trim(); dosage = freqMatch[2].trim(); if (drugName.length > 2) isMedicine = true; }
+            else if (manualMatch) { 
+                const candidateName = manualMatch[1].trim();
+                if (candidateName.length > 2 && !isOrphanDoseOnly(candidateName)) {
+                    drugName = candidateName; 
+                    dosage = manualMatch[2].trim().replace(/\s*[xX]\s*/, 'x'); 
+                    isMedicine = true; 
+                }
+            }
+            else if (infusMatch) { 
+                drugName = infusMatch[1].trim(); 
+                dosage = infusMatch[2].trim(); 
+                if (!drugName) drugName = "Cairan Infus"; 
+                isMedicine = true; 
+            }
+            else if (nebuMatch) { 
+                const candidateName = nebuMatch[1].trim();
+                // Cegah baris pecahan seperti "0,5 mg/2 ml" berdiri sendiri
+                if (!isOrphanDoseOnly(candidateName)) {
+                    drugName = "Nebu " + candidateName; 
+                    dosage = "Sesuai Jadwal"; 
+                    isMedicine = true; 
+                }
+            }
+            else if (freqMatch) { 
+                const candidateName = freqMatch[1].trim();
+                if (candidateName.length > 2 && !isOrphanDoseOnly(candidateName)) {
+                    drugName = candidateName; 
+                    dosage = freqMatch[2].trim(); 
+                    isMedicine = true; 
+                }
+            }
 
             if (isMedicine) {
                 let cleanMed = drugName.toLowerCase().trim();
 
                 // 1. Jalankan Kamus Penerjemah Singkatan dari constants.js
-                Object.keys(MEDICATION_TRANSLATOR).forEach(key => {
-                    if (cleanMed.includes(key)) {
-                        cleanMed = cleanMed.replace(new RegExp(key, 'g'), MEDICATION_TRANSLATOR[key]);
-                    }
-                });
+                if (typeof MEDICATION_TRANSLATOR !== 'undefined') {
+                    Object.keys(MEDICATION_TRANSLATOR).forEach(key => {
+                        if (cleanMed.includes(key)) {
+                            cleanMed = cleanMed.replace(new RegExp(key, 'g'), MEDICATION_TRANSLATOR[key]);
+                        }
+                    });
+                }
 
                 // ============================================================
-                // 🧠 OPTIMASI BARU: SMART ROUTE DETECTOR (IV vs p.o vs Inhalasi)
+                // 🧠 SENSOR RUTE CERDAS (DENGAN PEMBATAS KATA \b AGAR FARBIVENT BUKAN IV)
                 // ============================================================
                 let routeSuffix = '';
                 const lowerTextForRoute = cleanMed.toLowerCase();
 
-                const isSyrup = /(?:sirup|syr)\b/.test(lowerTextForRoute);
-                const isNebu = /(?:nebu|nebulizer|inhalasi|uap|respule|combiven|pulmicort)/.test(lowerTextForRoute);
+                // A. Deteksi Nebu / Inhalasi
+                const isNebu = /\b(?:nebu|nebulizer|inhalasi|uap|respule|neb)\b/i.test(lowerTextForRoute) ||
+                    /(?:combiven|pulmicort|farbivent|ventolin|meptin|atrovent|berotec|flexotide|flutias|flutison|spiriva|symbicort|seretide)/i.test(lowerTextForRoute);
 
-                // Pemilahan Rute Cerdas
+                // B. Deteksi Sachet / Serbuk Larut
+                const isSachet = /\b(?:sachet|sac|sacc|saset|bungkus|serbuk|pulv|puyer)\b/i.test(lowerTextForRoute) ||
+                    /(?:lacto[\s\-]b|oralit|smecta|l[\s\-]bio|vip[\s\-]albumin|interlac|braxidin|biodiar)/i.test(lowerTextForRoute);
+
+                // C. Deteksi Sirup
+                const isSyrup = /\b(?:sirup|syr|dry\s*syr|drop|drops|suspensi|susp)\b/i.test(lowerTextForRoute);
+
+                // D. Deteksi Injeksi / IV (Memakai pembatas kata \b agar kata seperti Farbivent tidak dianggap IV)
+                const isInjection = /\b(?:inj|injeksi|iv|i\.v\.|im|i\.m\.|sc|s\.c\.|vial|ampul|amp|drip|infus|inf|lar\s*inf)\b/i.test(lowerTextForRoute);
+
+                // E. Deteksi Tablet / Oral
+                const isOral = /\b(?:tab|tablet|kaps|kapsul|po|p\.o\.|caps|oral|disp|kaplet)\b/i.test(lowerTextForRoute);
+
+                // Pemilahan Rute Prioritas
                 if (isNebu) {
-                    routeSuffix = ' (Inhalasi)'; // Otomatis mengunci rute uap/inhalasi
-                } else if (/(?:inj|iv|i\.v\.|im|i\.m\.|vial|ampul|amp|drip|infus|inf|lar\s*inf|mg\/ml)/.test(lowerTextForRoute)) {
+                    routeSuffix = ' (nebu)';
+                } else if (isSachet) {
+                    routeSuffix = ' (sachet)';
+                } else if (isInjection) {
                     routeSuffix = ' (Iv)';
                 } else if (isSyrup) {
-                    routeSuffix = ''; // ✨ SELERAMU: Sengaja KOSONG karena teks 'Sirup/Syr' akan kita pertahankan utuh!
-                } else if (/(?:tab|tablet|kaps|kapsul|po|p\.o\.|caps|oral|disp)/.test(lowerTextForRoute)) {
+                    routeSuffix = ''; // Biarkan teks asli Sirup/Syr bertahan
+                } else if (isOral) {
+                    routeSuffix = ' (p.o)';
+                } else {
                     routeSuffix = ' (p.o)';
                 }
 
-                // C. Bersihkan segala bentuk kurung bawaan ecalyptus (seperti (I.V) atau (P.O)) agar tidak dobel
+                // Bersihkan kurung bawaan ecalyptus (seperti (I.V) atau (P.O)) agar tidak dobel
                 cleanMed = cleanMed.replace(/\([^)]*\)/g, '');
 
                 // 4. ✨ POTONG SPESIFIKASI KEMASAN & UNGKAPAN MEDIS BERULANG
                 cleanMed = cleanMed
-                    // ⚠️ Perhatikan: 'sirup' dan 'syr' DIHAPUS dari daftar replace ini agar teksnya tetap bertahan di layar!
-                    // ⚠️ Kata 'nebu' dan 'nebulizer' DIMASUKKAN ke sini agar teks depannya bersih karena sudah diganti suffix belakang.
-                    .replace(/\b(serb\s*inj|inj(?=\s*\d)|kaps|tab|lar\s*inf|drips\s*\(infus\)|drips|infus(?=\s*\d)|vial|udv|otsuka|ampul|amp|nebu|nebulizer)\b\.?/gi, '')
+                    .replace(/\b(serb\s*inj|inj(?=\s*\d)|kaps|tab|lar\s*inf|drips\s*\(infus\)|drips|infus(?=\s*\d)|vial|udv|otsuka|ampul|amp|nebu|nebulizer|sachet|sac|sacc|saset)\b\.?/gi, '')
                     .replace(/\b1000\s*mg\/vial|1000mg\/vial|1000\s*mg\b/gi, '1 gr')
                     .replace(/\b\d+(?:[.,]\d+)?\s*mg\/ml\b/gi, '') // Potong angka konsentrasi (misal 2 Mg/ml)
                     .replace(/mg\/ml/gi, '')           // Potong sisa teks mg/ml
-                    .replace(/[\/,\s\-]+$/, '')        // Cukur bersih sisa garis miring/strip di akhir
+                    .replace(/[\/,\s\-*]+$/, '')       // Cukur bersih sisa garis miring, strip, atau bintang di akhir
                     .replace(/\s+/g, ' ')
                     .trim();
 
                 let finalDrugName = toTitleCase(cleanMed) + routeSuffix;
+                const cleanDosage = dosage.replace(/\s+/g, '');
 
-                // Masukkan prefiks 'Th.' lurus ke bawah per enter agar terbaca sistem Multiuser & Hari Antibiotik
-                prescriptionList.push(`- ${finalDrugName} (${dosage.replace(/\s+/g, '')})`);
+                // Masukkan resep ke daftar
+                prescriptionList.push(`- ${finalDrugName} (${cleanDosage})`);
             }
             else {
                 const nextLine = lines[index + 1] || '';
-                if (!nextLine.match(/(\d+)\s*dd\s*(\d+)/i)) { finalPlanning.push(cleanCase(trimmed)); }
+                if (!nextLine.match(/(\d+)\s*dd\s*(\d+)/i)) { 
+                    finalPlanning.push(cleanCase(trimmed)); 
+                }
             }
         });
+
+        // Saring duplikasi baris obat
+        prescriptionList = [...new Set(prescriptionList)];
 
         let resultP = "";
         // Hanya masukkan non-obat ke planning

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { parsePlanning } from '../utils/helpers'; // Pastikan path ini sesuai dengan struktur foldermu
 
-const LabRadiologyBoard = ({ records }) => {
+const LabRadiologyBoard = ({ records, activeRecords, onOpenEkspedisi }) => {
     // 1. Ekstrak dan Kelompokkan Data dari Planning
     const { labGroups, radGroups, totalLabs, totalRads } = useMemo(() => {
         const labs = {};
@@ -54,11 +54,12 @@ const LabRadiologyBoard = ({ records }) => {
                     </h2>
                     <p className="text-xs text-slate-500 font-medium">Otomatis diekstrak dari instruksi Planning (P) pasien yang sedang dirawat.</p>
                 </div>
+                {/* 📦 TOMBOL BARU: MENGGANTIKAN CETAK PAPAN LAMA */}
                 <button 
-                    onClick={() => window.print()}
-                    className="no-print bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold shadow transition flex items-center gap-2"
+                    onClick={onOpenEkspedisi} 
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-black shadow-md transition flex items-center gap-1.5"
                 >
-                    🖨️ Cetak Papan
+                    📦 Buku Ekspedisi Digital
                 </button>
             </div>
 

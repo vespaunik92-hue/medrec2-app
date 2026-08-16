@@ -31,7 +31,7 @@ const PatientTable = ({
     // 🛡️ Operan Fungsi & Komponen Pembantu dari App.jsx agar tidak ReferenceError
     parsePlanning, getAntibioticDay, hitungHariCM, formatDateCM, 
     parseDateCM, renderLacakTtv, renderObjectiveCell, renderPlanningCell,
-    BukuCMTable, GlobalMedicationBoard
+    BukuCMTable, GlobalMedicationBoard, onOpenEkspedisi
 }) => {
     
     const [viewMode, setViewMode] = useState('soap');
@@ -207,7 +207,10 @@ const PatientTable = ({
                 </div>
             ) : viewMode === 'lab-board' ? (
                 <div className="flex-1 bg-gray-50 overflow-hidden p-2">
-                    <LabRadiologyBoard records={sortedRecords} />
+                    <LabRadiologyBoard 
+                        records={sortedRecords} 
+                        onOpenEkspedisi={onOpenEkspedisi} 
+                    />
                 </div>    
             ) : viewMode === 'troli-obat' ? (
                 <div className="flex-1 bg-gray-50 overflow-hidden">
