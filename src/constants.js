@@ -131,8 +131,8 @@ export const LAB_NORMAL_RANGES = {
     'HbA1c': { min: 4.0, max: 5.7 },
     'Ur': { min: 10, max: 50 },
     'Cr': { min: 0.5, max: 1.1 },
-    'SGOT': { min: 0, max: 37 },
-    'SGPT': { min: 0, max: 40 },
+    'SGOT': { min: 0, max: 31 },
+    'SGPT': { min: 0, max: 31 },
     'Alb': { min: 3.5, max: 5.0 },
     'Globulin': { min: 2.0, max: 3.5 },
     'Bil.Total': { min: 0.1, max: 1.2 },
@@ -177,8 +177,8 @@ export const DEFAULT_DPJP_DATA = JSON.parse(import.meta.env.VITE_DEFAULT_DPJP_DA
 
 export const LAB_CHECKS = [
     'Darah Rutin (DR)', 'HJL', 'Masa Pendarahan (CT/BT)', 'CA125', 'CA19-9', 'PT/APTT/INR',
-    'GDS', 'GDP-2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer', 'Retikulosit',
-    'Ureum-Creatinin', 'SGOT-SGPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
+    'GDS', 'GDP', '2JPP', 'HbA1c', 'TSH/FT4', 'Procalcitonin', 'Ferritin', 'D-Dimer', 'Retikulosit',
+    'UrCr', 'OTPT', 'Albumin/Globulin', 'Bilirubin Total/Direk',
     'Elektrolit (Na/K/Cl)', 'Kalsium (Cal)', 'Analisa Gas Darah (AGD)', 'Lactate', 'igG-igM Cikungunya',
     'Hemokultur', 'Darah Tepi', 'LED', 'PCR Covid-19', 'Swab Antigen', 'Rapid Test Covid-19',
     'Sero Dengue (NS1)', 'Malaria (Tetesan Darah)', 'Widal Test', 'Fungsi Tiroid Lengkap',
@@ -189,7 +189,7 @@ export const LAB_CHECKS = [
 ];
 
 export const RADIOLOGY_CHECKS = [
-    'Thorax', 'Thorax Lateral','Manus', 'BNO Polos', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas', 'Rontgen Cruris', 'Rontgen OA Genou',
+    'Thorax', 'Thorax Lateral', 'Manus', 'BNO Polos', 'BNO 3 Posisi', 'Lumbosacral', 'Cervical', 'Foto Ekstremitas', 'Rontgen Cruris', 'Rontgen OA Genou',
     'USG Whole Abdomen', 'USG Hepatobilier/Upper Abdomen', 'USG Lower/Ginjal Abdomen', 'USG Thorax', 'USG Tiroid', 'USG Kandung Empedu', 'USG Jantung', 'Echocardiography', 'USG Vaskular Doppler',
     'CT Scan Kepala Kontras', 'CT Scan Kepala non-Kontras', 'CT Scan Thorax Kontras', 'CT Scan Thorax non-Kontras', 'CT Scan Abdomen kontras',
     'CT Scan Abdomen non-kontras', 'CT Scan Vertebra', 'CT Angiography', 'CT Scan Cardiac', 'CT Urografi kontras', 'CT Urografi non-kontras',
@@ -218,7 +218,7 @@ export const MEDICATIONS = [
 export const ANTIBIOTICS_DB = [
     'seftriakson', 'ceftriaxon', 'broadced', 'terfacef',
     'meropenem', 'merosan',
-    'azitro', 'azithro', 'zithromax',
+    'azitro', 'azithro', 'zithromax', 'infimycin',
     'levoflok', 'levoflox', 'cravit',
     'cipro', 'baquinor',
     'amoksi', 'amoxi', 'amoxsan',
@@ -258,7 +258,7 @@ export const ANTIBIOTICS_DB = [
     'doripenem', 'doribax',
     'benzylpenicillin', 'penicillin g',
     'amoxicillin', 'clavulanic', 'augmentin',
-    'ciprofloxacin',
+    'ciprofloxacin', 'sipro',
     'levofloxacin'
 ];
 
@@ -277,13 +277,12 @@ export const MEDICATION_TRANSLATOR = {
     "cefepim": "Cefepim",
     "levofloxacin": "Levofloxacin",
     "ciprofloxacin": "Ciprofloxacin",
+    "cipro": "Ciprofloxacin",
+    "sipro": "Ciprofloxacin",
     "combiven": "Combiven",
     "pulmicort": "Pulmicort",
-    "nacl 0.9%": "IVFD: NaCl 0.9%",
-    "dextrose 5%": "IVFD: D5%",
-    "dextrose 10%": "IVFD: D10%",
-    "ringer laktat": "IVFD: RL",
     // === ANTIBIOTIK BARU ===
+    "infimycin": "Azithromycin",
     "ceftazidime": "Ceftazidime",
     "seftazidim": "Seftazidim",
     "trimethoprim/sulfamethoxazole": "TMP-SMX",
@@ -407,8 +406,8 @@ export const LAB_PATTERNS = {
 
 // ✨ LOW IS BAD - lab yang rendahnya yang berbahaya
 export const LAB_LOW_IS_BAD = [
-    'Hb', 'Trmbsit', 'Ht', 'Eritrosit', 'Alb', 'Globulin',
-    'Ferritin', 'Fe', 'TSAT', 'CD4', 'HDL'
+    'Hb', 'Trmbsit', 'Ht', 'Eritrosit', 'Alb', 'Globulin', 'Trombosit', 'Leu', 'Retikulosit', 'LED', 'BT', 'CT', 'PT', 'APTT', 'INR',
+    'Ferritin', 'Fe', 'TSAT', 'CD4', 'HDL', 'Ca', 'pH', 'HCO3', 'Na', 'K', 'Cl'
 ];
 
 // ✨ TUBEX KHUSUS - >= 4 = positif (merah)

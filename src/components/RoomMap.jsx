@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 // Ambil data cetak biru kamar bawaan dari constants
-import { LEFT_ROOMS, RIGHT_ROOMS } from '../constants'; 
+import { LEFT_ROOMS, RIGHT_ROOMS } from '../constants';
+import { getPatientHdInfo } from '../utils/helpers';
 
 const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom, onEditRoom, roomFilter, waitingList, onSwapBed }) => {
 
@@ -51,74 +52,12 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
         if (record) {
             const isMale = record.gender === 'L';
 
-            // 🕒 DETEKSI HARI INI (Bahasa Indonesia: 'senin', 'selasa', dll)
-            const hariIni = new Date().toLocaleDateString('id-ID', { weekday: 'long' }).toLowerCase();
+            // 🤖 SENSOR UTAMA (MEMANGGIL HELPER PUSAT)
+            const { isHD: isHDPatient, isMenyalaHariIni: isHDMenyalaHariIni, label: hdLabel, shouldBlink: shouldBlinkBorder, color: balloonColor, arrowColor } = getPatientHdInfo(record);
 
-            // 🤖 SENSOR UTAMA
-            const gabunganTeksSOAP = `${record.diagnosis || ''} ${record.analysis || ''} ${record.planning || ''}`.toLowerCase();
-
-            // 🛑 PENGECUALIAN 1: Status Suspek/DD (Tn. Tatang)
-            const statusProvisional = gabunganTeksSOAP.includes('dd ckd') || gabunganTeksSOAP.includes('susp ckd') || gabunganTeksSOAP.includes('susp. ckd') || gabunganTeksSOAP.includes('dd hd') || gabunganTeksSOAP.includes('aki dd');
-
-            // 🛑 PENGECUALIAN 2: Pasien Menolak Tindakan (Saran Mandor Abi untuk Bu Marsem)
-            const statusMenolak = gabunganTeksSOAP.includes('menolak') || gabunganTeksSOAP.includes('tolak') || gabunganTeksSOAP.includes('tidak mau') || gabunganTeksSOAP.includes('belum bersedia');
-
-            // ✨ EKSEKUSI SENSOR: Balon HD dilarang muncul jika pasien berstatus Suspek ATAU Menolak!
-            const isHD = /hd|ckd|hemodialisa/i.test(gabunganTeksSOAP) && !statusProvisional && !statusMenolak;
-
-            // =========================================================================
-            // ⚡ MESIN SENSOR HD MULTI-KATEGORI
-            // =========================================================================
-            let isHDMenyalaHariIni = false;
-            let shouldBlinkBorder = false;
-            let hdLabel = 'HD';
-            let balloonColor = 'bg-rose-600';
-            let arrowColor = 'border-t-rose-600';
-
-            if (isHD) {
-                if (gabunganTeksSOAP.includes('extra') || gabunganTeksSOAP.includes('ekstra') || gabunganTeksSOAP.includes('cito')) {
-                    isHDMenyalaHariIni = true;
-                    shouldBlinkBorder = true;
-                    hdLabel = 'HD Extra';
-                    balloonColor = 'bg-red-600';
-                    arrowColor = 'border-t-red-600';
-                } else if (gabunganTeksSOAP.includes('inisiasi')) {
-                    isHDMenyalaHariIni = true;
-                    shouldBlinkBorder = true;
-                    hdLabel = 'HD Inisiasi';
-                    balloonColor = 'bg-purple-600';
-                    arrowColor = 'border-t-purple-600';
-                } else if (gabunganTeksSOAP.includes('edukasi')) {
-                    isHDMenyalaHariIni = true;
-                    shouldBlinkBorder = false;
-                    hdLabel = 'Edukasi HD';
-                    balloonColor = 'bg-amber-500';
-                    arrowColor = 'border-t-amber-500';
-                } else {
-                    let isJadwalCocok = false;
-                    if (gabunganTeksSOAP.includes('senin-kamis') || gabunganTeksSOAP.includes('senin kamis')) {
-                        isJadwalCocok = ['senin', 'kamis'].includes(hariIni);
-                    } else if (gabunganTeksSOAP.includes('selasa-jumat') || gabunganTeksSOAP.includes('selasa jumat')) {
-                        isJadwalCocok = ['selasa', 'jumat'].includes(hariIni);
-                    } else if (gabunganTeksSOAP.includes('rabu-sabtu') || gabunganTeksSOAP.includes('rabu sabtu')) {
-                        isJadwalCocok = ['rabu', 'sabtu'].includes(hariIni);
-                    } else {
-                        isJadwalCocok = true;
-                    }
-
-                    if (isJadwalCocok) {
-                        isHDMenyalaHariIni = true;
-                        shouldBlinkBorder = true;
-                        hdLabel = 'HD';
-                        balloonColor = 'bg-rose-600';
-                        arrowColor = 'border-t-rose-600';
-                    }
-                }
-            }
-
-            // 👨‍⚕️ SUNTIKAN OTOMATIS dr. Edi di Layar
-            let raberArray = [record.raberName, record.raber2Name].filter(Boolean);
-            if (isHD && !raberArray.some(r => r.toLowerCase().includes('edi'))) {
+            // 👨‍⚕️ SUNTIKAN OTOMATIS dr. Edi (HANYA JIKA PASIEN HD MENYALA HARI INI)
+            let raberArray = [record.raberName, record.raber2Name, record.raber3Name].filter(Boolean);
+            if (isHDMenyalaHariIni && !raberArray.some(r => r.toLowerCase().includes('edi'))) {
                 raberArray.push('dr. Edi');
             }
             const raberTextDisplay = raberArray.join(', ');
@@ -139,6 +78,38 @@ const RoomMap = ({ roomList, leftRooms, rightRooms, activeRecords, onSelectRoom,
                             </svg>
                             {hdLabel}
                             <div className="absolute -bottom-[5px] right-2.5 border-l-[4px] border-r-[4px] border-t-[6px] border-l-transparent border-r-transparent drop-shadow-sm" style={{ borderTopColor: arrowColor }}></div>
+                        </div>
+                    )}
+                    {/* 💬 BALON MELAYANG NOTIFIKASI BALASAN DOKTER (KHUSUS PERAWAT) */}
+                    {record.hasUnreadNurse && (
+                        <div
+                            className={`absolute -top-3 left-1 text-white text-[8px] font-black px-2 py-0.5 rounded-md shadow-md flex items-center gap-1 z-30 animate-bounce tracking-tight border ${record.isCito
+                                    ? 'bg-red-600 border-red-300'
+                                    : (record.lastDiscussion?.role === 'Dokter_Jaga' || record.lastSenderRole === 'Dokter_Jaga')
+                                        ? 'bg-teal-600 border-teal-300'
+                                        : 'bg-indigo-600 border-indigo-300'
+                                }`}
+                            title={`Ada instruksi/balasan baru dari ${(record.lastDiscussion?.role === 'Dokter_Jaga' || record.lastSenderRole === 'Dokter_Jaga') ? 'Dokter Jaga' : 'DPJP'
+                                }!`}
+                        >
+                            <span className="text-[9px]">💬</span>
+                            <span>
+                                {record.isCito
+                                    ? '🚨 CITO: Balasan'
+                                    : (record.lastDiscussion?.role === 'Dokter_Jaga' || record.lastSenderRole === 'Dokter_Jaga')
+                                        ? 'Balasan Dr. Jaga'
+                                        : 'Balasan DPJP'}
+                            </span>
+                            <div
+                                className="absolute -bottom-[4px] left-3 border-l-[3px] border-r-[3px] border-t-[5px] border-l-transparent border-r-transparent drop-shadow-sm"
+                                style={{
+                                    borderTopColor: record.isCito
+                                        ? '#dc2626'
+                                        : (record.lastDiscussion?.role === 'Dokter_Jaga' || record.lastSenderRole === 'Dokter_Jaga')
+                                            ? '#0d9488'
+                                            : '#4f46e5'
+                                }}
+                            ></div>
                         </div>
                     )}
 

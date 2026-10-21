@@ -1,7 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { doc, updateDoc, collection, addDoc, getDocs, Timestamp, query, where } from 'firebase/firestore';
 import { MEDICATIONS, ROOM_LIST } from '../constants';
-import { getAntibioticDay, isAntibioticMedicationName } from '../utils/helpers';
+import { getAntibioticDay, isAntibioticMedicationName, getAntibioticDoseInfo, abxCellTip, abxBadgeTip, AbxPill } from '../utils/helpers';
+
+// Satukan obat yang sama walau penulisannya beda (kurung vs tanpa kurung). Kunci centang lama dipertahankan.
+const canonMed = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+const dedupeByCanon = (planArr, logArr) => {
+    const logByCanon = new Map(logArr.map(s => [canonMed(s), s]));
+    const seen = new Set(); const out = [];
+    [...planArr, ...logArr].forEach(s => {
+        const k = canonMed(s);
+        if (!k || seen.has(k)) return;
+        seen.add(k);
+        out.push(logByCanon.get(k) || s);
+    });
+    return out;
+};
 
 // --- COMPONENT: MODAL CATATAN PEMBERIAN OBAT (CPO) INDIVIDUAL (V25 - STRICT BOUNDARY & FLEX 48H) ---
 const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, currentUser, firebaseConfig }) => {
@@ -78,7 +92,7 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
             });
         });
     
-    const extractedMeds = Array.from(new Set([...planMeds, ...logMeds]));
+    const extractedMeds = dedupeByCanon(planMeds, logMeds);
 
     const handleToggleShift = async (medName, dateStr, shift) => {
         const currentDayLogs = safeLogs[dateStr] || {};
@@ -192,42 +206,49 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                     });
                                 });
 
+                                // 🌟 TETAP MENJAGA INHALASI & NEBU, PLUS CERDAS BACA ORAL (SEPERTI PCT TANPA EMBEL-EMBEL TAB/P.O)
+                                const isNonInjeksi = !/\b(iv|inj|injeksi|sc|im|drip|infus|vial|amp)\b/i.test(lowerMed);
+                                const isPoOrInhalasi = isNonInjeksi || /\b(po|p\.o|tab|kaps|caps|syr|sirup|inhalasi|nebu)\b/i.test(lowerMed) || /\/\s*8\s*jam/i.test(lowerMed);
+                                const isEligibleAutoYellow = freq === 3 && isPoOrInhalasi;
+
+                                // ✅ KUNCI PERMANEN SIKLUS 24 (DI TEMPAT 1 & TEMPAT 2):
+                                const hasChecked24 = everCheckedShifts.includes('jam_24');
+                                const hasChecked06 = everCheckedShifts.includes('jam_06');
+                                const textHints24 = /\b(jam\s*24|24[:.]00|\b24\b|malam|jam\s*(8|08|16)|(8|08|16)[:.]00)\b/i.test(lowerMed);
+                                const isCycle24 = hasChecked24 || (!hasChecked06 && textHints24);
+
+                                // 🌟 MESIN PASANGAN DOSIS OTOMATIS (AUTO-PAIRING & AUTO-CYCLE)
                                 let baseActiveShifts = [];
-                                if (everCheckedShifts.length > 0) {
-                                    if (freq === 1) baseActiveShifts = [...everCheckedShifts];
-                                    else if (freq === 2) {
-                                        everCheckedShifts.forEach(sKey => {
-                                            if (!baseActiveShifts.includes(sKey)) baseActiveShifts.push(sKey);
-                                            let partner = sKey === 'jam_12' ? 'jam_24' : sKey === 'jam_24' ? 'jam_12' : sKey === 'jam_18' ? 'jam_06' : 'jam_18';
+
+                                if (freq === 3) {
+                                    if (everCheckedShifts.length > 0 || isEligibleAutoYellow) {
+                                        // Aktifkan 3 jam siklusnya secara utuh (12:00, 20:00, 04:00) atau (08:00, 16:00, 24:00)
+                                        baseActiveShifts = isCycle24 
+                                            ? ['jam_12', 'jam_18', 'jam_24'] 
+                                            : ['jam_12', 'jam_18', 'jam_06'];
+                                    }
+                                } else if (freq === 2) {
+                                    if (everCheckedShifts.length > 0) {
+                                        // Kamus pasangan shift 12 jam:
+                                        const pairs2x1 = {
+                                            'jam_06': 'jam_18',
+                                            'jam_18': 'jam_06',
+                                            'jam_12': 'jam_24',
+                                            'jam_24': 'jam_12'
+                                        };
+                                        everCheckedShifts.forEach(k => {
+                                            if (!baseActiveShifts.includes(k)) baseActiveShifts.push(k);
+                                            const partner = pairs2x1[k];
                                             if (partner && !baseActiveShifts.includes(partner)) baseActiveShifts.push(partner);
                                         });
-                                    } else if (freq === 3) {
-                                        const hasStandard = everCheckedShifts.some(k => ['jam_12', 'jam_18', 'jam_06'].includes(k));
-                                        if (hasStandard) baseActiveShifts = ['jam_12', 'jam_18', 'jam_06'];
-                                        everCheckedShifts.forEach(sKey => { if (!baseActiveShifts.includes(sKey)) baseActiveShifts.push(sKey); });
-                                    } else baseActiveShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
-                                } else {
-                                    // ✨ FIX V25: REGEX BOUNDARY UNTUK INJEKSI
-                                    const isInjeksi = /\b(inj|iv|im|sc|drip|vial|amp|inf)\b/i.test(lowerMed);
-
-                                    // ✨ FIX V25: JIKA OBAT 48 JAM ATAU INJEKSI, KOSONGKAN JADWAL AWAL AGAR PERAWAT SET SENDIRI
-                                    if (isInjeksi || is48Jam) {
-                                        baseActiveShifts = [];
-                                    } else {
-                                        const isMalam = /malam|\bjam\s*24\b|\b24[:.]00\b/i.test(lowerMed);
-                                        const isPagi = /pagi|\bjam\s*12\b|\b12[:.]00\b/i.test(lowerMed);
-                                        const isSore = /sore|\bjam\s*(16|18|20)\b|\b(16|18|20)[:.]00\b/i.test(lowerMed);
-
-                                        if (isMalam) baseActiveShifts = ['jam_24'];
-                                        else if (isPagi) baseActiveShifts = ['jam_12'];
-                                        else if (isSore) baseActiveShifts = ['jam_18'];
-                                        else {
-                                            // ✨ FIX MANUAL MODE: 1x1 dan 2x1 dipaksa KOSONG sejak awal agar disetel manual oleh perawat
-                                            if (freq === 1 || freq === 2) baseActiveShifts = [];
-                                            else if (freq === 3) baseActiveShifts = ['jam_12', 'jam_18', 'jam_06'];
-                                            else baseActiveShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
-                                        }
                                     }
+                                } else if (freq === 4) {
+                                    if (everCheckedShifts.length > 0) {
+                                        baseActiveShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+                                    }
+                                } else {
+                                    // 1x1: hanya mengaktifkan jam yang dipilih perawat
+                                    baseActiveShifts = [...everCheckedShifts];
                                 }
 
                                 return (
@@ -238,7 +259,10 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                                 {isStopOrTunda && <span className="text-[9px] bg-rose-500 text-white px-2 py-0.5 rounded font-black shadow-sm mt-0.5">🛑 STOP</span>}
                                                 {is48Jam && <span className="text-[9px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black shadow-sm mt-0.5">⏳ 48 JAM</span>}
                                                 {typeof getAntibioticDay === 'function' && getAntibioticDay(med, safeLogs) && !isStopOrTunda && (
-                                                    <span className="text-[9px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm mt-0.5">🚨 {getAntibioticDay(med, safeLogs)}</span>
+                                                    <span
+                                                        data-abx-tip={abxBadgeTip(getAntibioticDoseInfo(med, safeLogs))}
+                                                        className="text-[9px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm mt-0.5"
+                                                    >🚨 {getAntibioticDay(med, safeLogs)}</span>
                                                 )}
                                             </div>
                                         </div>
@@ -271,14 +295,36 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                                                 const log = medLogForDate[s.key] || { checked: false, scheduled: false };
                                                                 const recommendGlow = isRecommended(s.key);
                                                                 
+                                                                // 🌟 LABEL DINAMIS SESUAI POLA KLINIS (PERSIS EOA)
+                                                                let dynamicLabel = s.label;
+                                                                const isCycle24 = actShifts.includes('jam_24');
+                                                                
+                                                                if (freq === 3) {
+                                                                    if (isCycle24) {
+                                                                        if (s.key === 'jam_12') dynamicLabel = '08:00';
+                                                                        else if (s.key === 'jam_18') dynamicLabel = '16:00';
+                                                                        else if (s.key === 'jam_24') dynamicLabel = '24:00';
+                                                                        else if (s.key === 'jam_06') dynamicLabel = '04:00';
+                                                                    } else {
+                                                                        if (s.key === 'jam_12') dynamicLabel = '12:00';
+                                                                        else if (s.key === 'jam_18') dynamicLabel = '20:00';
+                                                                        else if (s.key === 'jam_24') dynamicLabel = '24:00';
+                                                                        else if (s.key === 'jam_06') dynamicLabel = '04:00';
+                                                                    }
+                                                                }
+
                                                                 return (
                                                                     <button 
                                                                         key={s.key} type="button" 
                                                                         onClick={() => !isStopOrTunda && handleToggleShift(med, dateStr, s.key)}
+                                                                        data-abx-tip={abxCellTip(getAntibioticDoseInfo(med, safeLogs), dateStr, s.key)}
                                                                         disabled={isStopOrTunda}
-                                                                        className={`flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+                                                                        className={`relative flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
                                                                     >
-                                                                        <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-500'}`}>{s.label}</span>
+                                                                        {log.checked && <AbxPill med={med} logs={safeLogs} dateStr={dateStr} shiftKey={s.key} />}
+                                                                        <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800 font-black' : 'text-slate-500'}`}>
+                                                                            {dynamicLabel}
+                                                                        </span>
                                                                         <div className="flex items-center justify-center w-full mt-0.5">
                                                                             <span className="text-[12px] leading-none">{log.checked ? '✅' : '⚪'}</span>
                                                                         </div>
@@ -431,7 +477,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                     return Object.keys(shiftsObj).filter(med => Object.values(shiftsObj[med]).some(s => s && (s.checked || s.scheduled)));
                 });
 
-            const extractedMeds = Array.from(new Set([...planMeds, ...logMeds]));
+            const extractedMeds = dedupeByCanon(planMeds, logMeds);
             const medsConfig = {};
 
             extractedMeds.forEach(med => {
@@ -461,42 +507,49 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                     });
                 });
 
+                // 🌟 TETAP MENJAGA INHALASI & NEBU, PLUS CERDAS BACA ORAL (SEPERTI PCT TANPA EMBEL-EMBEL TAB/P.O)
+                const isNonInjeksi = !/\b(iv|inj|injeksi|sc|im|drip|infus|vial|amp)\b/i.test(lowerMed);
+                const isPoOrInhalasi = isNonInjeksi || /\b(po|p\.o|tab|kaps|caps|syr|sirup|inhalasi|nebu)\b/i.test(lowerMed) || /\/\s*8\s*jam/i.test(lowerMed);
+                const isEligibleAutoYellow = freq === 3 && isPoOrInhalasi;
+
+                // ✅ KUNCI PERMANEN SIKLUS 24 (DI TEMPAT 1 & TEMPAT 2):
+                const hasChecked24 = everCheckedShifts.includes('jam_24');
+                const hasChecked06 = everCheckedShifts.includes('jam_06');
+                const textHints24 = /\b(jam\s*24|24[:.]00|\b24\b|malam|jam\s*(8|08|16)|(8|08|16)[:.]00)\b/i.test(lowerMed);
+                const isCycle24 = hasChecked24 || (!hasChecked06 && textHints24);
+
+                // 🌟 MESIN PASANGAN DOSIS OTOMATIS (AUTO-PAIRING & AUTO-CYCLE)
                 let activeShifts = [];
-                if (everCheckedShifts.length > 0) {
-                    if (freq === 1) activeShifts = [...everCheckedShifts];
-                    else if (freq === 2) {
-                        everCheckedShifts.forEach(sKey => {
-                            if (!activeShifts.includes(sKey)) activeShifts.push(sKey);
-                            let partner = sKey === 'jam_12' ? 'jam_24' : sKey === 'jam_24' ? 'jam_12' : sKey === 'jam_18' ? 'jam_06' : 'jam_18';
+
+                if (freq === 3) {
+                    if (everCheckedShifts.length > 0 || isEligibleAutoYellow) {
+                        // Aktifkan 3 jam siklusnya secara utuh (12:00, 20:00, 04:00) atau (08:00, 16:00, 24:00)
+                        activeShifts = isCycle24 
+                            ? ['jam_12', 'jam_18', 'jam_24'] 
+                            : ['jam_12', 'jam_18', 'jam_06'];
+                    }
+                } else if (freq === 2) {
+                    if (everCheckedShifts.length > 0) {
+                        // Kamus pasangan shift 12 jam:
+                        const pairs2x1 = {
+                            'jam_06': 'jam_18',
+                            'jam_18': 'jam_06',
+                            'jam_12': 'jam_24',
+                            'jam_24': 'jam_12'
+                        };
+                        everCheckedShifts.forEach(k => {
+                            if (!activeShifts.includes(k)) activeShifts.push(k);
+                            const partner = pairs2x1[k];
                             if (partner && !activeShifts.includes(partner)) activeShifts.push(partner);
                         });
-                    } else if (freq === 3) {
-                        const hasStandard = everCheckedShifts.some(k => ['jam_12', 'jam_18', 'jam_06'].includes(k));
-                        if (hasStandard) activeShifts = ['jam_12', 'jam_18', 'jam_06'];
-                        everCheckedShifts.forEach(sKey => { if (!activeShifts.includes(sKey)) activeShifts.push(sKey); });
-                    } else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
-                } else {
-                    // ✨ FIX V25: MENGGUNAKAN STRICT REGEX BOUNDARY UNTUK INJEKSI (ANTI-COMBIVENT CRASH)
-                    const isInjeksi = /\b(inj|iv|im|sc|drip|vial|amp|inf)\b/i.test(lowerMed);
-
-                    // ✨ FIX V25: JIKA OBAT 48 JAM ATAU INJEKSI, KOSONGKAN DEFAULT JAM AGAR TINGGAL KLIK JADWAL NYA
-                    if (isInjeksi || is48Jam) {
-                        activeShifts = [];
-                    } else {
-                        const isMalam = /malam|\bjam\s*24\b|\b24[:.]00\b/i.test(lowerMed);
-                        const isPagi = /pagi|\bjam\s*12\b|\b12[:.]00\b/i.test(lowerMed);
-                        const isSore = /sore|\bjam\s*(16|18|20)\b|\b(16|18|20)[:.]00\b/i.test(lowerMed);
-
-                        if (isMalam) activeShifts = ['jam_24'];
-                                        else if (isPagi) activeShifts = ['jam_12'];
-                                        else if (isSore) activeShifts = ['jam_18'];
-                                        else {
-                                        // ✨ FIX MANUAL MODE: 1x1 dan 2x1 dipaksa KOSONG sejak awal agar disetel manual oleh perawat
-                                            if (freq === 1 || freq === 2) activeShifts = []; //  SINKRON
-                                            else if (freq === 3) activeShifts = ['jam_12', 'jam_18', 'jam_06']; //  SINKRON
-                                            else activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06']; //  SINKRON
-                                        }
                     }
+                } else if (freq === 4) {
+                    if (everCheckedShifts.length > 0) {
+                        activeShifts = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+                    }
+                } else {
+                    // 1x1: hanya mengaktifkan jam yang dipilih perawat
+                    activeShifts = [...everCheckedShifts];
                 }
 
                 medsConfig[med] = { freq, activeShifts, isStopOrTunda, is48Jam };
@@ -578,7 +631,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                 <div className="p-3 bg-white">
                                     {record.extractedMeds.map((med, mIdx) => {
                                         const config = record.medsConfig[med] || { activeShifts: [], isStopOrTunda: false, is48Jam: false };
-                                        
+                                                                                
                                         return (
                                             <div key={mIdx} className={`flex border rounded-lg overflow-x-auto shadow-sm custom-scrollbar mb-2 last:mb-0 ${config.isStopOrTunda ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200 bg-slate-50/30 hover:border-emerald-200 transition-colors'}`}>
                                                 
@@ -588,7 +641,10 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                                         {config.isStopOrTunda && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">🛑 STOP</span>}
                                                         {config.is48Jam && <span className="text-[8px] bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">⏳ 48 JAM</span>}
                                                         {getAntibioticDay(med, record.currentRecordLogs) && !config.isStopOrTunda && (
-                                                            <span className="text-[8px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm mt-0.5">🚨 {getAntibioticDay(med, record.currentRecordLogs)}</span>
+                                                            <span
+                                                                data-abx-tip={abxBadgeTip(getAntibioticDoseInfo(med, record.currentRecordLogs))}
+                                                                className="text-[8px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm mt-0.5"
+                                                            >🚨 {getAntibioticDay(med, record.currentRecordLogs)}</span>
                                                         )}
                                                     </div>
                                                 </div>
@@ -621,14 +677,37 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                                                         const log = medLogForDate[s.key] || { checked: false, scheduled: false };
                                                                         const recommendGlow = isRecommended(s.key);
                                                                         
+                                                                        // 🌟 LABEL DINAMIS SESUAI POLA KLINIS (PERSIS EOA)
+                                                                        let dynamicLabel = s.label;
+                                                                        const isCycle24 = config.activeShifts.includes('jam_24');
+                                                                        
+                                                                        if (config.freq === 3) {
+                                                                            if (isCycle24) {
+                                                                                if (s.key === 'jam_12') dynamicLabel = '08:00';
+                                                                                else if (s.key === 'jam_18') dynamicLabel = '16:00';
+                                                                                else if (s.key === 'jam_24') dynamicLabel = '24:00';
+                                                                                else if (s.key === 'jam_06') dynamicLabel = '04:00';
+                                                                            } else {
+                                                                                if (s.key === 'jam_12') dynamicLabel = '12:00';
+                                                                                else if (s.key === 'jam_18') dynamicLabel = '20:00';
+                                                                                else if (s.key === 'jam_24') dynamicLabel = '24:00';
+                                                                                else if (s.key === 'jam_06') dynamicLabel = '04:00';
+                                                                            }
+                                                                        }
+                                                                        
                                                                         return (
                                                                             <button 
                                                                                 key={s.key} type="button" 
                                                                                 onClick={() => !config.isStopOrTunda && handleToggleShift(record.id, med, dateStr, s.key)}
+                                                                                data-abx-tip={abxCellTip(getAntibioticDoseInfo(med, record.currentRecordLogs), dateStr, s.key)}
                                                                                 disabled={config.isStopOrTunda}
-                                                                                className={`flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : config.isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+                                                                                className={`relative flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : config.isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
                                                                             >
-                                                                                <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800' : 'text-slate-500'}`}>{s.label}</span>
+                                                                                {log.checked && <AbxPill med={med} logs={record.currentRecordLogs} dateStr={dateStr} shiftKey={s.key} />}
+                                                                                {/* 👇 PERHATIKAN BARIS INI: Menggunakan dynamicLabel */}
+                                                                                <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800 font-black' : 'text-slate-500'}`}>
+                                                                                    {dynamicLabel}
+                                                                                </span>
                                                                                 <div className="flex items-center justify-center w-full mt-0.5">
                                                                                     <span className="text-[12px] leading-none">{log.checked ? '✅' : '⚪'}</span>
                                                                                 </div>

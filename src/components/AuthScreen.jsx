@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, getDocs, collection, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, Timestamp, deleteField } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { ChevronLeft } from 'lucide-react';
 
 export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, firebaseConfig }) => {
@@ -16,22 +17,27 @@ export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, fir
         'RSUD BAYU ASIH': ['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK']
     });
 
-    // Radar pemindai Rumah Sakit dari Database
+    // 🛡️ PERBAIKAN KEAMANAN: Membaca daftar RS & Bangsal dari 1 dokumen direktori khusus
+    // (TIDAK LAGI mengunduh seluruh koleksi 'users' yang berisi password)
     useEffect(() => {
         if (!db) return;
         const fetchHospitals = async () => {
             try {
-                const snap = await getDocs(collection(db, 'users'));
+                const dirRef = doc(db, 'settings', 'hospitalsDirectory');
+                const snap = await getDoc(dirRef);
                 const hw = { 'RSUD BAYU ASIH': new Set(['MELATI', 'DAHLIA', 'TERATAI', 'ANYELIR', 'ANGGREK']) };
-                snap.docs.forEach(d => {
-                    const data = d.data();
-                    if (data.hospital && data.ward) {
-                        const h = data.hospital.toUpperCase();
-                        const w = data.ward.toUpperCase();
-                        if (!hw[h]) hw[h] = new Set();
-                        hw[h].add(w);
-                    }
-                });
+
+                if (snap.exists()) {
+                    const data = snap.data().hospitals || {};
+                    Object.keys(data).forEach(h => {
+                        const upperH = h.toUpperCase();
+                        if (!hw[upperH]) hw[upperH] = new Set();
+                        if (Array.isArray(data[h])) {
+                            data[h].forEach(w => hw[upperH].add(String(w).toUpperCase()));
+                        }
+                    });
+                }
+
                 const result = {};
                 Object.keys(hw).forEach(k => { result[k] = Array.from(hw[k]).sort(); });
                 setPublicHospitals(result);
@@ -47,30 +53,81 @@ export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, fir
         if (!db) return alert("Database belum siap. Coba refresh halaman.");
 
         try {
-            const targetId = loginForm.id.toLowerCase().trim();
-            const userSnap = await getDoc(doc(db, 'users', targetId));
+            const rawId = loginForm.id.toLowerCase().trim();
+            const normalizedId = rawId.replace(/\s+/g, '_');
+            const cleanPass = loginForm.pass.trim();
+            const dummyEmail = `${normalizedId}@simpan.local`; 
+            const auth = getAuth();
 
-            if (userSnap.exists()) {
-                const userData = userSnap.data();
-                if (userData.pass === loginForm.pass) {
-                    if (userData.status === 'pending') {
-                        return alert("Mohon maaf, akun Anda masih berstatus PENDING. Minta Karu / Admin ruangan Anda untuk mengaktifkannya.");
-                    }
+            // 💡 TRIK FIREBASE: Akali aturan minimal 6 karakter
+            // Jika password perawat kurang dari 6 huruf, tambahkan ekor rahasia "_simpan"
+            const firebaseSafePass = cleanPass.length >= 6 ? cleanPass : cleanPass + "_simpan";
 
-                    const userWithWard = {
-                        ...userData,
-                        ward: userData.ward || 'MELATI',
-                        hospital: userData.hospital || 'RSUD Bayu Asih'
-                    };
-                    onLoginSuccess(userWithWard);
-                } else {
-                    alert('Password salah!');
+            let isAuthSuccess = false;
+            let finalUserId = normalizedId;
+
+            try {
+                // 1. Coba login langsung pakai brankas baru (Firebase Auth) dengan password aman
+                await signInWithEmailAndPassword(auth, dummyEmail, firebaseSafePass);
+                isAuthSuccess = true;
+            } catch (authError) {
+                // 2. Jika gagal (akun lama belum dimigrasi), cek database Firestore lama
+                let userSnap = await getDoc(doc(db, 'users', normalizedId));
+                
+                // Fallback untuk akun lama yang terlanjur memakai spasi
+                if (!userSnap.exists() && rawId !== normalizedId) {
+                    userSnap = await getDoc(doc(db, 'users', rawId));
+                    if (userSnap.exists()) finalUserId = rawId;
                 }
-            } else {
-                alert('Username tidak ditemukan di Database!');
+
+                // 3. Verifikasi password lama (mencocokkan dengan password asli yang diketik)
+                if (userSnap.exists() && userSnap.data().pass === cleanPass) {
+                    try {
+                        // 🚀 MIGRASI SENYAP: Daftarkan ke Firebase Auth!
+                        await createUserWithEmailAndPassword(auth, dummyEmail, firebaseSafePass);
+                        isAuthSuccess = true;
+
+                        // 🗑️ Hapus password telanjang dari Firestore
+                        await updateDoc(doc(db, 'users', finalUserId), {
+                            pass: deleteField()
+                        });
+                    } catch (createError) {
+                        // Tangkap error jika gagal bikin akun agar tidak lari ke pesan "Koneksi"
+                        console.error("Gagal migrasi:", createError);
+                        return alert("Gagal migrasi akun: " + createError.message);
+                    }
+                }
             }
+
+            // Jika gagal di kedua sistem, tolak aksesnya
+            if (!isAuthSuccess) {
+                return alert('Username atau password salah!');
+            }
+
+            // 4. Tarik data profil pengguna dari Firestore
+            const finalUserSnap = await getDoc(doc(db, 'users', finalUserId));
+            if (!finalUserSnap.exists()) {
+                return alert('Data profil tidak ditemukan!');
+            }
+
+            const userData = finalUserSnap.data();
+            if (userData.status === 'pending') {
+                await auth.signOut();
+                return alert("Mohon maaf, akun Anda masih berstatus PENDING. Minta Karu / Admin ruangan Anda untuk mengaktifkannya.");
+            }
+
+            const isDoctor = ['DPJP', 'Dokter_Jaga'].includes(userData.role);
+            const userWithWard = {
+                ...userData,
+                id: finalUserId,
+                ward: isDoctor ? 'ALL' : (userData.ward || 'MELATI'),
+                hospital: userData.hospital || 'RSUD Bayu Asih'
+            };
+            onLoginSuccess(userWithWard);
         } catch (error) {
-            alert("Terjadi kesalahan koneksi. Cek internet.");
+            console.error("Login Error System:", error);
+            // Menampilkan pesan error asli agar mudah dilacak jika terjadi masalah lain
+            alert("Sistem Error: " + error.message);
         }
     };
 
@@ -78,11 +135,15 @@ export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, fir
         e.preventDefault();
         if (!db) return alert("Database belum siap. Cek koneksi!");
 
+        const isDoctor = ['DPJP', 'Dokter_Jaga'].includes(regForm.role);
         const finalRsName = (regForm.rsSelect === 'BUAT_BARU' ? regForm.newRsName.trim() : regForm.rsSelect).toUpperCase();
-        const finalWardName = (regForm.wardSelect === 'BUAT_BARU' ? regForm.newWardName.trim() : regForm.wardSelect).toUpperCase();
+        const finalWardName = isDoctor ? 'ALL' : (regForm.wardSelect === 'BUAT_BARU' ? regForm.newWardName.trim() : regForm.wardSelect).toUpperCase();
 
-        if (!finalRsName || !finalWardName) return alert("Rumah Sakit and Ruangan wajib diisi!");
-        const targetId = regForm.id.toLowerCase().trim().replace(/\s+/g, '_');
+        if (!finalRsName || (!isDoctor && !finalWardName)) return alert("Rumah Sakit dan Ruangan wajib diisi!");
+        
+        const rawId = regForm.id.toLowerCase().trim();
+        const targetId = rawId.replace(/\s+/g, '_');
+        const cleanPass = regForm.pass.trim();
 
         try {
             const userSnap = await getDoc(doc(db, 'users', targetId));
@@ -90,13 +151,53 @@ export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, fir
                 return alert(`Username "${targetId}" sudah dipakai! Silakan pilih username lain.`);
             }
 
-            const isFounder = regForm.wardSelect === 'BUAT_BARU';
+            const safeHospName = finalRsName.replace(/\s+/g, '_').toUpperCase();
+            const safeAppId = appId || firebaseConfig?.appId;
+            const configRef = doc(db, `artifacts/${safeAppId}/public/data/settings_${safeHospName}`, 'mainConfig');
+
+            const isTryingCreateWard = !isDoctor && regForm.wardSelect === 'BUAT_BARU';
+            let existingWards = {};
+            let configSnap = null;
+
+            if (isTryingCreateWard) {
+                configSnap = await getDoc(configRef);
+                existingWards = configSnap.exists() && configSnap.data().wards ? configSnap.data().wards : {};
+
+                // 🛡️ CEGAH PENIMPAAN BANGSAL LAMA & KLAIM KARU SEMBARANGAN
+                const wardAlreadyExists = Boolean(
+                    existingWards[finalWardName] ||
+                    (publicHospitals[finalRsName] && publicHospitals[finalRsName].includes(finalWardName))
+                );
+                if (wardAlreadyExists) {
+                    return alert(`Ruangan "${finalWardName}" sudah terdaftar di ${finalRsName}! Silakan pilih ruangan tersebut dari daftar dropdown (bukan "+ Buat Ruangan Baru").`);
+                }
+            }
+
+            // 🚀 PERUBAHAN AUTH: Daftarkan langsung ke Brankas Firebase Auth
+            const auth = getAuth();
+            const dummyEmail = `${targetId}@simpan.local`;
+            // 💡 TRIK FIREBASE: Akali aturan minimal 6 karakter untuk pendaftar baru
+            const firebaseSafePass = cleanPass.length >= 6 ? cleanPass : cleanPass + "_simpan";
+
+            try {
+                // Buat akun di Firebase Auth
+                await createUserWithEmailAndPassword(auth, dummyEmail, firebaseSafePass);
+                
+                // PENTING: Firebase Auth otomatis meloginkan user baru. Kita harus sign-out 
+                // secara paksa karena status akunnya masih 'pending' menunggu di-ACC.
+                await auth.signOut(); 
+            } catch (authError) {
+                console.error("Gagal buat akun Auth:", authError);
+                return alert("Gagal mendaftarkan keamanan akun: " + authError.message);
+            }
+
+            const isFounder = isTryingCreateWard;
             const finalRole = isFounder ? 'karu' : regForm.role;
 
+            // 🛡️ PERUBAHAN FIRESTORE: Kolom 'pass' TIDAK LAGI disimpan ke dalam Firestore!
             const newUser = {
                 id: targetId,
                 name: regForm.fullname.trim(),
-                pass: regForm.pass,
                 role: finalRole,
                 hospital: finalRsName,
                 ward: finalWardName,
@@ -126,24 +227,29 @@ export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, fir
                     right = rooms.slice(mid);
                 }
                 const newWardConfig = { roomList: rooms, leftRooms: left, rightRooms: right, name: finalWardName };
-                const safeHospName = finalRsName.replace(/\s+/g, '_').toUpperCase();
-                const safeAppId = appId || firebaseConfig?.appId;
-                const configRef = doc(db, `artifacts/${safeAppId}/public/data/settings_${safeHospName}`, 'mainConfig');
-
-                const snap = await getDoc(configRef);
-                let existingWards = snap.exists() && snap.data().wards ? snap.data().wards : {};
                 existingWards[finalWardName] = newWardConfig;
 
                 await setDoc(configRef, {
                     wards: existingWards,
-                    ...(snap.exists() ? {} : {
+                    ...(configSnap && configSnap.exists() ? {} : {
                         dpjpProfiles: finalRsName === 'RSUD BAYU ASIH' ? initialDpjpProfiles : [],
                         masterLabs: [], masterRads: [], masterProcedures: [], masterMedications: []
                     })
                 }, { merge: true });
             }
 
-            alert(`Pendaftaran Berhasil diajukan! 📝\n\nAkun Anda berstatus PENDING.\nSilakan hubungi Admin Pusat (Abi) / Karu ruangan untuk meminta persetujuan ACC sebelum Login.`);
+            // Simpan nama RS & Bangsal ke direktori publik (tanpa data sensitif)
+            if (!isDoctor && finalWardName && finalWardName !== 'ALL') {
+                const updatedWards = Array.from(new Set([...(publicHospitals[finalRsName] || []), finalWardName])).sort();
+                await setDoc(doc(db, 'settings', 'hospitalsDirectory'), {
+                    hospitals: {
+                        ...publicHospitals,
+                        [finalRsName]: updatedWards
+                    }
+                }, { merge: true }).catch(() => {});
+            }
+
+            alert(`Pendaftaran Berhasil diajukan! 📝\n\nAkun Anda berstatus PENDING.\nSilakan hubungi Admin Pusat (Ns. Abi Nugroho, S.Kep.) / Karu untuk meminta persetujuan ACC sebelum Login.`);
             setAuthView('LOGIN');
             setRegForm({
                 fullname: '', id: '', pass: '', role: 'Pelaksana',
@@ -151,12 +257,14 @@ export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, fir
                 bedCount: 20, layout: '2baris', bedFormat: 'K1'
             });
         } catch (error) {
+            console.error("Register Error:", error);
             alert("Terjadi kesalahan saat mendaftar. Cek koneksi internet.");
         }
     };
 
     const availableHospitals = Object.keys(publicHospitals);
     const availableWards = regForm.rsSelect && publicHospitals[regForm.rsSelect] ? publicHospitals[regForm.rsSelect] : [];
+    const isDoctorRole = ['DPJP', 'Dokter_Jaga'].includes(regForm.role);
 
     return (
         <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
@@ -231,8 +339,8 @@ export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, fir
                         </div>
                         <form onSubmit={handleRegister} className="space-y-2">
                             <div className="grid grid-cols-2 gap-2">
-                                <div><label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Nama Lengkap</label><input type="text" placeholder="Mis: Ns. Abi" className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-medium" value={regForm.fullname} onChange={e => setRegForm({ ...regForm, fullname: e.target.value })} required /></div>
-                                <div><label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Username Baru</label><input type="text" placeholder="Mis: abi.ns" className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-medium" value={regForm.id} onChange={e => setRegForm({ ...regForm, id: e.target.value })} required /></div>
+                                <div><label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Nama Lengkap</label><input type="text" placeholder="Mis: dr. Risa / dr. Jaga" className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-medium" value={regForm.fullname} onChange={e => setRegForm({ ...regForm, fullname: e.target.value })} required /></div>
+                                <div><label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Username Baru</label><input type="text" placeholder="Mis: dr.risa / dr.jaga" className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-medium" value={regForm.id} onChange={e => setRegForm({ ...regForm, id: e.target.value })} required /></div>
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <div><label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Password</label><input type="password" placeholder="••••••" className="w-full p-1.5 border rounded bg-slate-50 text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-mono" value={regForm.pass} onChange={e => setRegForm({ ...regForm, pass: e.target.value })} required /></div>
@@ -260,32 +368,49 @@ export const AuthScreen = ({ db, appId, onLoginSuccess, initialDpjpProfiles, fir
                                         <div className="mt-1.5"><input type="text" placeholder="Ketik Nama Rumah Sakit Baru..." className="w-full p-1.5 border border-indigo-300 rounded bg-indigo-50/30 text-xs outline-none uppercase font-bold" value={regForm.newRsName} onChange={e => setRegForm({ ...regForm, newRsName: e.target.value })} required /></div>
                                     )}
                                 </div>
-                                <div>
-                                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Ruangan</label>
-                                    <select className="w-full p-1.5 border rounded bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500" value={regForm.wardSelect} onChange={e => setRegForm({ ...regForm, wardSelect: e.target.value })} disabled={!regForm.rsSelect} required>
-                                        <option value="">- Pilih Ruangan -</option>
-                                        {availableWards.map(w => <option key={w} value={w}>{w}</option>)}
-                                        <option value="BUAT_BARU" className="font-bold text-indigo-600">+ Buat Ruangan Baru...</option>
-                                    </select>
-                                </div>
-                                {regForm.wardSelect === 'BUAT_BARU' && (
-                                    <div className="p-2 border border-indigo-200 bg-indigo-50 rounded-lg space-y-1.5 mt-1.5">
-                                        <h4 className="text-[10px] font-black text-indigo-900 border-b border-indigo-100 pb-1">⚙️ Setup Denah Ruangan Baru</h4>
-                                        <input type="text" placeholder="Nama Ruangan Baru..." className="w-full p-1.5 border rounded text-xs uppercase font-bold" value={regForm.newWardName} onChange={e => setRegForm({ ...regForm, newWardName: e.target.value })} required />
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <div><label className="block text-[8px] font-bold text-slate-500 uppercase mb-0.5">Total Bed</label><input type="number" min="1" max="100" className="w-full p-1.5 border rounded text-xs text-center font-bold" value={regForm.bedCount} onChange={e => setRegForm({ ...regForm, bedCount: parseInt(e.target.value) })} /></div>
-                                            <div className="col-span-2">
-                                                <label className="block text-[8px] font-bold text-slate-500 uppercase mb-0.5">Format Bed</label>
-                                                <select className="w-full p-1.5 border rounded text-xs bg-white font-medium" value={regForm.bedFormat} onChange={e => setRegForm({ ...regForm, bedFormat: e.target.value })}>
-                                                    <option value="K1">Awalan "K" (K1, K2)</option>
-                                                    <option value="1">Angka Saja (1, 2, 3)</option>
+
+                                {!isDoctorRole ? (
+                                    <>
+                                        <div>
+                                            <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Ruangan</label>
+                                            <select className="w-full p-1.5 border rounded bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500" value={regForm.wardSelect} onChange={e => setRegForm({ ...regForm, wardSelect: e.target.value })} disabled={!regForm.rsSelect} required>
+                                                <option value="">- Pilih Ruangan -</option>
+                                                {availableWards.map(w => <option key={w} value={w}>{w}</option>)}
+                                                <option value="BUAT_BARU" className="font-bold text-indigo-600">+ Buat Ruangan Baru...</option>
+                                            </select>
+                                        </div>
+                                        {regForm.wardSelect === 'BUAT_BARU' && (
+                                            <div className="p-2 border border-indigo-200 bg-indigo-50 rounded-lg space-y-1.5 mt-1.5">
+                                                <h4 className="text-[10px] font-black text-indigo-900 border-b border-indigo-100 pb-1">⚙️ Setup Denah Ruangan Baru</h4>
+                                                <input type="text" placeholder="Nama Ruangan Baru..." className="w-full p-1.5 border rounded text-xs uppercase font-bold" value={regForm.newWardName} onChange={e => setRegForm({ ...regForm, newWardName: e.target.value })} required />
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <div><label className="block text-[8px] font-bold text-slate-500 uppercase mb-0.5">Total Bed</label><input type="number" min="1" max="100" className="w-full p-1.5 border rounded text-xs text-center font-bold" value={regForm.bedCount} onChange={e => setRegForm({ ...regForm, bedCount: parseInt(e.target.value) })} /></div>
+                                                    <div className="col-span-2">
+                                                        <label className="block text-[8px] font-bold text-slate-500 uppercase mb-0.5">Format Bed</label>
+                                                        <select className="w-full p-1.5 border rounded text-xs bg-white font-medium" value={regForm.bedFormat} onChange={e => setRegForm({ ...regForm, bedFormat: e.target.value })}>
+                                                            <option value="K1">Awalan "K" (K1, K2)</option>
+                                                            <option value="1">Angka Saja (1, 2, 3)</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <select className="w-full p-1.5 border rounded text-xs bg-white font-medium" value={regForm.layout} onChange={e => setRegForm({ ...regForm, layout: e.target.value })}>
+                                                    <option value="2baris">2 Baris (Sisi Kiri & Kanan)</option>
+                                                    <option value="1baris">1 Baris Berjejer</option>
                                                 </select>
                                             </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="p-2.5 border border-indigo-200 bg-indigo-50/80 rounded-lg text-indigo-900 text-[10px] font-medium flex items-center gap-2 mt-1">
+                                        <span className="text-lg">🩺</span>
+                                        <div>
+                                            <div className="font-bold text-indigo-950">
+                                                Akses {regForm.role === 'DPJP' ? 'Dokter DPJP' : 'Dokter Jaga'} (Mobile)
+                                            </div>
+                                            <div className="text-[9px] text-indigo-700">
+                                                Dapat memantau dan visite seluruh pasien rawat inap lintas bangsal.
+                                            </div>
                                         </div>
-                                        <select className="w-full p-1.5 border rounded text-xs bg-white font-medium" value={regForm.layout} onChange={e => setRegForm({ ...regForm, layout: e.target.value })}>
-                                            <option value="2baris">2 Baris (Sisi Kiri & Kanan)</option>
-                                            <option value="1baris">1 Baris Berjejer</option>
-                                        </select>
                                     </div>
                                 )}
                             </div>

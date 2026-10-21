@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ANTIBIOTICS_DB, LAB_PATTERNS, LAB_NORMAL_RANGES } from '../constants';
-import { parsePlanning, getAntibioticDay } from '../utils/helpers';
+import { parsePlanning, getAntibioticDay, extractActiveMedications, AbxPill, getAntibioticDoseInfo, abxPrintNote } from '../utils/helpers';
 
 // --- FUNGSI HELPER UNTUK PRINT DI HP/TABLET (ANTI-CRASH) ---
 export const cetakPWA = (htmlContent, title = 'Cetak') => {
@@ -57,6 +58,18 @@ export const handlePrintWindow = (elementId, title, paperSize = 'A5') => {
 };
 
 // ✨ ULTIMATE TIME ENGINE: OTOMATIS MENGHITUNG HARI SECARA DINAMIS [HARI INI / NAMA HARI / TERLEWAT]
+export const getMedicationTimeSlots = (medName) => {
+    if (!medName) return ['12:00'];
+    const text = medName.toLowerCase();
+    if (text.includes('4x') || text.includes('/6 jam')) return ['12:00', '18:00', '24:00', '06:00'];
+    if (text.includes('3x') || text.includes('/8 jam')) return ['12:00', '18:00', '06:00'];
+    if (text.includes('2x') || text.includes('/12 jam')) return ['12:00', '24:00'];
+    if (text.includes('1x') || text.includes('/24 jam')) return ['12:00'];
+    if (text.includes('drip') || text.includes('infus') || text.includes('tpm')) return ['24 Jam'];
+    if (text.includes('prn') || text.includes('kp') || text.includes('k/p')) return ['K/P'];
+    return ['12:00'];
+};
+
 export const autoSmartDateTransformer = (text) => {
     if (!text) return '';
 
@@ -79,8 +92,8 @@ export const autoSmartDateTransformer = (text) => {
         }
 
         // Cek apakah baris ini adalah item tindakan (Lab/Rad/Tindakan)
-        const isActionableItem = 
-            currentSection === 'ACTIONABLE' || 
+        const isActionableItem =
+            currentSection === 'ACTIONABLE' ||
             /\b(lab|rad|radiologi|tndkn|tindakan)\b/i.test(trimmed) ||
             /^(🔬|🩻|💉|🧪)/.test(trimmed);
 
@@ -89,7 +102,7 @@ export const autoSmartDateTransformer = (text) => {
             const day = parseInt(dayStr, 10);
             const month = parseInt(monthStr, 10) - 1;
             let year = parseInt(yearStr, 10);
-            if (year < 100) year += 2000; 
+            if (year < 100) year += 2000;
 
             const targetDate = new Date(year, month, day);
             const today = new Date();
@@ -114,7 +127,7 @@ export const autoSmartDateTransformer = (text) => {
                     relativeLabel = `Terlewat (${targetDayName})`;
                 } else {
                     // Untuk obat & terapi rutin: Hapus total tag terlewatnya agar 'Clean Look'
-                    return ''; 
+                    return '';
                 }
             }
 
@@ -241,8 +254,8 @@ const renderGroupedItemsForPrint = (items, itemAuthors) => {
 const renderItemsWithAuthors = (items = [], itemAuthors = {}, isRx = false, isStacked = false, record = {}) => {
     return items.map((rawItem, idx) => {
         // Ganti istilah 'ktg' / 'KTG' menjadi 'labu' untuk display
-        const displayItem = typeof rawItem === 'string' 
-            ? rawItem.replace(/\bktg\b/gi, 'labu') 
+        const displayItem = typeof rawItem === 'string'
+            ? rawItem.replace(/\bktg\b/gi, 'labu')
             : rawItem;
 
         const authors = itemAuthors[rawItem] || itemAuthors[displayItem] || [];
@@ -250,11 +263,11 @@ const renderItemsWithAuthors = (items = [], itemAuthors = {}, isRx = false, isSt
 
         // 1. Badge Hari Antibiotik
         if (isRx && typeof getAntibioticDay === 'function') {
-            const cleanMedName = displayItem.split(/\s+\d/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
+            const cleanMedName = displayItem;
             const hCode = getAntibioticDay(cleanMedName, record.medicationLogs || {});
             if (hCode) {
                 abBadge = (
-                    <span 
+                    <span
                         className="ml-1 text-[9px] font-bold text-black border border-black bg-gray-100 px-1 py-[1px] rounded"
                         style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
                     >
@@ -267,18 +280,18 @@ const renderItemsWithAuthors = (items = [], itemAuthors = {}, isRx = false, isSt
         // 2. 🧠 SENSOR HITUNG SISA LABU TRANSFUSI UNTUK CETAK APOS
         let trnfsBadge = null;
         const trnfsMatch = displayItem.match(/(?:trnfs|transfusi)\s+(\d+)\s+([a-zA-Z]+)(?:[,\s]+on\s*ke\s*(\d*))?(?:[,\s]+post\s*ke\s*(\d*))?(?:[,\s]+sisa\s*(\d*))?/i);
-        
+
         if (trnfsMatch) {
             const total = parseInt(trnfsMatch[1], 10) || 0;
             const on = trnfsMatch[3] ? parseInt(trnfsMatch[3], 10) : 0;
             const post = trnfsMatch[4] ? parseInt(trnfsMatch[4], 10) : 0;
-            
-            let sisaLabu = trnfsMatch[5] !== undefined && trnfsMatch[5] !== '' 
-                ? parseInt(trnfsMatch[5], 10) 
+
+            let sisaLabu = trnfsMatch[5] !== undefined && trnfsMatch[5] !== ''
+                ? parseInt(trnfsMatch[5], 10)
                 : (on > 0 ? Math.max(0, total - on) : Math.max(0, total - post));
 
             trnfsBadge = (
-                <span 
+                <span
                     className="bg-purple-200 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded text-[8px] font-black shrink-0 ml-1.5 shadow-sm whitespace-nowrap"
                     style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
                 >
@@ -289,8 +302,8 @@ const renderItemsWithAuthors = (items = [], itemAuthors = {}, isRx = false, isSt
 
         if (isStacked) {
             return (
-                <div 
-                    key={rawItem || idx} 
+                <div
+                    key={rawItem || idx}
                     className={`flex items-center justify-between gap-1 w-full text-left font-bold ${idx > 0 ? "mt-0.5 border-t border-slate-300/40 pt-0.5" : ""}`}
                 >
                     <span className="flex-1 min-w-0">
@@ -327,13 +340,13 @@ const renderItemsWithAuthors = (items = [], itemAuthors = {}, isRx = false, isSt
 const renderHighlightedOthers = (textArray) => {
     return textArray.map((line, idx) => {
         const lower = line.toLowerCase();
-        
+
         // 1. Badge Pulang / BLPL
         const dischargeKeywords = ['blpl', 'rblpl', 'pulang', 'boleh pulang'];
         if (dischargeKeywords.some(k => lower.includes(k))) {
             return (
-                <div 
-                    key={idx} 
+                <div
+                    key={idx}
                     className="font-bold border border-black bg-gray-100 px-1.5 py-0.5 my-1 rounded text-black text-xs leading-tight w-fit flex items-center gap-1"
                     style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
                 >
@@ -346,8 +359,8 @@ const renderHighlightedOthers = (textArray) => {
         const transferKeywords = ['pindah', 'transfer', 'rujuk', 'alih rawat', 'pindah kamar'];
         if (transferKeywords.some(k => lower.includes(k))) {
             return (
-                <div 
-                    key={idx} 
+                <div
+                    key={idx}
                     className="font-bold border border-indigo-400 bg-indigo-50 text-indigo-900 px-1.5 py-0.5 my-1 rounded text-xs leading-tight w-fit flex items-center gap-1"
                     style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
                 >
@@ -360,8 +373,8 @@ const renderHighlightedOthers = (textArray) => {
         const alertKeywords = ['lab', 'radiologi', 'rontgen', 'usg', 'ct-scan', 'cek darah', 'konsul', 'lapor', 'puasa', 'operasi', 'cito', 'hd'];
         if (alertKeywords.some(k => lower.includes(k))) {
             return (
-                <div 
-                    key={idx} 
+                <div
+                    key={idx}
                     className="font-bold border border-black bg-gray-100 px-1.5 py-0.5 my-1 rounded text-black text-xs leading-tight w-fit flex items-center gap-1"
                     style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
                 >
@@ -375,7 +388,7 @@ const renderHighlightedOthers = (textArray) => {
     });
 };
 
-export const PrintLayout = ({ record, historyLogs = [] }) => {
+export const PrintLayout = ({ record, historyLogs = [], includeCpoSchedule = false }) => {
     if (!record) return null;
 
     const stripAuthorTags = (text) => (text || '').replace(/(?:🕒\s*)?\[[^\]]+,\s*[\d\/]+\s+[\d:]+\]\s*/g, '').trim();
@@ -455,6 +468,22 @@ export const PrintLayout = ({ record, historyLogs = [] }) => {
         });
     }
 
+    // 🛡️ EKSTRAKSI ACTIVE MEDS DI LEVEL UTAMA (Bisa diakses oleh Planning baris 552 & Tabel CPO)
+    const activeMeds = useMemo(() => {
+        if (typeof extractActiveMedications === 'function') {
+            try {
+                const planningBeforeBlpl = (record?.planning || '').split(/\b(?:r\/blpl|rencana\s*blpl|obat\s*pulang)\b/i)[0];
+                const combined = `${planningBeforeBlpl}\n${record?.currentPrescription || ''}`.trim();
+                const res = extractActiveMedications(combined);
+                if (res && res.length > 0) return res;
+                return extractActiveMedications(record) || [];
+            } catch (e) {
+                return [];
+            }
+        }
+        return [];
+    }, [record]);
+
     return (
         <div className="bg-white p-0 text-sm font-sans leading-snug text-black h-full flex flex-col">
             <div className="flex justify-between items-start border-b-2 border-black pb-1 mb-2 shrink-0">
@@ -463,9 +492,24 @@ export const PrintLayout = ({ record, historyLogs = [] }) => {
                         <span className="text-sm font-bold border-2 border-black px-2 py-0.5">{record.roomNumber ? record.roomNumber.replace(/(KM|P)$/, '') : ''}</span>
                         <span>{record.name}</span>
                     </div>
-                    <div className="text-[11px] mt-0.5 flex flex-wrap gap-x-4 items-center">
-                        <span className="font-black text-[13px] bg-gray-200 px-1.5 py-0.5 rounded border border-gray-400" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>DPJP: {record.dpjpName}</span>
-                        {(record.raberName || record.raber2Name) && <span className="text-gray-600 font-medium italic">Raber: {[record.raberName, record.raber2Name].filter(Boolean).join(', ')}</span>}
+                    <div className="text-[11px] mt-0.5 flex flex-wrap gap-x-2 items-center">
+                        {/* DPJP BADGE */}
+                        <span
+                            className="font-black text-[13px] bg-gray-200 text-black px-1.5 py-0.5 rounded border border-gray-400"
+                            style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+                        >
+                            DPJP: {record.dpjpName}
+                        </span>
+
+                        {/* SESUDAH: */}
+                        {(record.raberName || record.raber2Name || record.raber3Name) && (
+                            <span
+                                className="font-black text-[13px] bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300 shadow-none"
+                                style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+                            >
+                                Raber: <span className="text-blue-800 font-black">{[record.raberName, record.raber2Name, record.raber3Name].filter(Boolean).join(', ')}</span>
+                            </span>
+                        )}
                     </div>
                 </div>
                 <div className="text-right flex flex-col items-end justify-start">
@@ -520,24 +564,37 @@ export const PrintLayout = ({ record, historyLogs = [] }) => {
                                     )}
                                 </div>
                             )}
+
+                            {/* 🌟 TITIK 1: RESEP OBAT RINGKAS (HANYA MUNCUL JIKA includeCpoSchedule TIDAK DICENTANG - PERSIS GAMBAR 2) */}
+                            {!includeCpoSchedule && activeMeds && activeMeds.length > 0 && (
+                                <div className="mt-2.5 pt-2 border-t-2 border-dashed border-rose-300 text-xs">
+                                    <div className="mb-1">
+                                        <span 
+                                            className="bg-rose-50 border border-rose-300 text-rose-800 text-[10px] font-bold px-1.5 py-0.5 rounded inline-block"
+                                            style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+                                        >
+                                            💊 RESEP OBAT
+                                        </span>
+                                    </div>
+                                    <div className="space-y-0.5 pl-1 text-[11px] font-mono text-gray-900 leading-tight">
+                                        {activeMeds.map((med, idx) => (
+                                            <div key={idx} className="flex items-center justify-between">
+                                                <span>- {(med.raw ? med.raw.replace(/^[-•]\s*/, '') : `${med.cleanText || ''} ${(med.route || 'P.O')} ${med.freqText || '1x1'}`).replace(/\s*\(([^)]*)\)/g, ' $1').replace(/\bp\.o\b/gi, 'po').replace(/\s+/g, ' ').trim()}</span>
+                                                {med.antibioticDay && (
+                                                    <span 
+                                                        className="border border-red-500 bg-red-50 text-red-700 font-bold text-[8.5px] px-1 rounded ml-1 shrink-0"
+                                                        style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+                                                    >
+                                                        🚨 {med.antibioticDay}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
-                    {safeCurrentPrescription && (
-                        <div className="border-t-2 border-dashed border-rose-400 pt-2 mt-2">
-                            <div className="font-bold underline mb-1 inline-block px-1 text-xs text-rose-900 bg-rose-100 border border-rose-300 rounded" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>💊 RESEP OBAT</div>
-                            <div className="font-mono text-xs pl-1 leading-relaxed text-gray-900 space-y-0.5">
-                                {safeCurrentPrescription.split('\n').map((line, lIdx) => {
-                                    const trimmed = line.trim(); let abBadge = null;
-                                    const cleanMedName = trimmed.replace(/^[-\*\s\u2022\d.]+\s*/, '').split(/\s+\d/)[0].trim().replace(/\s+(iv|im|sc|po|drip)$/i, '');
-                                    if (ANTIBIOTICS_DB.some(ab => cleanMedName.toLowerCase().includes(ab)) || /\bH\d+\b/i.test(trimmed)) {
-                                        const hCode = getAntibioticDay(trimmed, record.medicationLogs || {});
-                                        if (hCode) abBadge = <span className="ml-2 text-[9px] font-black border border-black bg-gray-100 px-1 py-[px] rounded">🚨 {hCode}</span>;
-                                    }
-                                    return <div key={lIdx} className="flex items-center flex-wrap"><span>{line}</span>{abBadge}</div>;
-                                })}
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 <div className="flex flex-col">
@@ -558,55 +615,377 @@ export const PrintLayout = ({ record, historyLogs = [] }) => {
                     )}
                 </div>
             </div>
+
+            {/* 💊 CATATAN PEMBERIAN OBAT (CPO) / INSTRUKSI MEDIS CETAK REAL-TIME */}
+            {(() => {                
+                if (activeMeds.length === 0) return null;
+
+                // 2. Format Tanggal YYYY-MM-DD (Kemarin, Hari Ini, Besok)
+                const getSafeYMD = (d = new Date()) => {
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${y}-${m}-${day}`;
+                };
+
+                const today = new Date();
+                const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+                const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
+                const todayYMD = getSafeYMD(today);
+                const yesterdayYMD = getSafeYMD(yesterday);
+                const tomorrowYMD = getSafeYMD(tomorrow);
+
+                const formatTgl = (d) => d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+                const allShifts = [
+                    { key: 'jam_12', label: '12:00' },
+                    { key: 'jam_18', label: '18:00' },
+                    { key: 'jam_24', label: '24:00' },
+                    { key: 'jam_06', label: '06:00' }
+                ];
+
+                // Helper pencari log centang obat
+                const getShiftLog = (medLogs, dateStr, medObj, sKey) => {
+                    const dayData = medLogs?.[dateStr] || {};
+                    if (dayData[medObj.raw]?.[sKey]) return dayData[medObj.raw][sKey];
+                    if (dayData[medObj.cleanText]?.[sKey]) return dayData[medObj.cleanText][sKey];
+                    const cleanTarget = (medObj.cleanText || medObj.raw || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    for (const k of Object.keys(dayData)) {
+                        const normK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (normK && (normK.includes(cleanTarget) || cleanTarget.includes(normK))) {
+                            if (dayData[k]?.[sKey]) return dayData[k][sKey];
+                        }
+                    }
+                    return { checked: false, scheduled: false };
+                };
+
+                // 🌟 JIKA TIDAK DICENTANG: TABEL CPO BAWAH TIDAK AKAN DIRENDER SAMA SEKALI
+                if (!includeCpoSchedule) return null;
+
+                return (
+                    <div className="mt-4 pt-2 border-t-2 border-black break-inside-avoid">
+                        <div className="flex justify-between items-center mb-1 text-[10px] font-bold">
+                            <span className="uppercase font-black text-black">💊 CPO / INSTRUKSI MEDIS</span>
+                            <span className="text-[9px] text-slate-600">Lembar Ceklis Dinas • Cetak: {formatTgl(today)}</span>
+                        </div>
+
+                        <table className="w-full border-collapse border border-black text-[9px]">
+                            <thead>
+                                <tr className="bg-slate-100 text-black border-b border-black">
+                                    <th className="p-1.5 text-left font-bold w-[40%] border-r border-black">
+                                        Nama Obat & Dosis
+                                    </th>
+                                    <th className="p-1 border-r border-black text-center w-[20%]">
+                                        <div>Kemarin</div>
+                                        <div className="font-normal text-[8px] text-slate-600">({formatTgl(yesterday)})</div>
+                                    </th>
+                                    <th className="p-1 border-r border-black text-center w-[20%] bg-emerald-50/70">
+                                        <div>Hari Ini</div>
+                                        <div className="font-normal text-[8px] text-slate-600">({formatTgl(today)})</div>
+                                    </th>
+                                    <th className="p-1 text-center w-[20%]">
+                                        <div>Besok</div>
+                                        <div className="font-normal text-[8px] text-slate-600">({formatTgl(tomorrow)})</div>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {activeMeds.map((med, mIdx) => {
+                                    const lowerMed = (med.raw || med.cleanText || '').toLowerCase();
+                                    
+                                    // 1. HITUNG FREKUENSI
+                                    let freq = 1;
+                                    const freqMatch = lowerMed.match(/(\d+)\s*x/i);
+                                    if (freqMatch) freq = parseInt(freqMatch[1], 10);
+                                    else if (/\/\s*8\s*jam/i.test(lowerMed)) freq = 3;
+                                    else if (/\/\s*12\s*jam/i.test(lowerMed)) freq = 2;
+                                    else if (/\/\s*6\s*jam/i.test(lowerMed)) freq = 4;
+                                    else if (/\/\s*24\s*jam/i.test(lowerMed)) freq = 1;
+                                    else if (/\/\s*48\s*jam/i.test(lowerMed)) freq = 1;
+
+                                    // 2. AMBIL RIWAYAT SHIFT YANG PERNAH DICEKLIS
+                                    const everCheckedShifts = [];
+                                    Object.keys(record.medicationLogs || {}).forEach(d => {
+                                        const medShifts = record.medicationLogs[d]?.[med.cleanText] || record.medicationLogs[d]?.[med.raw] || {};
+                                        Object.keys(medShifts).forEach(sKey => {
+                                            const s = medShifts[sKey];
+                                            if (s && (s.checked || s.scheduled) && !everCheckedShifts.includes(sKey)) {
+                                                everCheckedShifts.push(sKey);
+                                            }
+                                        });
+                                    });
+
+                                    // 3. SENSOR SIKLUS ROTASI DINAMIS (BEBAS GARIS MIRING "/")
+                                    const hasChecked24 = everCheckedShifts.includes('jam_24');
+                                    const hasChecked12 = everCheckedShifts.includes('jam_12');
+                                    const textHints24 = /\b(jam\s*24|24[:.]00|\b24\b|malam|jam\s*(8|08|16)|(8|08|16)[:.]00)\b/i.test(lowerMed);
+                                    const isCycle24 = (hasChecked24 && !hasChecked12) || (!hasChecked12 && textHints24);
+
+                                    let slotsToRender = [];
+
+                                    if (freq === 3) {
+                                        // SIKLUS 3X1
+                                        slotsToRender = isCycle24
+                                            ? [
+                                                { key: 'jam_12', label: '08:00' },
+                                                { key: 'jam_18', label: '16:00' },
+                                                { key: 'jam_24', label: '24:00' }
+                                            ]
+                                            : [
+                                                { key: 'jam_12', label: '12:00' },
+                                                { key: 'jam_18', label: '20:00' },
+                                                { key: 'jam_06', label: '04:00' }
+                                            ];
+                                    } else if (freq === 2) {
+                                        // SIKLUS 2X1
+                                        const isNightPair = everCheckedShifts.includes('jam_24') || /\b(jam\s*24|24[:.]00|malam)\b/i.test(lowerMed) || (!everCheckedShifts.includes('jam_18') && !everCheckedShifts.includes('jam_06'));
+                                        slotsToRender = isNightPair
+                                            ? [
+                                                { key: 'jam_12', label: '12:00' },
+                                                { key: 'jam_24', label: '24:00' }
+                                            ]
+                                            : [
+                                                { key: 'jam_06', label: '06:00' },
+                                                { key: 'jam_18', label: '18:00' }
+                                            ];
+                                    } else if (freq === 4) {
+                                        // SIKLUS 4X1
+                                        slotsToRender = [
+                                            { key: 'jam_12', label: '12:00' },
+                                            { key: 'jam_18', label: '18:00' },
+                                            { key: 'jam_24', label: '24:00' },
+                                            { key: 'jam_06', label: '06:00' }
+                                        ];
+                                    } else {
+                                        // SIKLUS 1X1
+                                        const isMalam = /\b(jam\s*24|24[:.]00|malam)\b/i.test(lowerMed);
+                                        const isSore = /\b(jam\s*(18|19|20)|sore)\b/i.test(lowerMed);
+                                        const isPagi = /\b(jam\s*(6|06|7|07|8|08)|pagi)\b/i.test(lowerMed);
+
+                                        if (isMalam || everCheckedShifts.includes('jam_24')) {
+                                            slotsToRender = [{ key: 'jam_24', label: '24:00' }];
+                                        } else if (isSore || everCheckedShifts.includes('jam_18')) {
+                                            slotsToRender = [{ key: 'jam_18', label: '18:00' }];
+                                        } else if (isPagi || everCheckedShifts.includes('jam_06')) {
+                                            slotsToRender = [{ key: 'jam_06', label: '06:00' }];
+                                        } else {
+                                            slotsToRender = [{ key: 'jam_12', label: '12:00' }];
+                                        }
+                                    }
+
+                                    const abxInfo = getAntibioticDoseInfo(med.raw || med.cleanText, record.medicationLogs);
+                                    const renderPrintDaySlots = (dateStr) => {
+                                        return (
+                                            <div className="flex items-center justify-center flex-wrap gap-1.5 py-0.5">
+                                                {slotsToRender.map(s => {
+                                                    const log = getShiftLog(record.medicationLogs, dateStr, med, s.key);
+                                                    const isChecked = Boolean(log?.checked);
+
+                                                    return (
+                                                        <div key={s.key} className="flex flex-col items-center justify-center text-center">
+                                                            {isChecked && <AbxPill med={med.raw || med.cleanText} logs={record.medicationLogs} dateStr={dateStr} shiftKey={s.key} variant="print" />}
+                                                            <span className="text-[7.5px] font-bold text-black leading-none">{s.label}</span>
+                                                            <div className="mt-0.5">
+                                                                {isChecked ? (
+                                                                    <div className="border border-black bg-slate-200 text-black px-1 py-0.2 rounded font-black text-[8px] leading-tight flex flex-col items-center">
+                                                                        <span>✓</span>
+                                                                        {log.time && <span className="text-[6.5px] font-mono leading-none">{log.time}</span>}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-[10px] leading-none text-slate-400">◯</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    };
+
+                                    return (
+                                        <tr key={mIdx} className="border-b border-black">
+                                            {/* 1. NAMA OBAT & DOSIS */}
+                                            <td className="p-1.5 font-bold border-r border-black">
+                                                <div className="text-[9.5px] text-black leading-tight">
+                                                    {(med.cleanText || med.raw || '').replace(/\s+(iv|im|sc|po|drip)$/i, '')}
+                                                </div>
+                                                <div className="text-[8px] text-slate-600 font-normal uppercase mt-0.5">
+                                                    {med.route} • {med.freqText} {med.antibioticDay ? `(🚨 ${med.antibioticDay})` : ''}
+                                                </div>
+                                                {abxInfo && (
+                                                    <div className="text-[7px] text-black font-normal mt-0.5 leading-tight">🎈 {abxPrintNote(abxInfo)}</div>
+                                                )}
+                                            </td>
+
+                                            {/* 2. BULATAN JAM */}
+                                            <td className="p-1 border-r border-black align-middle">
+                                                {renderPrintDaySlots(yesterdayYMD)}
+                                            </td>
+                                            <td className="p-1 border-r border-black align-middle bg-emerald-50/40">
+                                                {renderPrintDaySlots(todayYMD)}
+                                            </td>
+                                            <td className="p-1 align-middle">
+                                                {renderPrintDaySlots(tomorrowYMD)}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+            })()}
         </div>
     );
 };
 
 export const PrintView = ({ record, closePrint, historyLogs = [] }) => {
-    return (
-        <div className="fixed inset-0 bg-white z-[80] p-0 overflow-y-auto">
-            <div className="p-4 bg-gray-100 flex justify-between items-center no-print sticky top-0 border-b shadow-sm">
+    const [includeCpoSchedule, setIncludeCpoSchedule] = useState(false);
+    const [paper, setPaper] = useState('A5');
+    const width = paper === 'A4' ? '210mm' : '148mm';
+
+    return createPortal(
+        <div id="print-portal" className="fixed inset-0 bg-white z-[80] p-0 overflow-y-auto print:static print:overflow-visible print:block print:bg-white print:h-auto print:w-full print:p-0">
+            <style>{`
+                @media print {
+                    @page { size: ${paper} portrait; margin: 5mm; }
+                    body > *:not(#print-portal) { display: none !important; }
+                    #printable-area > div { width: ${width} !important; max-width: none !important; margin: 0 auto !important; }
+                }
+            `}</style>
+
+            <div className="p-4 bg-gray-100 flex justify-between items-center no-print sticky top-0 border-b shadow-sm flex-wrap gap-2">
                 <h1 className="font-bold text-gray-700">Preview Cetak (APOS)</h1>
-                <div className="flex gap-2">
-                    <button onClick={() => handlePrintWindow('printable-area', `Cetak APOS - ${record.name}`, 'A5')} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 transition">🖨️ Cetak A5</button>
-                    <button onClick={() => handlePrintWindow('printable-area', `Cetak APOS - ${record.name}`, 'A4')} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 transition">🖨️ Cetak A4</button>
-                    <button onClick={closePrint} className="px-4 py-2 bg-red-500 text-white rounded text-sm font-bold hover:bg-red-600 transition">Tutup</button>
+
+                <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 px-3 py-2 rounded shadow-xs cursor-pointer hover:bg-slate-50 select-none">
+                        <input
+                            type="checkbox"
+                            checked={includeCpoSchedule}
+                            onChange={(e) => setIncludeCpoSchedule(e.target.checked)}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span>Sertakan Jadwal Jam CPO</span>
+                    </label>
+
+                    <select
+                        value={paper}
+                        onChange={(e) => setPaper(e.target.value)}
+                        className="px-2 py-2 border border-slate-300 rounded text-sm font-bold bg-white"
+                    >
+                        <option value="A5">Kertas A5</option>
+                        <option value="A4">Kertas A4</option>
+                    </select>
+
+                    <button
+                        onClick={() => window.print()}
+                        className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 transition"
+                    >
+                        🖨️ Cetak {paper}
+                    </button>
+
+                    <button
+                        onClick={closePrint}
+                        className="px-4 py-2 bg-red-500 text-white rounded text-sm font-bold hover:bg-red-600 transition"
+                    >
+                        Tutup
+                    </button>
                 </div>
             </div>
-            <div id="printable-area" className="p-4 flex justify-center">
-                <div className="w-full max-w-4xl"><PrintLayout record={record} historyLogs={historyLogs} /></div>
+
+            <div id="printable-area" className="p-4 flex justify-center print:p-0 print:m-0 print:block">
+                <div className="w-full max-w-4xl">
+                    <PrintLayout
+                        record={record}
+                        historyLogs={historyLogs}
+                        includeCpoSchedule={includeCpoSchedule}
+                    />
+                </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
 export const BulkPrintView = ({ records, onClose }) => {
+    const [includeCpoSchedule, setIncludeCpoSchedule] = useState(false);
+    const [paper, setPaper] = useState('A5');
+    const width = paper === 'A4' ? '210mm' : '148mm';
+
     const sortedToPrint = useMemo(() => {
-        return [...records].sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' }));
+        return [...records].sort((a, b) => (a.roomNumber || '').localeCompare(b.roomNumber || '', undefined, { numeric: true, sensitivity: 'base' }));
     }, [records]);
 
-    return (
-        <div className="fixed inset-0 bg-white z-[150] overflow-y-auto">
-            <div className="p-4 bg-indigo-50 flex justify-between items-center no-print sticky top-0 z-50 border-b shadow-sm">
+    return createPortal(
+        <div id="print-portal" className="fixed inset-0 bg-white z-[150] overflow-y-auto print:static print:overflow-visible print:block print:bg-white print:h-auto print:w-full print:p-0">
+            <style>{`
+                @media print {
+                    @page { size: ${paper} portrait; margin: 5mm; }
+                    body > *:not(#print-portal) { display: none !important; }
+                    .print-page { width: ${width} !important; margin: 0 auto !important; }
+                    .print-break { break-after: page; page-break-after: always; }
+                    .print-break:last-child { break-after: auto; page-break-after: auto; }
+                }
+            `}</style>
+
+            <div className="p-4 bg-indigo-50 flex justify-between items-center no-print sticky top-0 z-50 border-b shadow-sm flex-wrap gap-2">
                 <div>
                     <h1 className="font-bold text-indigo-900">Cetak Banyak ({sortedToPrint.length} Pasien)</h1>
                     <p className="text-[10px] text-gray-500 italic">*Urutan otomatis berdasarkan nomor kamar</p>
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={() => handlePrintWindow('bulk-printable-area', 'Cetak Banyak - APOS', 'A5')} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 transition">🖨️ Cetak A5</button>
-                    <button onClick={() => handlePrintWindow('bulk-printable-area', 'Cetak Banyak - APOS', 'A4')} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm font-bold shadow hover:bg-indigo-700 transition">🖨️ Cetak A4</button>
-                    <button onClick={onClose} className="px-4 py-2 bg-gray-500 text-white rounded text-sm font-bold hover:bg-gray-600 transition">Tutup</button>
+
+                <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 px-3 py-2 rounded shadow-xs cursor-pointer hover:bg-slate-100 select-none">
+                        <input
+                            type="checkbox"
+                            checked={includeCpoSchedule}
+                            onChange={(e) => setIncludeCpoSchedule(e.target.checked)}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span>Sertakan Jadwal Jam CPO</span>
+                    </label>
+
+                    <select
+                        value={paper}
+                        onChange={(e) => setPaper(e.target.value)}
+                        className="px-2 py-2 border border-slate-300 rounded text-sm font-bold bg-white"
+                    >
+                        <option value="A5">Kertas A5</option>
+                        <option value="A4">Kertas A4</option>
+                    </select>
+
+                    <button
+                        onClick={() => window.print()}
+                        className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow hover:bg-blue-700 transition"
+                    >
+                        🖨️ Cetak {paper}
+                    </button>
+
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 bg-gray-500 text-white rounded text-sm font-bold hover:bg-gray-600 transition"
+                    >
+                        Tutup
+                    </button>
                 </div>
             </div>
-            <div id="bulk-printable-area" className="p-4 bg-gray-50">
+
+            <div id="bulk-printable-area" className="p-4 bg-gray-50 print:p-0 print:bg-white">
                 {sortedToPrint.map((rec, index) => (
-                    <div key={rec.id} className="print-page bg-white shadow mb-8 mx-auto print-break">
-                        <div className="no-print bg-gray-200 text-gray-500 text-[10px] p-1 text-center font-bold uppercase mb-2">Halaman {index + 1}: {rec.roomNumber} - {rec.name}</div>
-                        <PrintLayout record={rec} />
+                    <div key={rec.id} className="print-page bg-white shadow mb-8 mx-auto print-break print:shadow-none print:m-0 print:p-0">
+                        <div className="no-print bg-gray-200 text-gray-500 text-[10px] p-1 text-center font-bold uppercase mb-2">
+                            Halaman {index + 1}: {rec.roomNumber} - {rec.name}
+                        </div>
+                        <PrintLayout
+                            record={rec}
+                            includeCpoSchedule={includeCpoSchedule}
+                        />
                     </div>
                 ))}
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
@@ -681,11 +1060,23 @@ export const handlePrintBukuCM = (wardName) => {
     const content = document.getElementById('buku-cm-print');
     if (!content) return alert("Konten tidak ditemukan.");
 
+    // 🌟 KUNCI UTAMA: Ambil MURNI elemen <table> saja!
+    // Ini membuang <style> @media print bawaan atau wrapper ganda di Companion
+    // yang sebelumnya menyembunyikan header saat dialog Print Preview terbuka.
+    const tableEl = content.tagName === 'TABLE' ? content : content.querySelector('table');
+    const tableHtml = tableEl ? tableEl.outerHTML : content.innerHTML;
+
+    // Ambil tanggal & jam saat di-print (DD/MM/YYYY, HH:mm)
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const tglJamPrint = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}, ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const cleanWard = (typeof wardName === 'string' && wardName ? wardName : 'MELATI').toUpperCase();
+
     const html = `
     <html><head><title>Cetak Buku Register (CM)</title>
     <style>
         @page { size: A4 portrait; margin: 5mm; }
-        body { font-family: Arial, sans-serif; margin: 0; padding: 10px; zoom: 0.9; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 10px; zoom: 0.9; background: white !important; color: black !important; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         th, td { border: 1px solid black; padding: 4px; font-size: 8.5pt; text-align: center; overflow: hidden; }
         th { background-color: #f3f4f6; font-weight: bold; text-transform: uppercase; font-size: 7.5pt; }
@@ -695,11 +1086,49 @@ export const handlePrintBukuCM = (wardName) => {
         th:nth-child(5), td:nth-child(5) { width: 110px; } th:nth-child(6), td:nth-child(6) { width: 35px; }
         th:nth-child(7), td:nth-child(7) { width: 125px; } th:nth-child(8), td:nth-child(8) { width: 75px; }
         input { display: none !important; } span.print-text { display: inline !important; } .no-print { display: none !important; }
-        h3 { text-align: center; margin-bottom: 10px; font-size: 14pt; color: #065f46; }
+        
+        /* HEADER KIRI (BUKU CM) & KANAN (TANGGAL JAM) - KEBAL @MEDIA PRINT */
+        h3.cm-header {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: flex-end !important;
+            margin: 0 0 8px 0 !important;
+            padding-bottom: 4px !important;
+            border-bottom: 2px solid #065f46 !important;
+            width: 100% !important;
+            visibility: visible !important;
+        }
+        .cm-title {
+            font-size: 14pt !important;
+            font-weight: bold !important;
+            color: #065f46 !important;
+            text-transform: uppercase !important;
+        }
+        .cm-date {
+            font-size: 9pt !important;
+            font-weight: bold !important;
+            color: #333333 !important;
+        }
     </style></head><body>
-    <h3>BUKU REGISTER RUANGAN (CM) - ${wardName}</h3>
-    ${content.innerHTML}
+    <h3 class="cm-header">
+        <span class="cm-title">BUKU CM ${cleanWard}</span>
+        <span class="cm-date">${tglJamPrint}</span>
+    </h3>
+    ${tableHtml}
     </body></html>
 `;
-    cetakPWA(html, 'Cetak Buku Register (CM)');
+
+    const isExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
+
+    if (isExtension) {
+        const printWin = window.open('', '_blank', 'width=850,height=950');
+        if (!printWin) return alert("Pastikan izin pop-up browser aktif.");
+        printWin.document.open();
+        printWin.document.write(html);
+        printWin.document.close();
+        printWin.focus();
+        setTimeout(() => { printWin.print(); }, 400);
+    } else {
+        cetakPWA(html, 'Cetak Buku Register (CM)');
+    }
 };

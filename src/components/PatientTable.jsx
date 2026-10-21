@@ -34,6 +34,7 @@ const PatientTable = ({
     BukuCMTable, GlobalMedicationBoard, onOpenEkspedisi
 }) => {
     
+    const isDoctor = ['DPJP', 'Dokter_Jaga'].includes(currentUser?.role);
     const [viewMode, setViewMode] = useState('soap');
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
@@ -73,18 +74,21 @@ const PatientTable = ({
             });
         }
 
-        if (roomSortOrder && roomSortOrder.length > 0 && roomSortOrder.length < 24) {
-            return [...records].sort((a, b) => {
-                const indexA = roomSortOrder.indexOf(a.roomNumber);
-                const indexB = roomSortOrder.indexOf(b.roomNumber);
-                return indexA - indexB;
-            });
-        }
-
-        return [...records].sort((a, b) => 
-            a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: 'base' })
-        );
-    }, [records, roomSortOrder]);
+        return [...records].sort((a, b) => {
+            const aRoom = (a?.roomNumber || '').trim();
+            const bRoom = (b?.roomNumber || '').trim();
+            const extractParts = (str) => {
+                const isIso = /^iso/i.test(str);
+                const numMatch = str.match(/(\d+)/);
+                const num = isIso ? 99999 : (numMatch ? parseInt(numMatch[1], 10) : 9999);
+                return { num, raw: str };
+            };
+            const partA = extractParts(aRoom);
+            const partB = extractParts(bRoom);
+            if (partA.num !== partB.num) return partA.num - partB.num;
+            return partA.raw.localeCompare(partB.raw, undefined, { numeric: true, sensitivity: 'base' });
+        });
+    }, [records]);
 
     const getPreparationAlert = (planningText) => {
         if (!planningText) return null;
@@ -187,8 +191,12 @@ const PatientTable = ({
                         <button onClick={() => setViewMode('soap')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'soap' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📝 Mode SOAP</button>
                         <button onClick={() => setViewMode('troli-obat')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'troli-obat' ? 'bg-rose-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>🛒 Troli Obat</button>
                         <button onClick={() => setViewMode('lab-board')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'lab-board' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>🧪 Rekap Lab/Rad</button>
-                        <button onClick={() => setViewMode('ttv')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'ttv' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📊 Mode TTV</button>
-                        <button onClick={() => setViewMode('buku-cm')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'buku-cm' ? 'bg-emerald-600 text-white shadow-sm border-emerald-600' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📖 Buku CM</button>
+                        {!isDoctor && (
+                            <button onClick={() => setViewMode('ttv')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'ttv' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📊 Mode TTV</button>
+                        )}
+                        {!isDoctor && (
+                            <button onClick={() => setViewMode('buku-cm')} className={`flex-1 py-1.5 text-xs font-bold rounded transition gap-2 ${viewMode === 'buku-cm' ? 'bg-emerald-600 text-white shadow-sm border-emerald-600' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'}`}>📖 Buku CM</button>
+                        )}
                     </div>
                 )}
                 

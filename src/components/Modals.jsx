@@ -139,7 +139,7 @@ export const ConfirmationModal = ({ message, onConfirm, onCancel, title, childre
 // =====================================================================
 // 5. MODAL PILIHAN LAPOR WA (PASIEN SPESIFIK)
 // =====================================================================
-export const LaporConfirmationModal = ({ onLaporDpjp, onLaporJaga, onCancel, patientName, dpjpNumber }) => {
+export const LaporConfirmationModal = ({ onLaporDpjp, onLaporJaga, onLaporRaber, raberList = [], onCancel, patientName, dpjpNumber }) => {
     const formatPhone = (raw) => raw ? '+' + String(raw).replace(/\D/g, '') : '-';
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -153,10 +153,19 @@ export const LaporConfirmationModal = ({ onLaporDpjp, onLaporJaga, onCancel, pat
                         </button>
                         <div className="text-[9px] text-gray-400 text-right mt-0.5">{dpjpNumber ? formatPhone(dpjpNumber) : 'No. HP Kosong'}</div>
                     </div>
+
+                    {raberList.map(r => (
+                        <div key={r.index} className="w-full">
+                            <button onClick={() => onLaporRaber && onLaporRaber(r.index)} disabled={!r.number} className={`w-full px-3 py-2 text-xs ${r.number ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'} rounded font-bold shadow-sm flex justify-between items-center`}>
+                                <span>Ke Raber: {r.name}</span><span>🩺</span>
+                            </button>
+                            <div className="text-[9px] text-gray-400 text-right mt-0.5">{r.number ? formatPhone(r.number) : 'No. HP Kosong'}</div>
+                        </div>
+                    ))}
+
                     <div className="w-full relative">
-                        <div className="absolute -top-2 -right-1 bg-yellow-300 text-[8px] font-bold px-1 rounded text-black animate-pulse">BARU</div>
                         <button onClick={() => onLaporJaga()} className="w-full px-3 py-2 text-xs bg-green-600 text-white hover:bg-green-700 rounded font-bold shadow-sm flex justify-between items-center">
-                            <span>Ke Dr. Jaga / Raber / Grup</span><span>⏩</span>
+                            <span>Ke Dr. Jaga / Grup</span><span>⏩</span>
                         </button>
                         <div className="text-[9px] text-gray-400 text-right mt-0.5 italic">Pilih kontak sendiri di WA (Forward)</div>
                     </div>
