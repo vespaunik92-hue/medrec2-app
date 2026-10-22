@@ -3827,7 +3827,7 @@ const handleAdminSaveUser = async () => {
                             <span>☰</span> MENU ▾
                             {/* ✨ RED DOT NOTIFIKASI JIKA ADA USER PENDING */}
                             {(() => {
-                                const pendingCount = allUsers.filter(u => u.status === 'pending' && (currentUser.role === 'admin' || currentUser.role === 'SUPERADMIN' || (u.hospital === currentUser.hospital && u.ward === currentUser.ward))).length;
+                                const pendingCount = allUsers.filter(u => u.status === 'pending' && (currentUser.role === 'admin' || currentUser.role === 'SUPERADMIN' || (u.hospital || '').toUpperCase() === (currentUser.hospital || '').toUpperCase())).length;
                                 if (pendingCount > 0) return (
                                     <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-sm border border-white">
                                         {pendingCount}
@@ -3868,7 +3868,7 @@ const handleAdminSaveUser = async () => {
                                     <button onClick={() => { setView('settings'); setIsMainMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-xs flex items-center justify-between text-slate-700 transition-colors ${mainMenuHighlight === getMenuIdx('view', 'settings') ? 'bg-indigo-100 font-bold text-indigo-900' : 'hover:bg-slate-50'}`}>
                                         <span>⚙️ Setelan</span>
                                         {(() => {
-                                            const pendingCount = allUsers.filter(u => u.status === 'pending' && (currentUser.role === 'admin' || currentUser.role === 'SUPERADMIN' || (u.hospital === currentUser.hospital && u.ward === currentUser.ward))).length;
+                                            const pendingCount = allUsers.filter(u => u.status === 'pending' && (currentUser.role === 'admin' || currentUser.role === 'SUPERADMIN' || (u.hospital || '').toUpperCase() === (currentUser.hospital || '').toUpperCase())).length;
                                             if (pendingCount > 0) return <span className="bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">{pendingCount} Baru</span>;
                                             return null;
                                         })()}
@@ -4182,6 +4182,17 @@ const handleAdminSaveUser = async () => {
 
                                                                         {/* Wadah Aksi Kanan (Locker stopPropagation agar klik hapus tidak memicu buka-tutup accordion) */}
                                                                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                                                            {(() => {
+                                                                                const n = allUsers.filter(u => u.status === 'pending'
+                                                                                    && (u.hospital || 'RSUD Bayu Asih').toUpperCase() === String(rsKey).toUpperCase()
+                                                                                    && (currentUser.role === 'admin' || currentUser.role === 'SUPERADMIN' || u.ward === currentUser.ward)
+                                                                                ).length;
+                                                                                return n > 0 ? (
+                                                                                    <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">
+                                                                                        {n} menunggu ACC
+                                                                                    </span>
+                                                                                ) : null;
+                                                                            })()}
                                                                             <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1">
                                                                                 Grup Institusi {currentUser.role === 'admin' ? (isExpanded ? '▼' : '▶') : ''}
                                                                             </span>
@@ -4215,6 +4226,11 @@ const handleAdminSaveUser = async () => {
                                                                                         <div key={wardName} className="ml-1 pl-2 border-l-2 border-indigo-200 space-y-1.5">
                                                                                             <div className="text-[11px] font-extrabold text-indigo-700 flex items-center gap-1">
                                                                                                 📂 Ruang {toTitleCase(wardName)} ({roomUsers.length} Staf)
+                                                                                                {roomUsers.filter(u => u.status === 'pending').length > 0 && (
+                                                                                                    <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">
+                                                                                                        {roomUsers.filter(u => u.status === 'pending').length} menunggu ACC
+                                                                                                    </span>
+                                                                                                )}
                                                                                             </div>
 
                                                                                             <div className="overflow-x-auto rounded-lg border border-slate-100">
@@ -4224,23 +4240,21 @@ const handleAdminSaveUser = async () => {
                                                                                                             <th className="p-2">ID</th>
                                                                                                             <th className="p-2">Nama</th>
                                                                                                             <th className="p-2">Role</th>
-                                                                                                            <th className="p-2">Pass</th>
                                                                                                             <th className="p-2 text-center">Status</th>
                                                                                                             <th className="p-2 text-center">Aksi</th>
                                                                                                         </tr>
                                                                                                     </thead>
                                                                                                     <tbody className="divide-y divide-slate-100">
                                                                                                         {roomUsers.map(u => (
-                                                                                                            <tr key={u.id} className="hover:bg-indigo-50/40">
+                                                                                                            <tr key={u.id} className={u.status === 'pending' ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-indigo-50/40'}>
                                                                                                                 <td className="p-2 font-mono text-slate-500">{u.id}</td>
                                                                                                                 <td className="p-2 font-bold text-slate-800">{u.name}</td>
                                                                                                                 <td className="p-2">
                                                                                                                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : u.role === 'karu' ? 'bg-amber-100 text-amber-700' : u.role === 'PPJA' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{u.role === 'member' || u.role === 'Pelaksana' ? 'pelaksana' : u.role}</span>
                                                                                                                 </td>
-                                                                                                                <td className="p-2 font-mono text-slate-400">{u.pass}</td>
                                                                                                                 <td className="p-2 text-center">
                                                                                                                     {u.status === 'pending' ? (
-                                                                                                                        <button onClick={() => handleAccUser(u.id)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-2 py-0.5 rounded text-[9px] font-black animate-pulse shadow-sm transition">✓ ACC</button>
+                                                                                                                        <button onClick={() => handleAccUser(u.id)} className="bg-rose-500 hover:bg-rose-600 text-white px-3 py-1 rounded-md text-[11px] font-black animate-pulse shadow-md ring-2 ring-rose-200 transition">✓ ACC</button>
                                                                                                                     ) : (
                                                                                                                         <span className="text-emerald-600 font-bold text-[9px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">Aktif</span>
                                                                                                                     )}

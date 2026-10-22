@@ -11,8 +11,10 @@ import {
   getDocs,
   getDoc,
   onSnapshot, 
-  Timestamp 
+  Timestamp,
+  deleteField // 👈 Tambahkan ini
 } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth'; // 👈 Tambahkan baris ini
 import { PlanningQuickTag, buildWhatsAppText, cleanPrescriptionText, mergePlanningText, mergeDiagnosisText, mergePrescriptionText } from './utils/helpers';
 import BukuCMTable from './components/BukuCMTable';
 import { handlePrintBukuCM } from './components/PrintManager';
@@ -271,7 +273,9 @@ export default function App() {
   // 1. LOGIN
   const handleLogin = async (e) => {
     e.preventDefault();
-    const cleanUser = usernameInput.trim().toLowerCase().replace(/\s+/g, '_');
+    
+    const rawUser = usernameInput.trim().toLowerCase();
+    const cleanUser = rawUser.replace(/\s+/g, '_');
     const cleanPass = passwordInput.trim();
 
     if (!cleanUser || !cleanPass) {
@@ -281,34 +285,69 @@ export default function App() {
 
     setLoginLoading(true);
     try {
-      const directDocRef = doc(db, 'users', cleanUser);
-      const directDocSnap = await getDoc(directDocRef);
+      const dummyEmail = `${cleanUser}@simpan.local`;
+      const firebaseSafePass = cleanPass.length >= 6 ? cleanPass : cleanPass + "_simpan";
+      const auth = getAuth();
+      
+      let isAuthSuccess = false;
+      let finalUserId = cleanUser;
 
-      let foundUser = null;
-      if (directDocSnap.exists()) {
-        foundUser = { id: directDocSnap.id, ...directDocSnap.data() };
-      } else {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        for (const d of usersSnap.docs) {
-          const data = d.data();
-          const targetUser = (data.id || data.username || data.name || d.id || '').toLowerCase().trim();
-          if (targetUser === cleanUser || targetUser === usernameInput.trim().toLowerCase()) {
-            foundUser = { id: d.id, ...data };
-            break;
+      try {
+          // 1. Coba buka brankas Firebase Auth
+          await signInWithEmailAndPassword(auth, dummyEmail, firebaseSafePass);
+          isAuthSuccess = true;
+      } catch (authError) {
+          // 2. Fallback migrasi jika perawat pertama kali login lewat Companion
+          let directDocSnap = await getDoc(doc(db, 'users', cleanUser));
+          
+          if (!directDocSnap.exists() && rawUser !== cleanUser) {
+              directDocSnap = await getDoc(doc(db, 'users', rawUser));
+              if (directDocSnap.exists()) finalUserId = rawUser;
           }
-        }
+
+          if (directDocSnap.exists() && directDocSnap.data().pass === cleanPass) {
+              try {
+                  await createUserWithEmailAndPassword(auth, dummyEmail, firebaseSafePass);
+                  isAuthSuccess = true;
+                  
+                  // Hapus jejak password lama
+                  await updateDoc(doc(db, 'users', finalUserId), {
+                      pass: deleteField()
+                  });
+              } catch (e) {
+                  console.error(e);
+              }
+          }
       }
 
-      if (!foundUser) {
-        alert(`Username "${usernameInput}" tidak ditemukan di database SIMPAN!`);
-        return;
+      if (!isAuthSuccess) {
+          alert("Username atau password salah!");
+          setLoginLoading(false);
+          return;
       }
 
-      const userPassword = String(foundUser.pass !== undefined ? foundUser.pass : (foundUser.password || '')).trim();
-      if (userPassword !== cleanPass) {
-        alert("Password salah!");
-        return;
+      const finalUserSnap = await getDoc(doc(db, 'users', finalUserId));
+      if (!finalUserSnap.exists()) {
+          alert("Data profil tidak ditemukan!");
+          setLoginLoading(false);
+          return;
       }
+
+      const userData = finalUserSnap.data();
+      if (userData.status === 'pending') {
+          await auth.signOut();
+          alert("Akun Anda berstatus PENDING. Hubungi Karu/Admin.");
+          setLoginLoading(false);
+          return;
+      }
+
+      const isDoctor = ['DPJP', 'Dokter_Jaga'].includes(userData.role);
+      const foundUser = {
+          ...userData,
+          id: finalUserId,
+          ward: isDoctor ? 'ALL' : (userData.ward || 'MELATI'),
+          hospital: userData.hospital || 'RSUD Bayu Asih'
+      };
 
       setCurrentUser(foundUser);
       localStorage.setItem('simpan_companion_user', JSON.stringify(foundUser));
@@ -319,8 +358,14 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (window.confirm("Keluar dari akun SIMPAN Companion?")) {
+      try {
+        const auth = getAuth();
+        await signOut(auth); // 👈 Putus sesi Firebase
+      } catch (err) {
+        console.warn("Logout error:", err);
+      }
       localStorage.removeItem('simpan_companion_user');
       setCurrentUser(null);
     }
