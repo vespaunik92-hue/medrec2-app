@@ -20,7 +20,7 @@ import {
     getDoc,
     limit,
 } from 'firebase/firestore';
-
+import { getAuth } from 'firebase/auth';
 // 🚀 KOMPONEN UTAMA (Dimuat langsung saat aplikasi dibuka)
 import { AuthScreen } from './components/AuthScreen';
 import LabHistoryTable from './components/LabHistoryTable';
@@ -404,16 +404,30 @@ const MedicalRecordApp = ({
         return result;
     }, [allUsers]);
 
-    // ✨ FUNGSI ACC (APPROVE) USER BARU
+    // ✨ PANGGIL FUNGSI SERVER KELOLA PENGGUNA
+const callAdminApi = async (action, payload = {}) => {
+    const user = getAuth().currentUser;
+    if (!user) throw new Error('Sesi login habis, silakan login ulang.');
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, ...payload })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Permintaan gagal');
+    return data;
+};
+    
     const handleAccUser = async (targetId) => {
-        if (!confirm("Setujui akun ini? User akan bisa langsung login.")) return;
-        try {
-            await updateDoc(doc(db, 'users', targetId), { status: 'approved' });
-            alert("✅ Akun berhasil disetujui (ACC)!");
-        } catch (e) {
-            alert("Gagal ACC: " + e.message);
-        }
-    };
+    if (!confirm("Setujui akun ini? User akan bisa langsung login.")) return;
+    try {
+        await callAdminApi('approve', { id: targetId });
+        alert("✅ Akun berhasil disetujui (ACC)!");
+    } catch (e) {
+        alert("Gagal ACC: " + e.message);
+    }
+};
 
     // ✨ FITUR BARU: TOMBOL PENGHANCUR RS (KHUSUS SUPERADMIN)
     const handleDeleteHospital = async (rsKey, rsOriginalName) => {
@@ -794,59 +808,42 @@ const MedicalRecordApp = ({
         } catch (e) { alert("Gagal update: " + e.message); }
     };
 
-    const handleAdminSaveUser = async () => {
-        if (!adminUserForm.id || !adminUserForm.name || !adminUserForm.pass) return alert("Semua kolom wajib diisi!");
-        const targetId = adminUserForm.id.toLowerCase().trim().replace(/\s+/g, '_');
+const handleAdminSaveUser = async () => {
+    const targetId = (adminUserForm.id || '').toLowerCase().trim().replace(/\s+/g, '_');
+    const pass = (adminUserForm.pass || '').trim();
+    if (!targetId || !adminUserForm.name) return alert("ID dan Nama wajib diisi!");
+    const exists = allUsers.find(u => u.id === targetId);
+    if (!exists && pass.length < 8) return alert("Password user baru minimal 8 karakter!");
+    if (pass && pass.length < 8) return alert("Password minimal 8 karakter!");
 
-        // Mengunci otomatis ruangan sesuai lokasi Karu/PPJA bertugas
-        const isLockedWard = ['karu', 'PPJA'].includes(currentUser?.role);
-        const targetWard = isLockedWard ? currentUser.ward : (adminUserForm.ward || 'MELATI');
-
-        try {
-            const exists = allUsers.find(u => u.id === targetId);
-
-            // Blokir jika Karu/Admin ruangan mencoba mengedit akun dari ruangan lain
-            if (exists && isLockedWard && exists.ward !== currentUser.ward) {
-                return alert("Gagal! Anda tidak memiliki hak akses untuk memodifikasi perawat dari ruangan lain.");
-            }
-
-            if (!exists) {
-                await setDoc(doc(db, 'users', targetId), {
-                    ...adminUserForm,
-                    id: targetId,
-                    ward: targetWard,
-                    role: adminUserForm.role || 'member',
-                    createdAt: Timestamp.now()
-                });
-                alert(`User baru "${adminUserForm.name}" berhasil ditambahkan ke Ruang ${targetWard}!`);
-            } else {
-                await updateDoc(doc(db, 'users', targetId), {
-                    name: adminUserForm.name,
-                    pass: adminUserForm.pass,
-                    role: adminUserForm.role,
-                    ward: targetWard
-                });
-                alert(`User "${adminUserForm.name}" berhasil diperbarui.`);
-            }
-            setAdminUserForm({ id: '', name: '', pass: '', role: 'member', ward: currentUser?.ward || 'MELATI' });
-        } catch (e) { alert("Error: " + e.message); }
-    };
-
-    // 5. Action: Admin Hapus User
-    const handleAdminDeleteUser = async (targetId) => {
-        if (targetId === currentUser.id) return alert("Tidak bisa menghapus diri sendiri!");
-
-        const targetUser = allUsers.find(u => u.id === targetId);
-        if (['karu', 'admin_ruangan'].includes(currentUser?.role) && targetUser?.ward !== currentUser.ward) {
-            return alert("Gagal! Anda hanya bisa menghapus anggota perawat di ruangan Anda sendiri.");
+    try {
+        if (!exists) {
+            await callAdminApi('create', {
+                id: targetId, name: adminUserForm.name, pass,
+                role: adminUserForm.role || 'member',
+                ward: adminUserForm.ward, hospital: currentUser?.hospital
+            });
+            alert(`User baru "${adminUserForm.name}" berhasil ditambahkan!`);
+        } else {
+            await callAdminApi('update', {
+                id: targetId, name: adminUserForm.name,
+                role: adminUserForm.role, ward: adminUserForm.ward
+            });
+            if (pass) await callAdminApi('resetPassword', { id: targetId, pass });
+            alert(`User "${adminUserForm.name}" berhasil diperbarui.`);
         }
+        setAdminUserForm({ id: '', name: '', pass: '', role: 'member', ward: currentUser?.ward || 'MELATI' });
+    } catch (e) { alert("Error: " + e.message); }
+};
 
-        if (!confirm("Hapus user ini permanen?")) return;
-        try {
-            await deleteDoc(doc(db, 'users', targetId));
-            alert("User dihapus.");
-        } catch (e) { alert("Gagal hapus: " + e.message); }
-    };
+    const handleAdminDeleteUser = async (targetId) => {
+    if (targetId === currentUser.id) return alert("Tidak bisa menghapus diri sendiri!");
+    if (!confirm("Hapus user ini permanen?")) return;
+    try {
+        await callAdminApi('delete', { id: targetId });
+        alert("User dihapus.");
+    } catch (e) { alert("Gagal hapus: " + e.message); }
+};
 
     // --- MONITORING DAFTAR TUNGGU SECARA REAL-TIME ---
     useEffect(() => {
