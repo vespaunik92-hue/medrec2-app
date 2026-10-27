@@ -818,7 +818,7 @@ const PatientForm = ({
 
             if (explicitNameMatch) {
                 let n = explicitNameMatch[1].trim();
-                n = n.replace(/\s*\(\s*(?:ny\vert{}tn\vert{}an\vert{}by\vert{}nn\vert{}l\vert{}p\vert{}perempuan\vert{}laki-laki\vert{}\d+)\s*\).*$/i, '').trim();
+                n = n.replace(/\s*\(\s*(?:ny|tn|an|by|nn|l|p|perempuan|laki-laki|\d+)\s*\).*$/i, '').trim();
                 extractedName = toTitleCase(n);
             }
 
@@ -832,7 +832,7 @@ const PatientForm = ({
                         /^(?:laki[- ]?laki|perempuan|wanita|pria|♀|♂)/i.test(nextLine)) {
                         if (currLine.length >= 3 && /^[A-Za-z\s\.\',\-()]+$/.test(currLine)) {
                             if (!/^(?:ecalyptus|rawat\s*inap|detail\s*pasien|informasi\s*lengkap|pasien\s*lainnya|rekam\s*medis|no\.?\s*rm)/i.test(currLine)) {
-                                let n = currLine.replace(/\s*\(\s*(?:ny\vert{}tn\vert{}an\vert{}by\vert{}nn\vert{}l\vert{}p\vert{}perempuan\vert{}laki-laki\vert{}\d+)\s*\).*$/i, '').trim();
+                                let n = currLine.replace(/\s*\(\s*(?:ny|tn|an|by|nn|l|p|perempuan|laki-laki|\d+)\s*\).*$/i, '').trim();
                                 extractedName = toTitleCase(n);
                                 break;
                             }
@@ -851,7 +851,7 @@ const PatientForm = ({
                     if (/^dr\.\s+/i.test(l)) continue;
 
                     if (l.length >= 3 && /^[A-Za-z\s\.\',\-()]+$/.test(l)) {
-                        let n = l.replace(/\s*\(\s*(?:ny\vert{}tn\vert{}an\vert{}by\vert{}nn\vert{}l\vert{}p\vert{}perempuan\vert{}laki-laki\vert{}\d+)\s*\).*$/i, '').trim();
+                        let n = l.replace(/\s*\(\s*(?:ny|tn|an|by|nn|l|p|perempuan|laki-laki|\d+)\s*\).*$/i, '').trim();
                         extractedName = toTitleCase(n);
                         break;
                     }

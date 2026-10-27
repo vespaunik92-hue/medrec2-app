@@ -1925,7 +1925,7 @@ export const buildWhatsAppText = ({
   let patientTitle = "";
 
   if (!/^(tn\.|ny\.|an\.|nn\.|by\.|sdr\.)\s/i.test(nameStr)) {
-    if (nameStr.includes('bln') || nameStr.includes('bulan') || nameStr.includes('hari') || nameStr.includes('by')) {
+    if (/\d+\s*(bln|bulan|hari)\b|\bby\b/i.test(nameStr)) {
       patientTitle = "An. ";
     } else {
       const ageMatch = nameStr.match(/(?:^|\(|\s)(\d+)\s*(?:th|tahun|thn)/i);

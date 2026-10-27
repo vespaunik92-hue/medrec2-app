@@ -20,7 +20,7 @@ import {
     getDoc,
     limit,
 } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getAuth, updatePassword, onAuthStateChanged, signOut } from 'firebase/auth';
 // 🚀 KOMPONEN UTAMA (Dimuat langsung saat aplikasi dibuka)
 import { AuthScreen } from './components/AuthScreen';
 import LabHistoryTable from './components/LabHistoryTable';
@@ -117,17 +117,14 @@ const MedicalRecordApp = ({
         const safeAppId = appId || firebaseConfig?.appId || 'SIMPAN_APP';
         const callsRef = collection(db, `artifacts/${safeAppId}/public/data/calls`);
         
-        // ⚡ Tambahkan limit(5) agar Firestore hanya menarik 5 panggilan teraktual
-        const q = query(
-            callsRef, 
-            where('status', 'in', ['calling', 'ringing', 'cancelled', 'ended', 'rejected', 'missed']), 
-            limit(5)
-        );
+        // ⚡ Tambahkan limit(10) agar Firestore hanya menarik 5 panggilan teraktual
+        const q = query(callsRef, orderBy('createdAt', 'desc'), limit(10));
 
         const unsub = onSnapshot(q, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
                 const data = change.doc.data();
                 const callId = change.doc.id;
+                if (change.type === 'removed') return;
 
                 // Jangan proses panggilan yang diinisiasi oleh diri sendiri
                 if (data.caller?.name === currentUser.name) return;
@@ -210,7 +207,7 @@ const MedicalRecordApp = ({
         const callsRef = collection(db, `artifacts/${safeAppId}/public/data/calls`);
         
         // ⚡ Tangkap status 'missed' dan 'cancelled' sekaligus (kuota 30 panggilan)
-        const q = query(callsRef, where('status', 'in', ['missed', 'cancelled']), limit(30));
+        const q = query(callsRef, orderBy('createdAt', 'desc'), limit(30));
 
         const unsub = onSnapshot(q, (snapshot) => {
             const list = [];
@@ -219,6 +216,7 @@ const MedicalRecordApp = ({
             snapshot.docs.forEach((d) => {
                 const data = d.data();
                 const callId = d.id;
+                if (!['missed', 'cancelled'].includes(data.status)) return;
 
                 // 1. Abaikan panggilan yang dibuat diri sendiri atau sudah ditutup manual
                 if (data.caller?.name === currentUser.name) return;
@@ -354,7 +352,7 @@ const MedicalRecordApp = ({
 
     // --- STATE LEVEL 4: MANAJEMEN USER (BARU) ---
     const [allUsers, setAllUsers] = useState([]); // Daftar user (Admin Only)
-    const [profileForm, setProfileForm] = useState({ name: '', pass: '' }); // Form Profil Sendiri
+    const [profileForm, setProfileForm] = useState({ name: '', newPass: '' }); // Form Profil Sendiri
     const [adminUserForm, setAdminUserForm] = useState({ id: '', name: '', pass: '', role: 'member', ward: 'MELATI' });
 
     // ✨ STATE NAVIGASI KEYBOARD UNTUK MENU DROPDOWN UTAMA
@@ -431,6 +429,7 @@ const callAdminApi = async (action, payload = {}) => {
 
     // ✨ FITUR BARU: TOMBOL PENGHANCUR RS (KHUSUS SUPERADMIN)
     const handleDeleteHospital = async (rsKey, rsOriginalName) => {
+        if (currentUser.id !== 'abi') return alert("Hanya Superadmin pusat yang boleh menghapus rumah sakit.");
         if (rsKey === 'RSUD BAYU ASIH') {
             return alert("❌ RSUD BAYU ASIH adalah rumah sakit pusat bawaan sistem utama dan TIDAK BOLEH dihapus!");
         }
@@ -447,7 +446,7 @@ const callAdminApi = async (action, payload = {}) => {
 
             // 2. Sapu Bersih Semua User yang Terikat dengan RS ini agar hilang dari Accordion UI
             const rsUsers = allUsers.filter(u => (u.hospital || 'RSUD BAYU ASIH').toUpperCase() === rsKey);
-            const deletePromises = rsUsers.map(u => deleteDoc(doc(db, 'users', u.id)));
+            const deletePromises = rsUsers.map(u => callAdminApi('delete', { id: u.id }));
             await Promise.all(deletePromises);
 
             alert(`✅ Sukses Besar! Rumah Sakit "${rsOriginalName}" beserta seluruh akun anggotanya telah dihapus bersih dari sistem.`);
@@ -624,7 +623,7 @@ const callAdminApi = async (action, payload = {}) => {
         try {
             // ✨ FIX FINAL: Menggunakan variabel 'appId' persis seperti kode 12 Juni
             const notesRef = collection(db, `artifacts/${appId}/public/data/medicalRecords/${currentRecordId}/notes`);
-            const q = query(notesRef, orderBy('createdAt', 'desc'));
+            const q = query(notesRef, orderBy('createdAt', 'desc'), limit(100));
 
             const unsubscribe = onSnapshot(q, (snap) => {
                 const logs = snap.docs.map(d => ({
@@ -793,19 +792,32 @@ const callAdminApi = async (action, payload = {}) => {
 
     // 2. Init Profile Form (Saat currentUser berubah)
     useEffect(() => {
-        if (currentUser) {
-            setProfileForm({ name: currentUser.name, pass: currentUser.pass });
-        }
+    if (currentUser) {
+        setProfileForm({ name: currentUser.name || '', newPass: '' });
+    }
     }, [currentUser]);
 
     // 3. Action: Update Profil Sendiri
     const handleUpdateSelf = async () => {
-        if (!profileForm.name || !profileForm.pass) return alert("Nama dan Password tidak boleh kosong!");
+        const newName = (profileForm.name || '').trim();
+        const newPass = (profileForm.newPass || '').trim();
+        if (!newName) return alert("Nama tidak boleh kosong!");
+        if (newPass && newPass.length < 8) return alert("Password baru minimal 8 karakter!");
         try {
-            const userRef = doc(db, 'users', currentUser.id);
-            await updateDoc(userRef, { name: profileForm.name, pass: profileForm.pass });
+            if (newName !== currentUser.name) {
+                await updateDoc(doc(db, 'users', currentUser.id), { name: newName });
+            }
+            if (newPass) {
+                const authUser = getAuth().currentUser;
+                if (!authUser) throw new Error('Sesi login habis, silakan login ulang.');
+                await updatePassword(authUser, newPass);
+            }
+            setProfileForm(p => ({ ...p, newPass: '' }));
             alert("Profil berhasil diupdate! Silakan login ulang nanti untuk melihat perubahan.");
-        } catch (e) { alert("Gagal update: " + e.message); }
+        } catch (e) {
+            if (e.code === 'auth/requires-recent-login') alert("Demi keamanan, keluar lalu login ulang dulu, kemudian ulangi ganti password.");
+            else alert("Gagal update: " + e.message);
+        }
     };
 
 const handleAdminSaveUser = async () => {
@@ -1321,13 +1333,9 @@ const handleAdminSaveUser = async () => {
         return () => unsubscribe();
     }, [getCollectionRef, userId, currentUser]);
 
-    // ✨ FIX REKAP: Tarik data arsip diam-diam di background agar tabel rekap langsung terisi
-    useEffect(() => {
-        if (db && currentUser) {
-            fetchArchivedRecords();
-        }
-    }, [db, currentUser]);
-
+    // Penjaga: arsip hanya ditarik ulang kalau sudah >30 menit (hemat kuota Firestore)
+    const archiveFetchedAtRef = useRef(0);
+   
     // Tetap tarik ulang saat buka modal untuk memastikan data rekam medis lama paling update
     useEffect(() => {
         if (showInputModal) {
@@ -1335,8 +1343,15 @@ const handleAdminSaveUser = async () => {
         }
     }, [showInputModal]);
 
-    // --- FUNGSI KHUSUS: TARIK DATA GUDANG ARSIP HANYA SAAT DIMINTA ---
-    const fetchArchivedRecords = async () => {
+    // Buku Ekspedisi butuh arsip: muat hanya saat dibuka
+    useEffect(() => {
+        if (isBukuEkspedisiOpen) fetchArchivedRecords();
+    }, [isBukuEkspedisiOpen]);
+        
+    // --- FUNGSI KHUSUS: TARIK DATA GUDANG ARSIP (DIBATASI 1x PER 30 MENIT) ---
+    // Panggil fetchArchivedRecords(true) kalau perlu memuat ulang segera (mis. setelah memulangkan pasien).
+    const fetchArchivedRecords = async (force = false) => {
+        if (force !== true && Date.now() - archiveFetchedAtRef.current < 30 * 60 * 1000) return;
         try {
             const ref = getCollectionRef();
             if (!ref) return;
@@ -1354,6 +1369,7 @@ const handleAdminSaveUser = async () => {
             });
 
             setArchivedRecords(archivedData);
+            archiveFetchedAtRef.current = Date.now();
         } catch (error) {
             console.error("Gagal mengambil data arsip:", error);
         }
@@ -2503,7 +2519,7 @@ const handleAdminSaveUser = async () => {
             // 🚀 OPER archivedRecords AGAR PASIEN PULANG/PINDAH/MENINGGAL DAPAT DIHITUNG
             const waLink = generateShiftReport(
                 activeRecords,
-                archivedRecords,
+                recentDischarged,
                 waitingList,
                 dpjpProfiles,
                 currentWardConfig.name,
@@ -2554,7 +2570,8 @@ const handleAdminSaveUser = async () => {
                 dischargeType: type, // <-- INI KUNCINYA
                 updatedAt: Timestamp.now()
             });
-            fetchArchivedRecords();
+            archiveFetchedAtRef.current = 0; // arsip dimuat ulang saat dibuka lagi
+            loadRekapData(true);
         } catch (e) { console.error(e); } finally { setLoading(false); setRecordForDischarge(null); }
     };
 
@@ -2707,9 +2724,8 @@ const handleAdminSaveUser = async () => {
                 });
             });
             await Promise.all(updatePromises);
-            if (typeof fetchArchivedRecords === 'function') {
-                fetchArchivedRecords();
-            }
+            archiveFetchedAtRef.current = 0;
+            loadRekapData(true);
             alert(`${ids.length} pasien berhasil dipulangkan.`); // Tambah notifikasi biar mantap
         } catch (e) {
             console.error(e);
@@ -2775,6 +2791,141 @@ const handleAdminSaveUser = async () => {
         link.click();
     };
 
+        // ===== REKAP BULANAN (F7) =====
+    const toDateSafe = (v) => {
+        if (!v) return null;
+        const d = v?.toDate ? v.toDate() : new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+    };
+    const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabelOfKey = (key) => {
+        const [y, m] = key.split('-').map(Number);
+        return new Date(y, m - 1, 1).toLocaleString('id-ID', { month: 'short', year: 'numeric' });
+    };
+    // Bulan tempat rekam dihitung: pulang → bulan pulang; masih dirawat → bulan masuk
+    const rekapDateOf = (r) => {
+        const isOut = r.isDischarged || r.status === 'discharged';
+        if (isOut) return toDateSafe(r.dischargeDate) || toDateSafe(r.updatedAt) || toDateSafe(r.createdAt);
+        return toDateSafe(r.createdAt);
+    };
+    const emptyMonth = () => ({ active: 0, discharged: 0, pulang: 0, pindah: 0, meninggal: 0, lab: 0, rad: 0, tm: 0 });
+    // Hitung rekap per bulan (kunci 'YYYY-MM') dari daftar rekam medis
+    const computeMonthly = (list) => {
+        const out = {};
+        list.forEach(r => {
+            const d = rekapDateOf(r);
+            if (!d) return;
+            const k = monthKeyOf(d);
+            if (!out[k]) out[k] = emptyMonth();
+            const row = out[k];
+            if (r.isDischarged || r.status === 'discharged') {
+                row.discharged++;
+                if (r.dischargeType === 'pindah') row.pindah++;
+                else if (r.dischargeType === 'meninggal') row.meninggal++;
+                else row.pulang++;
+            } else {
+                row.active++;
+            }
+            if (r.planning) {
+                const parsed = parsePlanning(r.planning);
+                row.lab += (parsed.labs || []).length;
+                row.rad += (parsed.rads || []).length;
+                row.tm += (parsed.tms || []).length;
+            }
+        });
+        return out;
+    };
+
+    // Ringkasan bulan lama + pasien pulang terbaru (hemat bacaan Firestore)
+    const [monthlySummaries, setMonthlySummaries] = useState({});
+    const [recentDischarged, setRecentDischarged] = useState([]);
+    const [recentFromKey, setRecentFromKey] = useState('');
+    const rekapLoadedRef = useRef('');
+
+    const rekapRetryRef = useRef(0);
+    const loadRekapData = async (force = false) => {
+        const w = currentUser?.ward || 'MELATI';
+        if (!db || !currentUser) return;
+        if (!force && rekapLoadedRef.current === w) return;
+        try {
+            // 1. Ringkasan bulan lama (±12–40 dokumen)
+            const sSnap = await getDocs(query(
+                collection(db, `artifacts/${firebaseConfig.appId}/public/data/stats`),
+                where('ward', '==', w)
+            ));
+            const map = {};
+            sSnap.forEach(d => { const x = d.data(); if (x.monthKey) map[x.monthKey] = x; });
+            setMonthlySummaries(map);
+
+            // 2. Pasien pulang terbaru: mulai bulan lalu kalau ringkasan bulan lalu belum ada,
+            //    kalau sudah ada cukup mulai awal bulan ini (±100–150 dokumen)
+            const now = new Date();
+            const prevKey = monthKeyOf(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+            const fromDate = map[prevKey]
+                ? new Date(now.getFullYear(), now.getMonth(), 1)
+                : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const ref = getCollectionRef();
+            if (!ref) { if (rekapRetryRef.current < 3) { rekapRetryRef.current++; setTimeout(() => loadRekapData(true), 3000); } return; }
+            const rSnap = await getDocs(query(ref, where('dischargeDate', '>=', fromDate.toISOString())));
+            setRecentDischarged(rSnap.docs.map(d => {
+                const dd = d.data();
+                return {
+                    id: d.id, ...dd,
+                    createdAt: dd.createdAt?.toDate() || new Date(),
+                    updatedAt: dd.updatedAt?.toDate() || null
+                };
+            }).filter(r => r.isDischarged));
+            setRecentFromKey(monthKeyOf(fromDate));
+            rekapLoadedRef.current = w;
+            rekapRetryRef.current = 0;
+        } catch (e) {
+            console.warn('Gagal memuat data rekap:', e);
+            if (rekapRetryRef.current < 3) { rekapRetryRef.current++; setTimeout(() => loadRekapData(true), 3000); }
+        }
+    };
+    useEffect(() => { loadRekapData(); }, [db, currentUser]);
+
+    // --- BANGUN RINGKASAN REKAP BULANAN (hanya akun abi; baca seluruh arsip pulang sekali) ---
+    const handleBuildMonthlySummaries = async () => {
+        if (currentUser?.id !== 'abi') return;
+        if (!window.confirm('Bangun ringkasan rekap bulanan?\nIni membaca seluruh arsip pasien pulang (±2.000 bacaan Firestore). Lakukan paling sering sebulan sekali.')) return;
+        setLoading(true);
+        try {
+            const ref = getCollectionRef();
+            const snap = await getDocs(query(ref, where('isDischarged', '==', true)));
+            const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            const byWard = {};
+            all.forEach(r => { const w = r.ward || 'MELATI'; (byWard[w] = byWard[w] || []).push(r); });
+
+            const currentKey = monthKeyOf(new Date());
+            const writes = [];
+            const mine = {};
+            const myWard = currentUser?.ward || 'MELATI';
+
+            Object.entries(byWard).forEach(([w, list]) => {
+                Object.entries(computeMonthly(list)).forEach(([k, row]) => {
+                    if (k >= currentKey) return; // bulan berjalan dihitung langsung, tidak disimpan
+                    const payload = { ward: w, monthKey: k, ...row };
+                    if (w === myWard) mine[k] = payload;
+                    writes.push(setDoc(
+                        doc(db, `artifacts/${firebaseConfig.appId}/public/data/stats`, `${w}__${k}`),
+                        { ...payload, updatedAt: Timestamp.now() }
+                    ));
+                });
+            });
+
+            await Promise.all(writes);
+            await loadRekapData(true);
+            alert(`Selesai. ${writes.length} ringkasan bulanan tersimpan (dari ${all.length} pasien pulang).`);
+        } catch (e) {
+            console.error(e);
+            alert('Gagal membangun rekap: ' + e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
     // --- STATS CALCULATION (VERSI SUPER: MULTI-SUFFIX KEBAL STEMPEL PERAWAT) ---
     const stats = useMemo(() => {
         // ✨ FIX ERROR: Ganti nama variabel jadi activeWard agar tidak bentrok
@@ -2785,7 +2936,7 @@ const handleAdminSaveUser = async () => {
 
         // 2. GABUNGKAN data records ruangan saat ini dengan data dari Gudang Arsip (archivedRecords)
         const wardRecords = records.filter(r => (r.ward || 'MELATI') === activeWard);
-        const wardArchivedRecords = (archivedRecords || []).filter(r => (r.ward || 'MELATI') === activeWard);
+        const wardArchivedRecords = (recentDischarged || []).filter(r => (r.ward || 'MELATI') === activeWard);
         const combinedRecords = [...wardRecords, ...wardArchivedRecords];
 
         const s = {
@@ -2835,31 +2986,26 @@ const handleAdminSaveUser = async () => {
             }
         });
 
-        // Kalkulasi rekap grafik bulanan
-        combinedRecords.forEach(r => {
-            if (!r.createdAt) return;
-
-            const dateObj = r.createdAt.toDate ? r.createdAt.toDate() : new Date(r.createdAt);
-            const m = dateObj.toLocaleString('id-ID', { month: 'short', year: 'numeric' });
-
-            if (!s.monthly[m]) s.monthly[m] = { active: 0, discharged: 0, pulang: 0, pindah: 0, meninggal: 0, lab: 0, rad: 0, tm: 0 };
-
-            if (r.isDischarged || r.status === 'discharged') {
-                s.monthly[m].discharged++;
-                if (r.dischargeType === 'pindah') s.monthly[m].pindah++;
-                else if (r.dischargeType === 'meninggal') s.monthly[m].meninggal++;
-                else s.monthly[m].pulang++;
-            } else {
-                s.monthly[m].active++;
-            }
-
-            // ✨ FIX BUG 3: Gunakan parsePlanning bawaan agar hitungan kebal dari stempel dinas perawat
-            if (r.planning) {
-                const parsed = parsePlanning(r.planning);
-                s.monthly[m].lab += (parsed.labs || []).length;
-                s.monthly[m].rad += (parsed.rads || []).length;
-                s.monthly[m].tm += (parsed.tms || []).length;
-            }
+        // Kalkulasi rekap bulanan (F7): ringkasan untuk bulan lama + data langsung untuk bulan terbaru
+        const liveMonthly = computeMonthly(combinedRecords);
+        const addRow = (a, b) => {
+            const o = emptyMonth();
+            [a, b].forEach(x => { if (x) Object.keys(o).forEach(f => { o[f] += (x[f] || 0); }); });
+            return o;
+        };
+        const mergedMonthly = {};
+        Object.keys(monthlySummaries || {}).forEach(k => { mergedMonthly[k] = addRow(monthlySummaries[k]); });
+        Object.keys(liveMonthly).forEach(k => {
+            if (recentFromKey && k >= recentFromKey) mergedMonthly[k] = liveMonthly[k];
+            else mergedMonthly[k] = addRow(mergedMonthly[k], liveMonthly[k]); // pasien masih dirawat dari bulan lama
+        });
+        Object.keys(mergedMonthly).sort().reverse().slice(0, 12).forEach(k => {
+            const x = mergedMonthly[k];
+            s.monthly[monthLabelOfKey(k)] = {
+                active: x.active || 0, discharged: x.discharged || 0, pulang: x.pulang || 0,
+                pindah: x.pindah || 0, meninggal: x.meninggal || 0,
+                lab: x.lab || 0, rad: x.rad || 0, tm: x.tm || 0
+            };
         });
 
         // 3. Hitung jumlah beban pasien per dokter spesialis di bangsal aktif
@@ -2890,7 +3036,7 @@ const handleAdminSaveUser = async () => {
         }); // 🔓 SUNTIKAN AMAN: Menutup loop wardActiveRecords dengan sempurna!
 
         return s;
-    }, [records, activeRecords, archivedRecords, currentUser]);
+    }, [records, activeRecords, recentDischarged, recentFromKey, currentUser, monthlySummaries]);
 
     // ✨ FITUR BARU: MESIN PEMINDAI AGENDA + AUTO SORTING + RESPONSIF FILTER DASHBOARD (V11 - SUPORT PAGI INI, BLPL & TRANSFUSI DARAH)
     const agendaHariIni = useMemo(() => {
@@ -3674,7 +3820,12 @@ const handleAdminSaveUser = async () => {
                                 <div className="space-y-2">{Object.entries(stats.raberData).length === 0 ? <div className="text-[10px] text-gray-400 text-center">Nihil.</div> : Object.entries(stats.raberData).map(([d, p]) => (<div key={d} className="text-[10px] bg-yellow-50 p-2 rounded border flex justify-between group"><div className="flex-1"><div className="font-bold text-indigo-800">{d}</div><div className="text-gray-600">({p.join(', ')})</div></div><button onClick={() => handleReportRaber(d, p)} className="ml-2 bg-green-100 text-green-700 px-2 py-1 rounded opacity-80 group-hover:opacity-100">📱</button></div>))}</div>
                             </div>
                             <div className="bg-white rounded overflow-hidden border">
-                                <div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase">📊 Rekap</div>
+                                <div className="bg-gray-800 px-3 py-2 text-white text-xs font-bold uppercase flex justify-between items-center">
+                                    <span>📊 Rekap</span>
+                                    {currentUser?.id === 'abi' && (
+                                        <button onClick={handleBuildMonthlySummaries} className="text-[9px] bg-indigo-500 hover:bg-indigo-600 px-2 py-0.5 rounded normal-case">🔧 Bangun rekap</button>
+                                    )}
+                                </div>
                                 <table className="w-full text-[10px] text-left">
                                     <thead className="bg-gray-100 text-gray-500 font-bold border-b">
                                         <tr>
@@ -4068,7 +4219,7 @@ const handleAdminSaveUser = async () => {
                                         loading={loading}
                                         db={db}
                                         onRestore={handleRestorePatient}
-                                        onRefresh={fetchArchivedRecords}
+                                        onRefresh={() => fetchArchivedRecords(true)}
                                     />
                                 </Suspense>
                             </div>
@@ -4102,7 +4253,7 @@ const handleAdminSaveUser = async () => {
                                         <div className="space-y-2.5 text-xs">
                                             <div><label className="block font-bold text-slate-500 uppercase mb-1">Username (ID)</label><input type="text" value={currentUser.id} disabled className="w-full p-2 bg-slate-200 text-slate-500 border rounded font-mono cursor-not-allowed" /></div>
                                             <div><label className="block font-bold text-slate-500 uppercase mb-1">Nama Tampilan</label><input type="text" value={profileForm.name} onChange={e => setProfileForm({ ...profileForm, name: e.target.value })} className="w-full p-2 border border-slate-300 rounded font-bold" /></div>
-                                            <div><label className="block font-bold text-slate-500 uppercase mb-1">Password Masuk</label><input type="text" value={profileForm.pass} onChange={e => setProfileForm({ ...profileForm, pass: e.target.value })} className="w-full p-2 border border-slate-300 rounded font-mono" /></div>
+                                            <div><label className="block font-bold text-slate-500 uppercase mb-1">Password Baru (kosongkan jika tidak diganti)</label><input type="password" autoComplete="new-password" placeholder="Min. 8 karakter" value={profileForm.newPass} onChange={e => setProfileForm({ ...profileForm, newPass: e.target.value })} className="w-full p-2 border border-slate-300 rounded font-mono" /></div>
                                             <button onClick={handleUpdateSelf} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold transition shadow-sm">Simpan Perubahan Profil</button>
                                         </div>
                                     </div>
@@ -4194,11 +4345,11 @@ const handleAdminSaveUser = async () => {
                                                                                 ) : null;
                                                                             })()}
                                                                             <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1">
-                                                                                Grup Institusi {currentUser.role === 'admin' ? (isExpanded ? '▼' : '▶') : ''}
+                                                                                Grup Institusi {currentUser.id === 'abi' ? (isExpanded ? '▼' : '▶') : ''}
                                                                             </span>
 
                                                                             {/* 🔥 TOMBOL EKSEKUSI MATI RS (Hanya muncul di mata Superadmin Abi) */}
-                                                                            {currentUser.role === 'admin' && rsKey !== 'RSUD BAYU ASIH' && (
+                                                                            {currentUser.id === 'abi' && rsKey !== 'RSUD BAYU ASIH' && (
                                                                                 <button
                                                                                     onClick={() => handleDeleteHospital(rsKey, hospName)}
                                                                                     className="bg-red-50 hover:bg-red-600 text-red-600 hover:text-white px-2 py-0.5 rounded-md border border-red-200 font-black text-[9px] transition-all shadow-sm"
@@ -4811,6 +4962,8 @@ const App = () => {
         }
     };
     const handleInternalLogout = () => {
+        try { signOut(getAuth()); } catch (e) { console.warn('signOut:', e); }
+
         setCurrentUser(null);
         setUserId(null);
         setAppMode('MEDIS');
@@ -4827,6 +4980,18 @@ const App = () => {
         localStorage.removeItem('masterMedications');
     };
 
+        // 🛡️ PENJAGA SESI: kalau sesi Firebase hilang padahal layar masih "login", paksa login ulang
+    useEffect(() => {
+        if (!currentUser) return;
+        const unsub = onAuthStateChanged(getAuth(), (u) => {
+            if (!u) {
+                handleInternalLogout();
+                alert("Sesi login berakhir. Silakan login ulang.");
+            }
+        });
+        return () => unsub();
+    }, [currentUser?.id]);
+    
     const getCashflowRole = () => {
         if (!currentUser) return null;
         if (currentUser.role === 'admin') return 'ALL';

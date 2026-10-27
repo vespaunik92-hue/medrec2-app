@@ -10,11 +10,12 @@ import {
   updateDoc,
   getDocs,
   getDoc,
+  query,
+  where,
   onSnapshot, 
-  Timestamp,
-  deleteField // 👈 Tambahkan ini
+  Timestamp, 
 } from 'firebase/firestore';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth'; // 👈 Tambahkan baris ini
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { PlanningQuickTag, buildWhatsAppText, cleanPrescriptionText, mergePlanningText, mergeDiagnosisText, mergePrescriptionText } from './utils/helpers';
 import BukuCMTable from './components/BukuCMTable';
 import { handlePrintBukuCM } from './components/PrintManager';
@@ -198,6 +199,38 @@ const getPureBedCode = (rawVal, bedList = []) => {
   return matched || clean;
 };
 
+// 🧩 GABUNG PLANNING DARI ECAL: yang sama/mirip tidak diinput lagi
+const mergeEcalPlanning = (currentText = '', incomingText = '') => {
+  const norm = (s = '') => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const has = (haystackNorm, needleNorm) => ` ${haystackNorm} `.includes(` ${needleNorm} `);
+  const STRUCT = /^(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)/i;
+  const DAY_RE = /^(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu)$/i; // pembatas hari dari dokter
+
+  let result = (currentText || '').trim();
+  const incLines = String(incomingText || '').split('\n').map(l => l.trim()).filter(Boolean);
+
+  incLines.forEach(line => {
+    if (DAY_RE.test(line)) return;
+    const curNorm = norm(result);
+
+    if (STRUCT.test(line)) {
+      if (has(curNorm, norm(line))) return;
+      result = mergePlanningText(result, line);
+      return;
+    }
+
+    const parts = line.split(',').map(p => p.trim()).filter(Boolean);
+    const fresh = parts.filter(p => {
+      const k = norm(p);
+      return k.length < 3 || !has(curNorm, k);
+    });
+    if (!fresh.length) return;
+    result = result ? `${result}\n${fresh.join(', ')}` : fresh.join(', ');
+  });
+
+  return result;
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -208,6 +241,21 @@ export default function App() {
     }
   });
 
+  const [authReady, setAuthReady] = useState(false);
+
+  // Tunggu Firebase Auth memulihkan sesi sebelum membaca Firestore
+  useEffect(() => {
+    const unsub = onAuthStateChanged(getAuth(), (u) => {
+      if (!u) {
+        // sesi Firebase tidak ada/habis → paksa login ulang
+        try { localStorage.removeItem('simpan_companion_user'); } catch {}
+        setCurrentUser(null);
+      }
+      setAuthReady(Boolean(u));
+    });
+    return () => unsub();
+  }, []);
+  
   const [cpptAuthors, setCpptAuthors] = useState([]);
   const [pickedAuthor, setPickedAuthor] = useState('');
 
@@ -223,6 +271,7 @@ export default function App() {
   const [showLaporModal, setShowLaporModal] = useState(false);
   const [showDischargeModal, setShowDischargeModal] = useState(false);
   const [dpjpProfiles, setDpjpProfiles] = useState([]);
+  const [planChoice, setPlanChoice] = useState(null); // dialog Gabung/Timpa/Biarkan untuk kolom P
 
   const [loadingScrape, setLoadingScrape] = useState(false);
   const [loadingSave, setLoadingSave] = useState(false);
@@ -256,6 +305,7 @@ export default function App() {
   });
 
   useEffect(() => {
+    if (!currentUser || !authReady) return; // tunggu sampai login selesai (rules menolak baca sebelum login)
     const fetchSettings = async () => {
       try {
         const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/settings`, 'mainConfig');
@@ -268,7 +318,7 @@ export default function App() {
       }
     };
     fetchSettings();
-  }, []);
+  }, [currentUser, authReady]);
 
   // 1. LOGIN
   const handleLogin = async (e) => {
@@ -289,41 +339,23 @@ export default function App() {
       const firebaseSafePass = cleanPass.length >= 6 ? cleanPass : cleanPass + "_simpan";
       const auth = getAuth();
       
-      let isAuthSuccess = false;
-      let finalUserId = cleanUser;
+      const finalUserId = cleanUser;
 
       try {
-          // 1. Coba buka brankas Firebase Auth
-          await signInWithEmailAndPassword(auth, dummyEmail, firebaseSafePass);
-          isAuthSuccess = true;
+        await signInWithEmailAndPassword(auth, dummyEmail, firebaseSafePass);
       } catch (authError) {
-          // 2. Fallback migrasi jika perawat pertama kali login lewat Companion
-          let directDocSnap = await getDoc(doc(db, 'users', cleanUser));
-          
-          if (!directDocSnap.exists() && rawUser !== cleanUser) {
-              directDocSnap = await getDoc(doc(db, 'users', rawUser));
-              if (directDocSnap.exists()) finalUserId = rawUser;
-          }
-
-          if (directDocSnap.exists() && directDocSnap.data().pass === cleanPass) {
-              try {
-                  await createUserWithEmailAndPassword(auth, dummyEmail, firebaseSafePass);
-                  isAuthSuccess = true;
-                  
-                  // Hapus jejak password lama
-                  await updateDoc(doc(db, 'users', finalUserId), {
-                      pass: deleteField()
-                  });
-              } catch (e) {
-                  console.error(e);
-              }
-          }
-      }
-
-      if (!isAuthSuccess) {
+        const code = authError?.code || '';
+        if (code === 'auth/network-request-failed') {
+          alert("Jaringan memblokir/tidak menjangkau layanan login (Firebase Auth). Ini BUKAN password salah. Hubungi admin.");
+        } else if (code === 'auth/too-many-requests') {
+          alert("Terlalu banyak percobaan. Tunggu beberapa menit lalu coba lagi.");
+        } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found' || code === 'auth/invalid-email') {
           alert("Username atau password salah!");
-          setLoginLoading(false);
-          return;
+        } else {
+          alert("Login gagal (" + (code || authError?.message) + ")");
+        }
+        setLoginLoading(false);
+        return;
       }
 
       const finalUserSnap = await getDoc(doc(db, 'users', finalUserId));
@@ -395,21 +427,23 @@ export default function App() {
 
   // 2. SINKRONISASI PASIEN BANGSAL
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !authReady) return;
 
     const collPath = `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`;
-    const qColl = collection(db, collPath);
+    // Hanya pasien AKTIF (±32 dokumen), bukan seluruh arsip ±1.800 dokumen
+    const qColl = query(collection(db, collPath), where('isDischarged', '==', false));
 
     const unsub = onSnapshot(qColl, (snapshot) => {
       const docs = snapshot.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(p => (!p.ward || p.ward.toUpperCase() === selectedWard.toUpperCase()) && !p.isDischarged && p.status !== 'discharged');
       
-      setWardPatients(docs);
+        console.log('[HEMAT] dokumen diterima dari server:', snapshot.size, '| disaring ruangan:', docs.length);
+        setWardPatients(docs);
     }, (err) => console.error("Firestore Error:", err));
 
     return () => unsub();
-  }, [currentUser, selectedWard]);
+  }, [currentUser, selectedWard, authReady]);
 
   // 3. RESPON GANTI KASUR
   useEffect(() => {
@@ -531,7 +565,7 @@ export default function App() {
         return;
       }
 
-      chrome.tabs.sendMessage(tab.id, { action: "SCRAPE_ECALYPTUS", authorKey: pickedAuthor }, (response) => {
+      chrome.tabs.sendMessage(tab.id, { action: "SCRAPE_ECALYPTUS", authorKey: pickedAuthor }, async (response) => {
         if (chrome.runtime.lastError) {
           alert("Gagal membaca tab Ecalyptus!\n\n1. Klik tab Ecalyptus di sebelah kiri.\n2. Tekan F5 untuk refresh.\n3. Klik tombol Ambil Data ini kembali.");
           return;
@@ -555,6 +589,18 @@ export default function App() {
             });
             return found ? found.name : d.dpjpName;
           })();
+
+          // Tentukan nasib kolom P: gabung / timpa / biarkan
+          let planningMode = 'merge';
+          const curPlan = formData.planning || '';
+          if (d.planning && curPlan.trim()) {
+            const mergedPreview = mergeEcalPlanning(curPlan, d.planning);
+            if (mergedPreview.trim() === curPlan.trim()) {
+              planningMode = 'skip'; // tidak ada yang baru, jangan ganggu
+            } else {
+              planningMode = await new Promise(resolve => setPlanChoice({ incoming: d.planning, resolve }));
+            }
+          }
 
           setFormData(prev => {
             let mergedObjective = prev.objective || '';
@@ -580,8 +626,7 @@ export default function App() {
             // 🧹 FILTER RESEP MENGGUNAKAN PENYARING CERDAS
             const rawRx = d.prescription || '';
             const cleanedRx = rawRx ? cleanPrescriptionText(rawRx, MEDICATION_TRANSLATOR).replace(/\s*,+\s*\)/g, ')').replace(/,+\s*$/gm, '') : '';
-            if (localStorage.getItem('simpan_debug') === '1') console.log('RESEP MENTAH:', JSON.stringify(rawRx), '| BERSIH:', JSON.stringify(cleanedRx));
-
+            
             return {
               ...prev,
               name: d.name ? d.name.toLowerCase().replace(/(?:^|\s|-)\S/g, c => c.toUpperCase()) : prev.name,
@@ -592,7 +637,10 @@ export default function App() {
               subjective: d.subjective ? d.subjective : prev.subjective,
               objective: mergedObjective,
               analysis: d.analysis ? mergeDiagnosisText(prev.analysis, d.analysis) : prev.analysis,
-              planning: d.planning ? d.planning : prev.planning,
+              planning: !d.planning ? prev.planning
+                : planningMode === 'skip' ? prev.planning
+                : planningMode === 'replace' ? mergeEcalPlanning('', d.planning)
+                : mergeEcalPlanning(prev.planning, d.planning),
               currentPrescription: cleanedRx
                 ? mergePrescriptionText(prev.currentPrescription, cleanedRx)
                 : prev.currentPrescription
@@ -1105,15 +1153,6 @@ const handleLaporWA = async (type, raberIndex = 0) => {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {/* CETAK EOA */}
-            <button
-              onClick={() => setShowPrintConfig(true)}
-              className="bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-black px-2 py-1 rounded-lg shadow-xs transition flex items-center gap-0.5 cursor-pointer text-[11px]"
-              title="Cetak lembar APOS resmi (E-Ontang-Anting)"
-            >
-              <span>🖨️</span> EOA
-            </button>
-
             {/* LAPOR WA */}
             <button
               onClick={() => setShowLaporModal(true)}
@@ -1219,22 +1258,30 @@ const handleLaporWA = async (type, raberIndex = 0) => {
         </div>
       </div>
 
-      {/* 3. TOMBOL UTAMA BERDAMPINGAN: AMBIL DATA ECAL & SIMPAN PASIEN (50 : 50) */}
-      <div className="grid grid-cols-2 gap-2 sticky top-0 z-30 bg-slate-50 py-1.5 -mx-2.5 px-2.5 border-b border-slate-200 shadow-sm">
+      {/* 3. TOMBOL UTAMA: AMBIL DATA ECAL | SIMPAN PASIEN | PRINT EOA */}
+      <div className="grid grid-cols-[1.35fr_1.2fr_0.8fr] gap-1.5 sticky top-0 z-30 bg-slate-50 py-1.5 -mx-2.5 px-2.5 border-b border-slate-200 shadow-sm">
         <button
           onClick={handleScrapeEcal}
           disabled={loadingScrape}
-          className="py-2 px-2 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-black rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+          className="py-2 px-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-black rounded-xl shadow-sm transition flex items-center justify-center gap-1 cursor-pointer text-[11px]"
         >
           <span>⚡</span> {loadingScrape ? "Menyalin..." : "Ambil Data Ecal"}
         </button>
-        
+
         <button
           onClick={handleSaveToSimpan}
           disabled={loadingSave}
-          className="py-2 px-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black rounded-xl shadow-sm transition disabled:bg-slate-400 flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+          className="py-2 px-1 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black rounded-xl shadow-sm transition disabled:bg-slate-400 flex items-center justify-center gap-1 cursor-pointer text-[11px]"
         >
           <span>💾</span> {loadingSave ? "Menyimpan..." : "Simpan Pasien"}
+        </button>
+
+        <button
+          onClick={() => setShowPrintConfig(true)}
+          className="py-2 px-1 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white font-black rounded-xl shadow-sm transition flex items-center justify-center gap-1 cursor-pointer text-[11px]"
+          title="Cetak lembar APOS resmi (E-Ontang-Anting)"
+        >
+          <span>🖨️</span> EOA
         </button>
       </div>
       
@@ -1325,27 +1372,21 @@ const handleLaporWA = async (type, raberIndex = 0) => {
                 </button>
               </div>
               <div className="grid grid-cols-3 gap-1">
-                <div>
-                  <label className="text-[8px] font-bold text-slate-500 uppercase">Raber 1</label>
-                  <select value={formData.raberName} onChange={e => setFormData({ ...formData, raberName: e.target.value })} className="w-full p-1 border rounded border-slate-300 text-[9px] bg-white truncate outline-none">
-                    <option value="">- Kosong -</option>
-                    {dpjpProfiles.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[8px] font-bold text-slate-500 uppercase">Raber 2</label>
-                  <select value={formData.raber2Name} onChange={e => setFormData({ ...formData, raber2Name: e.target.value })} className="w-full p-1 border rounded border-slate-300 text-[9px] bg-white truncate outline-none">
-                    <option value="">- Kosong -</option>
-                    {dpjpProfiles.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[8px] font-bold text-slate-500 uppercase">Raber 3</label>
-                  <select value={formData.raber3Name} onChange={e => setFormData({ ...formData, raber3Name: e.target.value })} className="w-full p-1 border rounded border-slate-300 text-[9px] bg-white truncate outline-none">
-                    <option value="">- Kosong -</option>
-                    {dpjpProfiles.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                  </select>
-                </div>
+                {[['Raber 1', 'raberName'], ['Raber 2', 'raber2Name'], ['Raber 3', 'raber3Name']].map(([label, key]) => (
+                  <div key={key}>
+                    <label className="text-[8px] font-bold text-slate-500 uppercase">{label}</label>
+                    <input
+                      type="text"
+                      list="companion-dpjp-list"
+                      value={formData[key] || ''}
+                      onChange={e => setFormData({ ...formData, [key]: e.target.value })}
+                      onFocus={e => e.target.select()}
+                      placeholder="Ketik / pilih..."
+                      autoComplete="off"
+                      className="w-full p-1 border rounded border-slate-300 text-[9px] bg-white font-semibold truncate outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -1624,6 +1665,31 @@ const handleLaporWA = async (type, raberIndex = 0) => {
                 </div>
                 <span>➔</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* DIALOG: KOLOM P SUDAH TERISI → GABUNG / TIMPA / BIARKAN */}
+      {planChoice && (
+        <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center p-3">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-3 w-full max-w-xs space-y-2">
+            <div className="font-black text-sm text-slate-800">Kolom P sudah terisi</div>
+            <p className="text-[11px] text-slate-600">Planning dari Ecal berbeda dengan tulisanmu. Baris yang sama/mirip tidak akan diinput lagi.</p>
+            <div className="max-h-28 overflow-auto text-[10px] bg-slate-50 border border-slate-200 rounded p-1.5 whitespace-pre-wrap text-slate-600">{planChoice.incoming}</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                onClick={() => { planChoice.resolve('merge'); setPlanChoice(null); }}
+                className="py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs cursor-pointer"
+              >Gabung</button>
+              <button
+                onClick={() => { planChoice.resolve('replace'); setPlanChoice(null); }}
+                className="py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-black text-xs cursor-pointer"
+              >Timpa</button>
+              <button
+                onClick={() => { planChoice.resolve('skip'); setPlanChoice(null); }}
+                className="py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-xs cursor-pointer"
+              >Biarkan</button>
             </div>
           </div>
         </div>

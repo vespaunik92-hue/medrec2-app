@@ -27,7 +27,18 @@ export default defineConfig({
             type: 'image/png'
           }
         ]
+      },
+      workbox: {
+        navigateFallbackDenylist: [/^\/api\//],
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true
       }
     })
   ],
+    server: {
+    proxy: {
+      '/api': { target: 'https://mysimpan.vercel.app', changeOrigin: true }
+    }
+  },
 })
