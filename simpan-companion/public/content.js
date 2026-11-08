@@ -230,7 +230,17 @@ function ketikSungguh(el, nilai) {
   try {
     el.focus();
     el.setSelectionRange(0, (el.value || '').length);
-    document.execCommand('insertText', false, teks);
+    if (el.value) document.execCommand('delete');
+    // Ketik huruf demi huruf: tombol turun, sisipkan huruf (peristiwa input asli dari browser), tombol naik.
+    // Meniru urutan kejadian pada ketikan manusia supaya form ikut mencatat tiap perubahan.
+    for (const ch of teks) {
+      const enter = ch === '\n';
+      const kunci = enter ? 'Enter' : ch;
+      const opsi = { key: kunci, code: enter ? 'Enter' : '', bubbles: true, cancelable: true, composed: true };
+      el.dispatchEvent(new KeyboardEvent('keydown', opsi));
+      document.execCommand('insertText', false, enter ? '\n' : ch);
+      el.dispatchEvent(new KeyboardEvent('keyup', opsi));
+    }
   } catch (e) { /* lanjut ke cadangan */ }
   if (el.value !== teks) ketikKeInputReact(el, teks);
   return el.value === teks;
@@ -696,6 +706,77 @@ async function jalankanModulObat(config) {
 const b_nama = (b) => b.nama;
 
 // ---------------------------------------------------------------------------
+// KARTU DRAFT SOAP (salin lalu tempel): form Ecalyptus tidak mau menerima isian dari skrip
+// (terbukti di beberapa percobaan), tetapi menerima tempelan (Ctrl+V) dari pengguna.
+// ---------------------------------------------------------------------------
+function tampilkanKartuSoap(items, ambilKolom) {
+  document.getElementById('simpan-soap-kartu')?.remove();
+  const host = document.createElement('div');
+  host.id = 'simpan-soap-kartu';
+  host.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:2147483646;';
+  const root = host.attachShadow({ mode: 'open' });
+  const css = '.k{font:12px system-ui,sans-serif;width:300px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.4);padding:10px}'
+    + '.h{display:flex;justify-content:space-between;align-items:center;font-weight:700;margin-bottom:6px}.h small{font-weight:400;color:#94a3b8}'
+    + '.r{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid #1e293b}.r b{width:16px;color:#38bdf8}.r span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cbd5e1}'
+    + 'button{cursor:pointer;border:0;border-radius:8px;padding:5px 9px;font-weight:600;background:#0ea5e9;color:#fff}button.ok{background:#16a34a}button[disabled]{background:#334155;color:#94a3b8;cursor:default}.x{background:transparent;color:#94a3b8;padding:0 4px}';
+  root.innerHTML = `<style>${css}</style><div class="k"><div class="h"><div>Draft SOAP <small>Salin, lalu Ctrl+V di kolomnya</small></div><button class="x" id="tutup">✕</button></div></div>`;
+  const kotak = root.querySelector('.k');
+  const status = document.createElement('div');
+  status.style.cssText = 'margin:4px 0 6px;color:#94a3b8;font-size:11px;';
+  const semua = document.createElement('button');
+  semua.textContent = 'Tempel semua (otomatis)';
+  semua.style.cssText = 'width:100%;margin-bottom:4px;background:#16a34a;';
+  // Satu klik pengguna memberi halaman fokus; robot lalu menempel (paste asli browser) ke tiap kolom.
+  semua.onclick = async () => {
+    semua.disabled = true; status.textContent = 'Menempel...';
+    const gagal = [];
+    for (const it of items) {
+      if (!it.teks) continue;
+      const k = ambilKolom(); const el = k && k[it.nama.toLowerCase()];
+      if (!el) { gagal.push(it.nama); continue; }
+      try {
+        const t = document.createElement('textarea');
+        t.value = it.teks; t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+        document.body.appendChild(t); t.select();
+        const tersalin = document.execCommand('copy'); t.remove();
+        el.focus(); el.setSelectionRange(0, (el.value || '').length);
+        const tertempel = document.execCommand('paste');
+        if (!tersalin || !tertempel || el.value !== it.teks) gagal.push(it.nama);
+      } catch (e) { gagal.push(it.nama); }
+      await new Promise(r => setTimeout(r, 600));
+    }
+    semua.disabled = false;
+    if (gagal.length) status.textContent = `Gagal menempel: ${gagal.join(', ')}. Pakai tombol Salin manual, atau muat ulang ekstensi (izin clipboard).`;
+    else { status.textContent = 'Selesai menempel. Periksa, lalu klik Simpan SOAP.'; document.activeElement && document.activeElement.blur && document.activeElement.blur(); }
+  };
+  kotak.appendChild(semua);
+  kotak.appendChild(status);
+  for (const it of items) {
+    const baris = document.createElement('div');
+    baris.className = 'r';
+    const ringkas = it.teks ? it.teks.replace(/\s+/g, ' ').slice(0, 42) : (it.alasan || 'kosong');
+    baris.innerHTML = `<b>${it.nama}</b><span title="${ringkas.replace(/"/g, '')}">${ringkas}</span>`;
+    const tombol = document.createElement('button');
+    tombol.textContent = it.teks ? 'Salin' : '-';
+    if (!it.teks) tombol.disabled = true;
+    tombol.onclick = async () => {
+      try { await navigator.clipboard.writeText(it.teks); }
+      catch (e) {
+        const t = document.createElement('textarea'); t.value = it.teks; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
+      }
+      const k = ambilKolom();
+      const el = k && k[it.nama.toLowerCase()];
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+      tombol.textContent = '✓ Ctrl+V'; tombol.className = 'ok';
+    };
+    baris.appendChild(tombol);
+    kotak.appendChild(baris);
+  }
+  root.getElementById('tutup').onclick = () => host.remove();
+  document.body.appendChild(host);
+}
+
+// ---------------------------------------------------------------------------
 // KAMUS TEMPLATE SOAP PER SHIFT (milik robot; isi O/P/I)
 // Sumber: template pengguna. Daftar obat spesifik pasien TIDAK dimasukkan,
 // pengguna melengkapinya manual saat review.
@@ -786,6 +867,25 @@ async function jalankanModulSoapie(config) {
       if (perawat) aPerawat = perawat.a.trim();
       else catat('Catatan: CPPT perawat dengan Assesmen tidak ditemukan.');
     });
+  }
+
+  // --- MODE SALIN-TEMPEL (bawaan): robot menyusun draf, pengguna menempelkan dengan Ctrl+V ---
+  if (!config.soapKetikOtomatis) {
+    const kk = kolom();
+    const rencanaK = String(config.companionSoap?.planning || '').trim();
+    const tplK = TEMPLATE_SOAP[shift];
+    const pK = rencanaK ? `${tplK.p}\n\nAdvis dokter:\n${rencanaK}` : tplK.p;
+    const sK = sDokter || (config.pakaiSoapCompanion && config.companionSoap?.subjective) || '';
+    const items = [
+      { nama: 'S', teks: kk && kk.s.value.trim() ? '' : sK, alasan: kk && kk.s.value.trim() ? 'sudah terisi' : 'tidak ada di CPPT dokter' },
+      { nama: 'O', teks: tplK.o },
+      { nama: 'A', teks: kk && kk.a.value.trim() ? '' : aPerawat, alasan: kk && kk.a.value.trim() ? 'sudah terisi' : 'tidak ada di CPPT perawat' },
+      { nama: 'P', teks: pK },
+      { nama: 'I', teks: tplK.i },
+    ];
+    tampilkanKartuSoap(items, kolom);
+    catat(`Draft SOAP (${label}) siap di kartu kiri bawah halaman: klik Salin, lalu Ctrl+V di kolomnya. Tidak ada yang diketik atau disimpan otomatis.`);
+    return;
   }
 
   // --- TAHAP 2: TUNGGU FORM TENANG, lalu isi semua kolom tanpa klik apa pun sesudahnya ---

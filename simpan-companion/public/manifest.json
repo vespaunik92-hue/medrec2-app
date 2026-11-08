@@ -3,15 +3,28 @@
   "name": "SIMPAN Ecalyptus Companion",
   "version": "1.0.0",
   "description": "Companion Ecalyptus & SIMPAN",
-  "permissions": ["sidePanel", "tabs", "activeTab", "storage"],
-  "host_permissions": ["*://*.ecalyptus.healthcare/*"],
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "activeTab",
+    "storage",
+    "clipboardRead",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "*://*.ecalyptus.healthcare/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.ecalyptus.healthcare/*"],
-      "js": ["content.js"]
+      "matches": [
+        "*://*.ecalyptus.healthcare/*"
+      ],
+      "js": [
+        "content.js"
+      ]
     }
   ],
   "action": {
@@ -29,8 +42,14 @@
   },
   "web_accessible_resources": [
     {
-    "resources": ["index.html", "assets/*", "logo1.png", "logo2.png"],
-    "matches": ["*://*.ecalyptus.healthcare/*"]
+      "resources": [
+        "index.html",
+        "assets/*",
+        "logo2.png"
+      ],
+      "matches": [
+        "*://*.ecalyptus.healthcare/*"
+      ]
     }
   ],
   "side_panel": {
