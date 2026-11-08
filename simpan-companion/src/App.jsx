@@ -58,7 +58,6 @@ const formatDateCM = (isoString) => {
     }
 
     // 1. Teks DD/MM/YYYY atau DD-MM-YYYY dari Ecal
-    //    (?<!\d) = harus mulai di awal angka, supaya tidak salah ambil potongan dari tahun
     const match = s.match(/(?<!\d)(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})(?:[\s,]+(\d{1,2})[\:\.](\d{1,2}))?/);
     if (match) {
       let [_, d, m, y, h, min] = match;
@@ -187,14 +186,10 @@ const cleanBedKey = (val) => (val || '').replace(/[\s•·\-_]/g, '').toUpperCas
 // 🧹 AMBIL KODE KAMAR MURNI (Membersihkan kata "Bed", "(Kosong)", dan sisa nama pasien)
 const getPureBedCode = (rawVal, bedList = []) => {
   if (!rawVal) return '';
-  // 1. Ambil teks sebelum strip pemisah nama pasien
   let clean = rawVal.split(' - ')[0];
-  // 2. Buang kata (Kosong) atau (KOSONG) beserta kurungnya
   clean = clean.replace(/\s*\([^\)]*\)/gi, '');
-  // 3. Buang kata 'Bed' di depan jika ada
   clean = clean.replace(/^bed\s+/i, '').trim();
 
-  // 4. Cocokkan dengan daftar resmi kamar bangsal
   const matched = bedList.find(b => cleanBedKey(b) === cleanBedKey(clean));
   return matched || clean;
 };
@@ -204,7 +199,7 @@ const mergeEcalPlanning = (currentText = '', incomingText = '') => {
   const norm = (s = '') => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const has = (haystackNorm, needleNorm) => ` ${haystackNorm} `.includes(` ${needleNorm} `);
   const STRUCT = /^(Lab\. R\/|Rad\. R\/|TM\.|Th\.|Lacak\/Lapor)/i;
-  const DAY_RE = /^(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu)$/i; // pembatas hari dari dokter
+  const DAY_RE = /^(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu)$/i;
 
   let result = (currentText || '').trim();
   const incLines = String(incomingText || '').split('\n').map(l => l.trim()).filter(Boolean);
@@ -247,7 +242,6 @@ export default function App() {
   useEffect(() => {
     const unsub = onAuthStateChanged(getAuth(), (u) => {
       if (!u) {
-        // sesi Firebase tidak ada/habis → paksa login ulang
         try { localStorage.removeItem('simpan_companion_user'); } catch {}
         setCurrentUser(null);
       }
@@ -271,10 +265,35 @@ export default function App() {
   const [showLaporModal, setShowLaporModal] = useState(false);
   const [showDischargeModal, setShowDischargeModal] = useState(false);
   const [dpjpProfiles, setDpjpProfiles] = useState([]);
-  const [planChoice, setPlanChoice] = useState(null); // dialog Gabung/Timpa/Biarkan untuk kolom P
+  const [planChoice, setPlanChoice] = useState(null);
 
   const [loadingScrape, setLoadingScrape] = useState(false);
   const [loadingSave, setLoadingSave] = useState(false);
+
+  // 🤖 STATE ROBOT AUTO-ECALYPTUS
+  const [showRobotPanel, setShowRobotPanel] = useState(false);
+  const [robotRunning, setRobotRunning] = useState(false);
+  const [modulSemua, setModulSemua] = useState({ asesmen: true, obat: false });
+  const [robotStatus, setRobotStatus] = useState('');
+  const [robotConfig, setRobotConfig] = useState(() => {
+    const h = new Date().getHours();
+    const defaultShift = (h >= 8 && h < 14) ? 'pagi' : (h >= 14 && h < 21) ? 'siang' : 'malam';
+    return {
+      shift: defaultShift,
+      nyeri: 'tidak',
+      skalaNyeri: '2',
+      autoTtv: true,
+      rr: '',
+      spo2: '',
+      sistolik: '',
+      diastolik: '',
+      hr: '',
+      suhu: '',
+      jamObatDefault: '',
+      pakaiSoapCompanion: false,
+      autoSubmitSoap: false
+    };
+  });
 
   // State untuk CPO
   const [isMarModalOpen, setIsMarModalOpen] = useState(false);
@@ -305,7 +324,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (!currentUser || !authReady) return; // tunggu sampai login selesai (rules menolak baca sebelum login)
+    if (!currentUser || !authReady) return;
     const fetchSettings = async () => {
       try {
         const docRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/settings`, 'mainConfig');
@@ -394,7 +413,7 @@ export default function App() {
     if (window.confirm("Keluar dari akun SIMPAN Companion?")) {
       try {
         const auth = getAuth();
-        await signOut(auth); // 👈 Putus sesi Firebase
+        await signOut(auth);
       } catch (err) {
         console.warn("Logout error:", err);
       }
@@ -430,7 +449,6 @@ export default function App() {
     if (!currentUser || !authReady) return;
 
     const collPath = `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`;
-    // Hanya pasien AKTIF (±32 dokumen), bukan seluruh arsip ±1.800 dokumen
     const qColl = query(collection(db, collPath), where('isDischarged', '==', false));
 
     const unsub = onSnapshot(qColl, (snapshot) => {
@@ -549,6 +567,114 @@ export default function App() {
       return { ...prev, objective: cur.trim() ? `${tag}\n${cur.trim()}` : tag };
     });
   };
+
+  // 🤖 4b. EKSEKUSI ROBOT AUTO-ECALYPTUS
+  const handleRunRobot = async (mode) => {
+    if (typeof chrome === 'undefined' || !chrome.tabs) {
+      alert("Buka ekstensi ini di browser Chrome.");
+      return;
+    }
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      alert("Buka tab Ecalyptus terlebih dahulu.");
+      return;
+    }
+
+    setRobotRunning(true);
+    const labelMode = mode === 'ASESMEN'
+      ? 'Mengisi Nyeri, Jatuh & EWS...'
+      : mode === 'OBAT'
+      ? `Menyapu bersih obat Shift ${robotConfig.shift.toUpperCase()}...`
+      : mode === 'SOAPIE'
+      ? 'Menyiapkan Template & Salin SOAPIE...'
+      : (mode === 'ANTREAN' || mode === 'ANTREAN_SATU')
+      ? 'Berkeliling antrean pasien (Asesmen+EWS)...'
+      : 'Menjalankan Siklus Penuh (Asesmen ➔ Obat ➔ SOAPIE)...';
+    setRobotStatus(`⏳ ${labelMode}`);
+
+    chrome.tabs.sendMessage(
+      tab.id,
+      {
+        action: "RUN_ECAL_ROBOT",
+        mode,
+        config: {
+          ...robotConfig,
+          rmTarget: (formData.rmNumber || '').trim(),
+          companionSoap: {
+            subjective: formData.subjective,
+            objective: formData.objective,
+            analysis: formData.analysis,
+            planning: formData.planning
+          }
+        }
+      },
+      (res) => {
+        setRobotRunning(false);
+        if (chrome.runtime.lastError) {
+          setRobotStatus("❌ Gagal terhubung ke tab Ecalyptus. Refresh (F5) tab Ecalyptus dulu.");
+          return;
+        }
+        if (res?.success) {
+          setRobotStatus(res.message || "✅ Robot selesai bertugas!");
+        } else {
+          setRobotStatus(`⚠️ ${res?.error || "Terjadi kendala saat menjalankan robot."}`);
+        }
+      }
+    );
+  };
+
+    const robotStopRef = useRef(false);
+
+  const kirimRobot = (tabId, mode, config) => new Promise(resolve => {
+    chrome.tabs.sendMessage(tabId, { action: "RUN_ECAL_ROBOT", mode, config }, (res) => {
+      if (chrome.runtime.lastError) {
+        resolve({ success: false, hasil: 'PUTUS', error: 'Gagal terhubung ke tab Ecalyptus. Refresh (F5) tab Ecalyptus dulu.' });
+      } else resolve(res || { success: false, hasil: 'GAGAL', error: 'Tanpa respons dari tab.' });
+    });
+  });
+
+  const handleRunSemuaPasienSimpan = async () => {
+    if (typeof chrome === 'undefined' || !chrome.tabs) { alert("Buka ekstensi ini di browser Chrome."); return; }
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) { alert("Buka tab Ecalyptus terlebih dahulu."); return; }
+
+    const targets = currentBedList
+      .map(bed => ({ bed, p: wardPatients.find(x => cleanBedKey(x.roomNumber || x.room || x.bed) === cleanBedKey(bed)) }))
+      .filter(t => t.p && (t.p.rmNumber || t.p.rm));
+    if (!targets.length) { alert("Tidak ada pasien aktif dengan RM di SIMPAN."); return; }
+
+    robotStopRef.current = false;
+    setRobotRunning(true);
+    const hasilLog = [];
+    for (let i = 0; i < targets.length; i++) {
+      if (robotStopRef.current) { hasilLog.push('🛑 Dihentikan.'); break; }
+      const t = targets[i];
+      const rm = String(t.p.rmNumber || t.p.rm).trim();
+      setSelectedBed(t.bed); // companion ikut berpindah ke pasien ini
+      setRobotStatus(`⏳ Pasien ${i + 1} dari ${targets.length} (bed ${t.bed})\n` + hasilLog.join('\n'));
+      await new Promise(r => setTimeout(r, 400));
+      const res = await kirimRobot(tab.id, 'PASIEN_RM', { ...robotConfig, modul: modulSemua, rmTarget: rm });
+      hasilLog.push(`${i + 1}. ${t.bed}: ${res.hasil || (res.success ? 'OK' : 'GAGAL')}${res.success ? '' : ' - ' + String(res.error || res.message || '').split('\n').slice(-3).join(' | ')}`);
+      if (res.hasil === 'PUTUS' || (res.hasil === 'GAGAL' && /IDENTITAS|ANTREAN/.test(res.error || ''))) {
+        hasilLog.push('⚠️ Berhenti demi keamanan.');
+        break;
+      }
+    }
+    setRobotRunning(false);
+    setRobotStatus(`✅ Selesai (${targets.length} pasien di daftar SIMPAN)\n` + hasilLog.join('\n'));
+  };
+  
+  const handleStopRobot = async () => {
+    robotStopRef.current = true;
+    if (typeof chrome === 'undefined' || !chrome.tabs) return;
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) {
+      chrome.tabs.sendMessage(tab.id, { action: "STOP_ECAL_ROBOT" });
+    }
+    setRobotRunning(false);
+    setRobotStatus("🛑 Robot dihentikan.");
+  };
   
   // 5. PENYEDOT DATA ECALYPTUS (DILENGKAPI PENYARING CERDAS RESEP OBAT)
   const handleScrapeEcal = async () => {
@@ -590,13 +716,12 @@ export default function App() {
             return found ? found.name : d.dpjpName;
           })();
 
-          // Tentukan nasib kolom P: gabung / timpa / biarkan
           let planningMode = 'merge';
           const curPlan = formData.planning || '';
           if (d.planning && curPlan.trim()) {
             const mergedPreview = mergeEcalPlanning(curPlan, d.planning);
             if (mergedPreview.trim() === curPlan.trim()) {
-              planningMode = 'skip'; // tidak ada yang baru, jangan ganggu
+              planningMode = 'skip';
             } else {
               planningMode = await new Promise(resolve => setPlanChoice({ incoming: d.planning, resolve }));
             }
@@ -623,7 +748,6 @@ export default function App() {
                 : d.objective.trim();
             }
 
-            // 🧹 FILTER RESEP MENGGUNAKAN PENYARING CERDAS
             const rawRx = d.prescription || '';
             const cleanedRx = rawRx ? cleanPrescriptionText(rawRx, MEDICATION_TRANSLATOR).replace(/\s*,+\s*\)/g, ')').replace(/,+\s*$/gm, '') : '';
             
@@ -681,7 +805,6 @@ export default function App() {
 
     const record = {
       ...formData,
-      // PrintLayout memakai new Date(admissionDate), jadi harus format ISO, bukan "dd/mm/yyyy, hh:mm"
       admissionDate: parseDateCM(formData.admissionDate),
       roomNumber: selectedBed,
       ward: selectedWard,
@@ -722,10 +845,7 @@ export default function App() {
       return;
     }
 
-    // Ambil nama ruangan (MELATI, DAHLIA, dll)
     const wardName = selectedWard || currentUser?.ward || 'MELATI';
-
-    // 🌟 PANGGIL LANGSUNG FUNGSI DARI PRINTMANAGER INDUK!
     handlePrintBukuCM(wardName);
   };
 
@@ -755,13 +875,11 @@ export default function App() {
     };
     setMarSelectedRecord(combinedData);
 
-    // Jika jendela pop-up sudah ada, fokuskan saja
     if (cpoWindowRef.current && !cpoWindowRef.current.closed) {
       cpoWindowRef.current.focus();
       return;
     }
 
-    // Buka jendela baru yang luas mandiri
     const win = window.open('', 'SIMPAN_CPO_POPUP', 'width=950,height=750,top=100,left=150');
     if (!win) {
       alert("Gagal membuka jendela CPO. Pastikan izin pop-up browser aktif.");
@@ -770,7 +888,6 @@ export default function App() {
 
     cpoWindowRef.current = win;
 
-        // Salin stylesheet CSS agar tampilan CPO tetap berwarna & rapi
     const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
       .map(el => el.outerHTML)
       .join('\n');
@@ -803,7 +920,6 @@ export default function App() {
     setCpoContainer(rootElem);
     setIsMarModalOpen(true);
 
-    // Otomatis sinkron jika jendela ditutup dari tombol silang (X) browser
     win.onbeforeunload = () => {
       setIsMarModalOpen(false);
       setMarSelectedRecord(null);
@@ -849,31 +965,31 @@ export default function App() {
   };
 
   // 8. LAPOR WHATSAPP (SINKRON DENGAN INDUK VIA HELPERS)
-const handleLaporWA = async (type, raberIndex = 0) => {
-  const { text, targetNumber } = buildWhatsAppText({
-    patient: { ...formData, roomNumber: selectedBed },
-    senderName: currentUser?.name || 'Perawat',
-    wardName: selectedWard,
-    type,
-    raberIndex,
-    dpjpProfiles
-  });
+  const handleLaporWA = async (type, raberIndex = 0) => {
+    const { text, targetNumber } = buildWhatsAppText({
+      patient: { ...formData, roomNumber: selectedBed },
+      senderName: currentUser?.name || 'Perawat',
+      wardName: selectedWard,
+      type,
+      raberIndex,
+      dpjpProfiles
+    });
 
-  if ((type === 'DPJP' || type === 'Raber') && !targetNumber) {
-    alert('Nomor WhatsApp dokter tujuan belum disetel di Master Data.');
-  }
+    if ((type === 'DPJP' || type === 'Raber') && !targetNumber) {
+      alert('Nomor WhatsApp dokter tujuan belum disetel di Master Data.');
+    }
 
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (_) {}
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {}
 
-  const url = targetNumber
-    ? `https://wa.me/${targetNumber}?text=${encodeURIComponent(text)}`
-    : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    const url = targetNumber
+      ? `https://wa.me/${targetNumber}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
 
-  window.open(url, '_blank');
-  setShowLaporModal(false);
-};
+    window.open(url, '_blank');
+    setShowLaporModal(false);
+  };
 
   // 9. SIMPAN KE FIRESTORE
   const handleSaveToSimpan = async () => {
@@ -890,7 +1006,6 @@ const handleLaporWA = async (type, raberIndex = 0) => {
       const now = new Date();
       const dateStamp = `[${currentUser?.name?.split(' ')[0] || 'Perawat'}, ${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}]`;
 
-      // 🌟 KUNCI PEMBERSIH: Pastikan kode kasur murni sebelum masuk ke Firestore
       const pureBed = getPureBedCode(selectedBed, currentBedList);
 
       const payload = {
@@ -901,9 +1016,9 @@ const handleLaporWA = async (type, raberIndex = 0) => {
         gender: formData.gender,
         bpjsClass: formData.bpjsClass,
         admissionDate: parseDateCM(formData.admissionDate),
-        roomNumber: pureBed, // 👈 Pakai pureBed (Bukan selectedBed mentah)
-        room: pureBed,       // 👈 Pakai pureBed
-        bed: pureBed,        // 👈 Pakai pureBed
+        roomNumber: pureBed,
+        room: pureBed,
+        bed: pureBed,
         ward: selectedWard,
         dpjpName: formData.dpjpName,
         dpjp: formData.dpjpName,
@@ -953,7 +1068,7 @@ const handleLaporWA = async (type, raberIndex = 0) => {
       const k = e.key.toLowerCase();
       if (!['s', 'p', 'e'].includes(k)) return;
 
-      e.preventDefault(); // cegah "Save page" / print bawaan Chrome
+      e.preventDefault();
       const s = shortcutRef.current;
       if (!s.loggedIn || e.repeat) return;
 
@@ -966,11 +1081,10 @@ const handleLaporWA = async (type, raberIndex = 0) => {
   }, []);
   
   // ⏱️ AUTO LOGOUT JIKA LAMA TIDAK ADA AKTIVITAS DI PANEL
-  const IDLE_LIMIT_MS = 60 * 60 * 1000; // 60 menit (ubah angka 60 sesuai selera)
+  const IDLE_LIMIT_MS = 60 * 60 * 1000;
   useEffect(() => {
     const KEY = 'simpan_companion_last_active';
 
-    // Di layar login: bersihkan catatan lama agar login baru tidak langsung terlempar
     if (!currentUser) {
       try { localStorage.removeItem(KEY); } catch {}
       return;
@@ -992,19 +1106,18 @@ const handleLaporWA = async (type, raberIndex = 0) => {
       if (last && Date.now() - last > IDLE_LIMIT_MS) forceLogout();
     };
 
-    // Saat panel dibuka: kalau sudah terlalu lama sejak aktivitas terakhir, langsung keluar
     check();
     touch();
 
     let lastWrite = Date.now();
     const onActivity = () => {
       const now = Date.now();
-      if (now - lastWrite > 5000) { lastWrite = now; touch(); } // hemat tulis storage
+      if (now - lastWrite > 5000) { lastWrite = now; touch(); }
     };
 
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'focus'];
     events.forEach(ev => window.addEventListener(ev, onActivity, true));
-    const timer = setInterval(check, 30000); // cek tiap 30 detik
+    const timer = setInterval(check, 30000);
 
     return () => {
       events.forEach(ev => window.removeEventListener(ev, onActivity, true));
@@ -1191,15 +1304,11 @@ const handleLaporWA = async (type, raberIndex = 0) => {
               })()}
               onChange={e => {
                 const val = e.target.value;
-
-                // 1. Jika dipilih dari dropdown dengan nama (format: "BED 10 - ABI ANTIK")
                 if (val.includes(' - ')) {
                   const pure = getPureBedCode(val, currentBedList);
                   setSelectedBed(pure);
                   return;
                 }
-
-                // 2. Jika user memilih kamar kosong atau mengetik langsung
                 const pure = getPureBedCode(val, currentBedList);
                 setSelectedBed(pure);
               }}
@@ -1207,7 +1316,6 @@ const handleLaporWA = async (type, raberIndex = 0) => {
                 const val = (e.target.value || '').trim();
                 if (!val) return;
 
-                // Sensor Pencarian Nama Pasien
                 const matchedPatient = wardPatients.find(p => {
                   const pName = (p.name || p.nama || '').toLowerCase();
                   return pName && pName.includes(val.toLowerCase());
@@ -1242,7 +1350,6 @@ const handleLaporWA = async (type, raberIndex = 0) => {
                 const pName = occ ? (occ.name || occ.nama || '').trim() : '';
                 const prefix = selectedWard === 'DAHLIA' ? 'Bed ' : '';
                 
-                // 🌟 KUNCI: JANGAN masukkan kata '(Kosong)' ke dalam value agar value input tetap bersih murni
                 const datalistValue = pName 
                   ? `${prefix}${bed} - ${pName}`
                   : `${prefix}${bed}`;
@@ -1283,6 +1390,196 @@ const handleLaporWA = async (type, raberIndex = 0) => {
         >
           <span>🖨️</span> EOA
         </button>
+      </div>
+
+      {/* 🤖 3b. PANEL ROBOT AUTO-ECALYPTUS */}
+      <div className="bg-gradient-to-r from-emerald-900 to-teal-900 text-white rounded-xl shadow-sm border border-emerald-700 overflow-hidden">
+        <div
+          onClick={() => setShowRobotPanel(!showRobotPanel)}
+          className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-white/5 transition"
+        >
+          <div className="flex items-center gap-1.5 font-black text-[11px]">
+            <span>🤖</span>
+            <span>Robot Auto-Ecalyptus (Nyeri • Jatuh • EWS • Obat • SOAP)</span>
+          </div>
+          <span className="text-[10px] font-bold bg-emerald-700/80 px-1.5 py-0.5 rounded">
+            {showRobotPanel ? '▲ Tutup' : '▼ Buka'}
+          </span>
+        </div>
+
+        {showRobotPanel && (
+          <div className="p-2.5 bg-slate-900/90 border-t border-emerald-800 space-y-2 text-[10px]">
+            {/* BARIS 1: SHIFT & NYERI */}
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="text-[8px] font-bold text-emerald-300 uppercase block mb-0.5">Shift Dinas</label>
+                <select
+                  value={robotConfig.shift}
+                  onChange={e => setRobotConfig({ ...robotConfig, shift: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-white font-bold text-[10px]"
+                >
+                  <option value="pagi">☀️ Shift Pagi</option>
+                  <option value="siang">🌤️ Shift Siang</option>
+                  <option value="malam">🌙 Shift Malam</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[8px] font-bold text-emerald-300 uppercase block mb-0.5">Asesmen Nyeri</label>
+                <select
+                  value={robotConfig.nyeri}
+                  onChange={e => setRobotConfig({ ...robotConfig, nyeri: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-white font-bold text-[10px]"
+                >
+                  <option value="tidak">🟢 Tidak Nyeri (0)</option>
+                  <option value="ya">🟡 Nyeri (Skala 2 - Tumpul)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* BARIS 2: PENGATURAN TTV EWS & JAM OBAT */}
+            <div className="bg-slate-800/80 p-1.5 rounded-lg border border-slate-700 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 cursor-pointer font-bold text-emerald-200">
+                  <input
+                    type="checkbox"
+                    checked={robotConfig.autoTtv}
+                    onChange={e => setRobotConfig({ ...robotConfig, autoTtv: e.target.checked })}
+                    className="rounded"
+                  />
+                  <span>Auto-Baca TTV Header + Variasi (±1-2)</span>
+                </label>
+                <input
+                  type="text"
+                  value={robotConfig.jamObatDefault}
+                  onChange={e => setRobotConfig({ ...robotConfig, jamObatDefault: e.target.value })}
+                  placeholder="Jam Obat (Auto)"
+                  title="Kosongkan agar mengikuti jam hari sebelumnya (18:00/20:00), atau isi manual misal 18:00"
+                  className="w-24 bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-[9px] text-center text-amber-300 font-mono"
+                />
+              </div>
+
+              {!robotConfig.autoTtv && (
+                <div className="grid grid-cols-6 gap-1 pt-1">
+                  {[
+                    ['RR', 'rr'],
+                    ['SpO2', 'spo2'],
+                    ['Sistol', 'sistolik'],
+                    ['Diastol', 'diastolik'],
+                    ['HR', 'hr'],
+                    ['Suhu', 'suhu']
+                  ].map(([lbl, k]) => (
+                    <div key={k}>
+                      <span className="text-[8px] text-slate-400 block text-center">{lbl}</span>
+                      <input
+                        type="text"
+                        value={robotConfig[k]}
+                        onChange={e => setRobotConfig({ ...robotConfig, [k]: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-600 rounded p-0.5 text-center font-mono text-[9px] text-white"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* BARIS 3: OPSI SOAPIE */}
+            <div className="flex items-center justify-between px-1 text-[9.5px] text-slate-300">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={robotConfig.pakaiSoapCompanion}
+                  onChange={e => setRobotConfig({ ...robotConfig, pakaiSoapCompanion: e.target.checked })}
+                />
+                <span>Isi S-O-A dari teks Companion</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer text-amber-300 font-bold">
+                <input
+                  type="checkbox"
+                  checked={robotConfig.autoSubmitSoap}
+                  onChange={e => setRobotConfig({ ...robotConfig, autoSubmitSoap: e.target.checked })}
+                />
+                <span>Langsung Klik Simpan SOAP</span>
+              </label>
+            </div>
+
+            {/* BARIS 4: TOMBOL EKSEKUSI PER MODUL */}
+            <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+              <button
+                type="button"
+                disabled={robotRunning}
+                onClick={() => handleRunRobot('ASESMEN')}
+                className="py-1.5 px-1 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white font-black rounded-lg shadow transition cursor-pointer text-[9.5px]"
+              >
+                📋 1. Asesmen+EWS
+              </button>
+              <button
+                type="button"
+                disabled={robotRunning}
+                onClick={() => handleRunRobot('OBAT')}
+                className="py-1.5 px-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-black rounded-lg shadow transition cursor-pointer text-[9.5px]"
+              >
+                💊 2. Sapu Obat
+              </button>
+              <button
+                type="button"
+                disabled={robotRunning}
+                onClick={() => handleRunRobot('SOAPIE')}
+                className="py-1.5 px-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white font-black rounded-lg shadow transition cursor-pointer text-[9.5px]"
+              >
+                📝 3. Draft SOAP
+              </button>
+            </div>
+
+            {/* BARIS 4B: KERJAKAN SEMUA PASIEN SIMPAN (URUT BED) */}
+            <div className="flex gap-3 mb-1 px-1 text-[10px] text-slate-200">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" checked={modulSemua.asesmen}
+                  onChange={e => setModulSemua({ ...modulSemua, asesmen: e.target.checked })} />
+                <span>Asesmen+EWS</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" checked={modulSemua.obat}
+                  onChange={e => setModulSemua({ ...modulSemua, obat: e.target.checked })} />
+                <span>Sapu Obat</span>
+              </label>
+            </div>
+            <button
+              type="button"
+              disabled={robotRunning}
+              onClick={handleRunSemuaPasienSimpan}
+              className="w-full mb-1.5 py-2 bg-indigo-700 hover:bg-indigo-600 disabled:opacity-40 text-white font-bold rounded-lg shadow-md transition cursor-pointer text-[10.5px]"
+            >
+              ▶️ Kerjakan semua pasien SIMPAN (urut bed)
+            </button>
+
+            {/* BARIS 5: TOMBOL FULL SIKLUS & STOP */}
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                disabled={robotRunning}
+                onClick={() => handleRunRobot('FULL')}
+                className="flex-1 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 disabled:opacity-40 text-slate-950 font-black rounded-lg shadow-md transition cursor-pointer text-[10.5px]"
+              >
+                🚀 JALANKAN FULL SIKLUS (1 ➔ 2 ➔ 3)
+              </button>
+              {robotRunning && (
+                <button
+                  type="button"
+                  onClick={handleStopRobot}
+                  className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-lg shadow transition cursor-pointer text-[10px]"
+                >
+                  🛑 Stop
+                </button>
+              )}
+            </div>
+
+            {robotStatus && (
+              <div className="bg-black/40 border border-emerald-800/80 rounded px-2 py-1 text-[9.5px] text-emerald-200 font-medium leading-snug">
+                {robotStatus}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       
       {cpptAuthors.length > 1 && (

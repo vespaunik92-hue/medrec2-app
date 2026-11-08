@@ -23,6 +23,36 @@ const extractLatestTtvInline = (objectiveText) => {
     return { td, n, s, spo2 };
 };
 
+// Ekstrak daftar baris Resep Obat (currentPrescription) pasien
+const getPrescriptionLines = (rec) => {
+    let rawRx = '';
+    if (rec?.currentPrescription && rec.currentPrescription.trim()) {
+        rawRx = rec.currentPrescription.trim();
+    } else {
+        const legacyMatch = (rec?.planning || '').match(/\[RESEP OBAT\]:([\s\S]*)/i);
+        if (legacyMatch) rawRx = legacyMatch[1].trim();
+    }
+    if (!rawRx) return [];
+    return rawRx
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l && !/^\[RESEP OBAT\]/i.test(l));
+};
+
+// Pisahkan teks Planning murni agar tidak dobel dengan blok Resep Obat
+const getCleanPlanningWithoutRx = (rec) => {
+    const rawPlan = rec?.planning || '';
+    const rxLines = getPrescriptionLines(rec);
+    if (rxLines.length === 0) return rawPlan.trim();
+
+    const rxSet = new Set(rxLines.map(l => l.toLowerCase()));
+    return rawPlan
+        .split('\n')
+        .filter(line => !rxSet.has(line.trim().toLowerCase()))
+        .join('\n')
+        .trim();
+};
+
 const PatientTable = ({ 
     records, onEdit, onPrint, onShowLaporModal, onDischarge, 
     roomSortOrder, onPrintTTV, onPrintSOAP, onQuickTtv, 
@@ -265,50 +295,92 @@ const PatientTable = ({
                         </thead>
                         <tbody>
                             {viewMode === 'soap' ? (
-                                sortedRecords.map((rec, index) => (
-                                    <tr 
-                                        key={rec.id} 
-                                        onClick={() => isSelectionMode ? handleSelectRow(rec.id) : onEdit(rec)} 
-                                        className={`cursor-pointer transition-colors border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${selectedIds.includes(rec.id) ? '!bg-indigo-100 border-indigo-200' : 'hover:bg-indigo-50/50'}`}
-                                    >
-                                        <td className="p-1.5 border-r border-gray-300 align-top sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-inherit">
-                                            <div className="flex items-start gap-1">
-                                                {isSelectionMode && (
-                                                    <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-                                                        <input type="checkbox" checked={selectedIds.includes(rec.id)} onChange={() => handleSelectRow(rec.id)} className="w-3.5 h-3.5 cursor-pointer accent-indigo-600" />
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-bold text-[11px] text-indigo-900 truncate leading-tight">{rec.name}</div>
-                                                    <div className="text-[9px] font-mono text-gray-400">RM: {rec.rmNumber || '-'}</div>
-                                                    <div className="flex gap-1 mt-0.5">
-                                                        <span className="font-bold bg-yellow-100 px-1 rounded text-[9px] border border-yellow-200">{rec.roomNumber}</span>
-                                                        <span className="bg-gray-100 px-1 rounded text-[8px] text-gray-500 border">{rec.gender}</span>
-                                                    </div>
-                                                    <div className="mt-0.5 text-gray-600 italic text-[9px] truncate font-medium">DPJP: {rec.dpjpName}</div>
-                                                    {(rec.raberName || rec.raber2Name) && (
-                                                        <div className="mt-0.5 text-blue-600 font-bold text-[9px] leading-tight">
-                                                            <span className="text-gray-400 font-normal">Rb: </span>
-                                                            {[rec.raberName, rec.raber2Name].filter(Boolean).map(name => name).join(', ')}
+                                sortedRecords.map((rec, index) => {
+                                    const cleanPlan = getCleanPlanningWithoutRx(rec);
+                                    const rxLines = getPrescriptionLines(rec);
+
+                                    return (
+                                        <tr 
+                                            key={rec.id} 
+                                            onClick={() => isSelectionMode ? handleSelectRow(rec.id) : onEdit(rec)} 
+                                            className={`cursor-pointer transition-colors border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${selectedIds.includes(rec.id) ? '!bg-indigo-100 border-indigo-200' : 'hover:bg-indigo-50/50'}`}
+                                        >
+                                            <td className="p-1.5 border-r border-gray-300 align-top sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-inherit">
+                                                <div className="flex items-start gap-1">
+                                                    {isSelectionMode && (
+                                                        <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                                                            <input type="checkbox" checked={selectedIds.includes(rec.id)} onChange={() => handleSelectRow(rec.id)} className="w-3.5 h-3.5 cursor-pointer accent-indigo-600" />
                                                         </div>
                                                     )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-bold text-[11px] text-indigo-900 truncate leading-tight">{rec.name}</div>
+                                                        <div className="text-[9px] font-mono text-gray-400">RM: {rec.rmNumber || '-'}</div>
+                                                        <div className="flex gap-1 mt-0.5">
+                                                            <span className="font-bold bg-yellow-100 px-1 rounded text-[9px] border border-yellow-200">{rec.roomNumber}</span>
+                                                            <span className="bg-gray-100 px-1 rounded text-[8px] text-gray-500 border">{rec.gender}</span>
+                                                        </div>
+                                                        <div className="mt-0.5 text-gray-600 italic text-[9px] truncate font-medium">DPJP: {rec.dpjpName}</div>
+                                                        {(rec.raberName || rec.raber2Name || rec.raber3Name) && (
+                                                            <div className="mt-0.5 text-blue-600 font-bold text-[9px] leading-tight">
+                                                                <span className="text-gray-400 font-normal">Rb: </span>
+                                                                {[rec.raberName, rec.raber2Name, rec.raber3Name].filter(Boolean).join(', ')}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.subjective || '-'}</td>
-                                        <td className="p-2 border-r border-gray-300 align-top">{renderObjectiveCell(rec.objective)}</td>
-                                        <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.analysis || '-'}</td>
-                                        <td className="p-2 border-r border-gray-300 align-top">{renderPlanningCell(rec.planning, rec.medicationLogs)}</td>
-                                        <td className="p-1.5 border-r border-gray-300 align-middle no-print" onClick={(e) => e.stopPropagation()}>
-                                            <div className="grid grid-cols-2 gap-1">
-                                                <button onClick={() => onEdit(rec)} className="flex flex-col items-center justify-center p-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 border border-yellow-300" title="Edit"><span className="text-sm">✏️</span><span className="text-[8px] font-bold">Edit</span></button>
-                                                <button onClick={() => onPrint(rec)} className="flex flex-col items-center justify-center p-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 border border-gray-300" title="Cetak"><span className="text-sm">🖨️</span><span className="text-[8px] font-bold">Cetak</span></button>                                                
-                                                <button onClick={() => onShowLaporModal(rec)} className="flex flex-col items-center justify-center p-1 bg-green-100 text-green-700 rounded hover:bg-green-200 border border-green-300" title="Lapor WA"><span className="text-sm">📱</span><span className="text-[8px] font-bold">Lapor</span></button>
-                                                <button onClick={() => onDischarge(rec.id, rec.name, rec.roomNumber)} className="flex flex-col items-center justify-center p-1 bg-red-100 text-red-700 rounded hover:bg-red-200 border border-red-300" title="Keluar"><span className="text-sm">🚪</span><span className="text-[8px] font-bold">Keluar</span></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
+                                            </td>
+                                            <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.subjective || '-'}</td>
+                                            <td className="p-2 border-r border-gray-300 align-top">{renderObjectiveCell(rec.objective)}</td>
+                                            <td className="p-2 border-r border-gray-300 align-top whitespace-pre-wrap font-sans">{rec.analysis || '-'}</td>
+                                            <td className="p-2 border-r border-gray-300 align-top">
+                                                {(cleanPlan || rxLines.length === 0) && renderPlanningCell(cleanPlan, rec.medicationLogs)}
+
+                                                {/* 💊 RESEP OBAT OTOMATIS MASUK KE KOLOM P (PLANNING) */}
+                                                {rxLines.length > 0 && (
+                                                    <div className={`${cleanPlan ? 'mt-2 pt-1.5 border-t border-dashed border-rose-300' : ''}`}>
+                                                        <div className="mb-1">
+                                                            <span 
+                                                                className="bg-rose-50 border border-rose-300 text-rose-800 text-[9px] font-bold px-1.5 py-0.5 rounded inline-block uppercase"
+                                                                style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+                                                            >
+                                                                💊 Resep Obat
+                                                            </span>
+                                                        </div>
+                                                        <div className="space-y-0.5 font-mono text-[10.5px] text-gray-900 leading-tight">
+                                                            {rxLines.map((line, rIdx) => {
+                                                                const cleanLine = line.replace(/^[-•*]\s*/, '').trim();
+                                                                const hCode = typeof getAntibioticDay === 'function'
+                                                                    ? getAntibioticDay(cleanLine, rec.medicationLogs || {})
+                                                                    : null;
+                                                                return (
+                                                                    <div key={rIdx} className="flex items-start justify-between gap-1">
+                                                                        <span>• {cleanLine}</span>
+                                                                        {hCode && (
+                                                                            <span 
+                                                                                className="border border-red-500 bg-red-50 text-red-700 font-bold text-[8px] px-1 rounded shrink-0"
+                                                                                style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+                                                                            >
+                                                                                🚨 {hCode}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-1.5 border-r border-gray-300 align-middle no-print" onClick={(e) => e.stopPropagation()}>
+                                                <div className="grid grid-cols-2 gap-1">
+                                                    <button onClick={() => onEdit(rec)} className="flex flex-col items-center justify-center p-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 border border-yellow-300" title="Edit"><span className="text-sm">✏️</span><span className="text-[8px] font-bold">Edit</span></button>
+                                                    <button onClick={() => onPrint(rec)} className="flex flex-col items-center justify-center p-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 border border-gray-300" title="Cetak"><span className="text-sm">🖨️</span><span className="text-[8px] font-bold">Cetak</span></button>                                                
+                                                    <button onClick={() => onShowLaporModal(rec)} className="flex flex-col items-center justify-center p-1 bg-green-100 text-green-700 rounded hover:bg-green-200 border border-green-300" title="Lapor WA"><span className="text-sm">📱</span><span className="text-[8px] font-bold">Lapor</span></button>
+                                                    <button onClick={() => onDischarge(rec.id, rec.name, rec.roomNumber)} className="flex flex-col items-center justify-center p-1 bg-red-100 text-red-700 rounded hover:bg-red-200 border border-red-300" title="Keluar"><span className="text-sm">🚪</span><span className="text-[8px] font-bold">Keluar</span></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             ) : (
                                 [...roomList].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map((room, index) => {
                                     const rec = records.find(r => r.roomNumber === room && !r.isDischarged);

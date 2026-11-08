@@ -158,9 +158,9 @@ export const FormattedObjective = ({ text }) => {
                 const trimmedLine = line.trim();
                 const lowerLine = trimmedLine.toLowerCase();
 
-                if (/^\[[A-Za-z0-9\s]+,\s*\d{1,2}\/\d{1,2}.*\]$/.test(trimmedLine)) {
+                if (/^\[[A-Za-z0-9\s\-_]+,\s*\d{1,2}[\/\-]\d{1,2}.*\]$/.test(trimmedLine)) {
                     return (
-                        <div key={idx} className="text-[10px] font-extrabold text-indigo-500 border-b border-indigo-100 pb-0.5 mt-1.5 mb-1 first:mt-0">
+                        <div key={idx} className="no-print text-[10px] font-extrabold text-indigo-500 border-b border-indigo-100 pb-0.5 mt-1.5 mb-1 first:mt-0">
                             🕒 {trimmedLine}
                         </div>
                     );
@@ -168,7 +168,7 @@ export const FormattedObjective = ({ text }) => {
 
                 if (/lacak\/lapor/i.test(lowerLine)) {
                     return (
-                        <div key={idx} className="bg-amber-50 text-amber-800 border-2 border-amber-200 rounded-lg p-2 font-bold my-1 flex items-center gap-1.5 text-[11px] leading-tight shadow-sm" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+                        <div key={idx} className="no-print bg-amber-50 text-amber-800 border-2 border-amber-200 rounded-lg p-2 font-bold my-1 flex items-center gap-1.5 text-[11px] leading-tight shadow-sm" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
                             <span>⚠️</span>
                             <span>{trimmedLine.replace(/^⚠️\s*/i, '')}</span>
                         </div>
@@ -1028,25 +1028,83 @@ export const handlePrintTTV = (wardName) => {
 export const handlePrintSOAP = (wardName) => {
     const element = document.getElementById('ttv-table-area');
     if (!element) return alert("Tabel tidak ditemukan.");
-    const content = element.innerHTML;
+
+    // 1. Kloning tabel agar pembersihan stempel tidak mengubah tampilan di layar
+    const clone = element.cloneNode(true);
+
+    // 2. Hapus elemen badge stempel nama & waktu seperti "🕒 [Vivi, 07/11/26 15:06]"
+    clone.querySelectorAll('div, span, p').forEach(el => {
+        if (el.children.length === 0) {
+            const txt = (el.textContent || '').trim();
+            if (/^(?:🕒\s*)?\[[^\]\n]+,\s*\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?(?:[\s,]+\d{1,2}[:.]\d{2})?\]$/.test(txt)) {
+                el.remove();
+            }
+        }
+    });
+
+    // 3. Hapus juga teks stempel "[Nama, dd/mm/yy hh:mm]" yang menempel langsung di dalam S, O, A, P
+    let content = clone.innerHTML;
+    content = content.replace(/(?:🕒\s*)?\[[^\]\n<>]+,\s*\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?(?:[\s,]+\d{1,2}[:.]\d{2})?\]\s*(?:\r?\n|<br\s*\/?>)?/gi, '');
 
     const html = `
     <!DOCTYPE html>
     <html><head><title>Print Laporan SOAP</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @page { size: A4 portrait; margin: 5mm; }
-        body { font-family: Arial, sans-serif; zoom: 0.65; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        table { width: 100%; border-collapse: collapse !important; font-size: 7pt; table-layout: fixed; }
-        th, td { border: 1px solid black !important; padding: 3px !important; vertical-align: top; line-height: 1.15; }
-        th { background-color: #e5e7eb !important; text-align: center; font-size: 8pt !important; font-weight: bold !important; }
-        th:nth-child(1), td:nth-child(1) { width: 18%; } th:nth-child(2), td:nth-child(2) { width: 15%; } 
-        th:nth-child(3), td:nth-child(3) { width: 30%; } th:nth-child(4), td:nth-child(4) { width: 12%; } 
-        th:nth-child(5), td:nth-child(5) { width: 25%; } th:nth-child(6), td:nth-child(6) { display: none !important; } 
-        .no-print { display: none !important; } input { display: none !important; } span.hidden { display: inline !important; }
+        /* Menggunakan size: auto agar opsi pilihan Portrait/Landscape di Chrome kembali muncul */
+        @page { size: auto; margin: 6mm 8mm; }
+        
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            color: #000 !important;
+            background: #fff !important;
+            -webkit-print-color-adjust: exact !important; 
+            print-color-adjust: exact !important; 
+        }
+        table { 
+            width: 100% !important; 
+            min-width: 0 !important; 
+            max-width: 100% !important; 
+            border-collapse: collapse !important; 
+            font-size: 8.5pt !important; /* Disesuaikan agar aman jika diprint Portrait */
+            table-layout: fixed !important; 
+        }
+        th, td { 
+            border: 1px solid #000 !important; 
+            padding: 4px 6px !important; 
+            vertical-align: top !important; 
+            line-height: 1.3 !important; 
+            word-wrap: break-word !important; 
+            overflow-wrap: break-word !important;
+            position: static !important;
+            box-shadow: none !important;
+        }
+        th { 
+            background-color: #e5e7eb !important; 
+            text-align: center !important; 
+            font-size: 9pt !important; 
+            font-weight: bold !important; 
+            color: #000 !important;
+        }
+        tr { page-break-inside: avoid; break-inside: avoid; }
+        
+        /* Proporsi lebar kolom */
+        th:nth-child(1), td:nth-child(1) { width: 14% !important; } /* Identitas */
+        th:nth-child(2), td:nth-child(2) { width: 14% !important; } /* S (Subjektif) */
+        th:nth-child(3), td:nth-child(3) { width: 30% !important; } /* O (Objektif) */
+        th:nth-child(4), td:nth-child(4) { width: 16% !important; } /* A (Analisa) */
+        th:nth-child(5), td:nth-child(5) { width: 26% !important; } /* P (Planning + Obat) */
+        th:nth-child(6), td:nth-child(6) { display: none !important; } /* Sembunyikan Kolom Aksi */
+        
+        .no-print { display: none !important; } 
+        input { display: none !important; } 
+        span.hidden { display: inline !important; }
         td { white-space: pre-wrap; word-wrap: break-word; }
-        h3 { text-align: center; margin: 5px 0 2px 0; font-size: 14pt; text-transform: uppercase; color: #1e3a8a; } 
-        .date-print { text-align: center; font-size: 8pt; margin-bottom: 10px; color: #555; }
+        
+        h3 { text-align: center; margin: 0 0 2px 0; font-size: 13pt; font-weight: bold; text-transform: uppercase; color: #1e3a8a; } 
+        .date-print { text-align: center; font-size: 8.5pt; margin-bottom: 6px; color: #444; }
     </style></head><body>
     <h3>Laporan Operan SOAP - Ruang ${wardName}</h3>
     <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')}</div>

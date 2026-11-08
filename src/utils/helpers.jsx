@@ -581,60 +581,10 @@ const isAntibioticMedicationName = (name = '') => {
     return /(?:seftri|ceftri|ceftriax|seftriax|cefix|sefix|levoflo|merope|cipro|sipro|metroni|amoxi|amoksi|ampici|ampisi|genta|azithro|cefaz|sefaz|ceftaz|seftaz|sulbactam|clavulanate|linezolid|fosfomycin|vancomycin)/i.test(normalized);
 };
 
-// 🧮 HITUNG HARI ANTIBIOTIK BERBASIS KUOTA DOSIS (3x1 -> Dosis ke-4 baru H2)
-export const getAntibioticDay = (medName, medicationLogs = {}) => {
-    if (!medName) return null;
-
-    const normalizedMed = normalizeMedicationName(medName);
-    if (!normalizedMed || !isAntibioticMedicationName(normalizedMed)) return null;
-
-    const safeLogs = medicationLogs || {};
-    let totalDosesGiven = 0;
-
-    // 1. Hitung total berapa kali obat ini SUDAH dicentang di semua tanggal & shift
-    Object.keys(safeLogs).forEach(dateStr => {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
-
-        const dayData = safeLogs[dateStr] || {};
-        Object.keys(dayData).forEach(key => {
-            const normalizedKey = normalizeMedicationName(key);
-            if (!normalizedKey) return;
-
-            if (normalizedKey.includes(normalizedMed) || normalizedMed.includes(normalizedKey)) {
-                const shiftLog = dayData[key] || {};
-                Object.values(shiftLog).forEach(slot => {
-                    if (slot && (slot.checked === true || slot.given === true || slot.status === 'given')) {
-                        totalDosesGiven++;
-                    }
-                });
-            }
-        });
-    });
-
-    // 2. Deteksi Aturan Pakai / Frekuensi dari teks nama obat
-    const text = medName.toLowerCase();
-
-    // Aturan Khusus 48 Jam (Selang sehari)
-    if (text.includes('48') || text.includes('selang')) {
-        if (totalDosesGiven <= 1) return 'H1';
-        const day48 = (totalDosesGiven - 1) * 2 + 1; // Dosis 2 = H3, Dosis 3 = H5
-        return `H${day48}`;
-    }
-
-    // Aturan Frekuensi Harian (3x1, 2x1, 1x1, 4x1)
-    let dosesPerDay = 3; // Default antibiotik injeksi biasanya 3x1 (tiap 8 jam)
-    const matchFreq = text.match(/(\d+)\s*x/i);
-    if (matchFreq) {
-        dosesPerDay = parseInt(matchFreq[1], 10) || 3;
-    }
-
-    // H = jumlah hari yang SUDAH LENGKAP diberikan (minimal H1)
-    // 2x1: dosis 4 = H2, dosis 6 = H3 | 3x1: dosis 6 = H2, dosis 9 = H3
-    const completedDays = Math.floor(totalDosesGiven / dosesPerDay);
-    return `H${Math.max(1, completedDays)}`;
-};
-
-// 🎈 BALON TIPS HARI ANTIBIOTIK (per pemberian)
+// ============================================================================
+// 🧮 HITUNG HARI ANTIBIOTIK SEMUA FREKUENSI (1x1, 2x1, 3x1, 4x1, & PER 48 JAM)
+// Lengkap dengan Jam Pergantian & Balon Tips CPO
+// ============================================================================
 const ABX_SHIFT_ORDER = { jam_12: 0, jam_18: 1, jam_24: 2, jam_06: 3 };
 const abxAddDays = (ymd, n) => {
     const [y, m, d] = ymd.split('-').map(Number);
@@ -642,16 +592,46 @@ const abxAddDays = (ymd, n) => {
     return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`;
 };
 
+// Menentukan label angka jam (06, 12, 18, 24, 04, 08, 16, 20) sesuai frekuensi & siklus CPO
+const getScheduleHourLabel = (shiftKey, dpd, isCycle24, savedTime) => {
+    if (dpd === 3) {
+        if (isCycle24) {
+            if (shiftKey === 'jam_12') return '08';
+            if (shiftKey === 'jam_18') return '16';
+            if (shiftKey === 'jam_24') return '24';
+            if (shiftKey === 'jam_06') return '04';
+        } else {
+            if (shiftKey === 'jam_12') return '12';
+            if (shiftKey === 'jam_18') return '20';
+            if (shiftKey === 'jam_24') return '24';
+            if (shiftKey === 'jam_06') return '04';
+        }
+    }
+    if (shiftKey === 'jam_12') return '12';
+    if (shiftKey === 'jam_18') return '18';
+    if (shiftKey === 'jam_24') return '24';
+    if (shiftKey === 'jam_06') return '06';
+    if (savedTime) {
+        const m = String(savedTime).match(/^(\d{1,2})[:.]/);
+        if (m) return m[1].padStart(2, '0');
+    }
+    return '12';
+};
+
 export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
     if (!medName) return null;
     const normalizedMed = normalizeMedicationName(medName);
     if (!normalizedMed || !isAntibioticMedicationName(normalizedMed)) return null;
     const text = medName.toLowerCase();
-    if (text.includes('48') || text.includes('selang')) return null;
+    const is48Jam = text.includes('48') || text.includes('selang');
 
     let dpd = 3;
     const mf = text.match(/(\d+)\s*x/i);
     if (mf) dpd = parseInt(mf[1], 10) || 3;
+    else if (/\/\s*8\s*jam/i.test(text)) dpd = 3;
+    else if (/\/\s*12\s*jam/i.test(text)) dpd = 2;
+    else if (/\/\s*6\s*jam/i.test(text)) dpd = 4;
+    else if (/\/\s*24\s*jam/i.test(text)) dpd = 1;
 
     const found = new Map();
     Object.keys(medicationLogs || {}).forEach(ds => {
@@ -663,7 +643,7 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
             if (nk.includes(normalizedMed) || normalizedMed.includes(nk)) {
                 Object.entries(day[key] || {}).forEach(([sk, slot]) => {
                     if (slot && (slot.checked === true || slot.given === true || slot.status === 'given')) {
-                        found.set(`${ds}|${sk}`, { ds, sk });
+                        found.set(`${ds}|${sk}`, { ds, sk, time: slot.time || null });
                     }
                 });
             }
@@ -673,17 +653,131 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
     const doses = [...found.values()].sort((a, b) =>
         a.ds === b.ds ? (ABX_SHIFT_ORDER[a.sk] ?? 9) - (ABX_SHIFT_ORDER[b.sk] ?? 9) : (a.ds < b.ds ? -1 : 1));
 
+    // Deteksi siklus 3x1: apakah siklus 24 (08-16-24) atau siklus biasa (12-20-04)
+    const hasChecked24 = doses.some(d => d.sk === 'jam_24');
+    const hasChecked06 = doses.some(d => d.sk === 'jam_06');
+    const textHints24 = /\b(jam\s*24|24[:.]00|\b24\b|malam|jam\s*(8|08|16)|(8|08|16)[:.]00)\b/i.test(text);
+    const isCycle24 = hasChecked24 || (!hasChecked06 && textHints24);
+
+    // ------------------------------------------------------------------------
+    // A. LOGIKA KHUSUS ANTIBIOTIK PER 48 JAM (SELANG SEHARI)
+    // ------------------------------------------------------------------------
+    if (is48Jam) {
+        const firstSk = doses[0]?.sk || 'jam_12';
+        const changeHour = getScheduleHourLabel(firstSk, 1, false, doses[0]?.time);
+        const byCell = {};
+
+        doses.forEach((d, i) => {
+            const k = i + 1;
+            const h = (k - 1) * 2 + 1; // Dosis 1 = H1, Dosis 2 = H3, Dosis 3 = H5
+            const mk = (step) => ({
+                h: h + step * 2,
+                dose: k + step,
+                date: abxAddDays(d.ds, step * 2),
+                hour: changeHour
+            });
+            byCell[`${d.ds}|${d.sk}`] = {
+                k,
+                h,
+                dpd: 1,
+                isNew: k >= 2,
+                next: [mk(1), mk(2)]
+            };
+        });
+
+        const lastD = doses[doses.length - 1];
+        const currentHNum = doses.length <= 1 ? 1 : (doses.length - 1) * 2 + 1;
+
+        return {
+            dpd: 1,
+            total: doses.length,
+            byCell,
+            last: lastD ? byCell[`${lastD.ds}|${lastD.sk}`] : null,
+            currentH: `H${currentHNum}`,
+            nextH: `H${currentHNum + 2}`,
+            changeHour
+        };
+    }
+
+    // ------------------------------------------------------------------------
+    // B. LOGIKA ANTIBIOTIK HARIAN (1x1, 2x1, 3x1, 4x1)
+    // Pergantian H2 selalu terjadi pada slot penutup siklus dari pemberian ke-1:
+    // - 2x1: mulai 18 -> ganti H di 06 (pemberian ke-4, ke-6, dst.)
+    // - 3x1: mulai 12 -> ganti H di 04 (atau mulai 08 -> ganti H di 24) pada pemberian ke-6, ke-9, dst.
+    // ------------------------------------------------------------------------
+    let changeShiftKey = 'jam_12';
+    if (doses.length > 0) {
+        const firstSk = doses[0].sk;
+        if (dpd === 2) {
+            const pairs2x1 = { jam_12: 'jam_24', jam_24: 'jam_12', jam_18: 'jam_06', jam_06: 'jam_18' };
+            changeShiftKey = pairs2x1[firstSk] || firstSk;
+        } else if (dpd === 3) {
+            const cycle3 = isCycle24 ? ['jam_12', 'jam_18', 'jam_24'] : ['jam_12', 'jam_18', 'jam_06'];
+            const idx = cycle3.indexOf(firstSk);
+            changeShiftKey = idx !== -1 ? cycle3[(idx + 2) % 3] : firstSk;
+        } else if (dpd === 4) {
+            const cycle4 = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+            const idx = cycle4.indexOf(firstSk);
+            changeShiftKey = idx !== -1 ? cycle4[(idx + 3) % 4] : firstSk;
+        } else {
+            changeShiftKey = firstSk;
+        }
+
+        // Jika sudah mencapai pemberian ke-(2*dpd) atau lebih, ambil langsung shift aktual dari kelipatan tersebut
+        if (doses.length >= dpd * 2) {
+            const lastMultipleIdx = Math.floor(doses.length / dpd) * dpd - 1;
+            if (doses[lastMultipleIdx]) changeShiftKey = doses[lastMultipleIdx].sk;
+        }
+    }
+
+    const changeHour = getScheduleHourLabel(changeShiftKey, dpd, isCycle24, doses[0]?.time);
+
     const byCell = {};
     const rankInDate = {};
     doses.forEach((d, i) => {
         const k = i + 1;
         const r = rankInDate[d.ds] = (rankInDate[d.ds] ?? -1) + 1;
         const h = Math.max(1, Math.floor(k / dpd));
-        const mk = (n) => ({ h: n / dpd, dose: n, date: abxAddDays(d.ds, Math.floor((r + (n - k)) / dpd)) });
-        byCell[`${d.ds}|${d.sk}`] = { k, h, dpd, isNew: k % dpd === 0 && k / dpd >= 2, next: [mk((h + 1) * dpd), mk((h + 2) * dpd)] };
+        const mk = (n) => ({
+            h: n / dpd,
+            dose: n,
+            date: abxAddDays(d.ds, Math.floor((r + (n - k)) / dpd)),
+            hour: changeHour
+        });
+        byCell[`${d.ds}|${d.sk}`] = {
+            k,
+            h,
+            dpd,
+            isNew: k % dpd === 0 && k / dpd >= 2,
+            next: [mk((h + 1) * dpd), mk((h + 2) * dpd)]
+        };
     });
+
     const lastD = doses[doses.length - 1];
-    return { dpd, total: doses.length, byCell, last: lastD ? byCell[`${lastD.ds}|${lastD.sk}`] : null };
+    const currentHNum = Math.max(1, Math.floor(doses.length / dpd));
+
+    return {
+        dpd,
+        total: doses.length,
+        byCell,
+        last: lastD ? byCell[`${lastD.ds}|${lastD.sk}`] : null,
+        currentH: `H${currentHNum}`,
+        nextH: `H${currentHNum + 1}`,
+        changeHour
+    };
+};
+
+export const getAntibioticDay = (medName, medicationLogs = {}) => {
+    const info = getAntibioticDoseInfo(medName, medicationLogs);
+    if (!info) return null;
+    if (info.total === 0) return 'H1';
+
+    // Contoh hasil:
+    // - 2x1 (mulai 18): "H1 ➔ H2 jam 06"
+    // - 3x1 (mulai 12, siklus 12-20-04): "H1 ➔ H2 jam 04"
+    // - 3x1 (mulai 08, siklus 08-16-24): "H1 ➔ H2 jam 24"
+    // - per 48 jam (mulai 12): "H1 ➔ H3 jam 12"
+    return `${info.currentH} ➔ ${info.nextH} jam ${info.changeHour}`;
 };
 
 const abxLines = (c, prefix) => [

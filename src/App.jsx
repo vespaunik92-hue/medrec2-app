@@ -1336,12 +1336,12 @@ const handleAdminSaveUser = async () => {
     // Penjaga: arsip hanya ditarik ulang kalau sudah >30 menit (hemat kuota Firestore)
     const archiveFetchedAtRef = useRef(0);
    
-    // Tetap tarik ulang saat buka modal untuk memastikan data rekam medis lama paling update
+    // Arsip (untuk saran nama/RM) ditarik hanya saat mulai mengetik nama pasien BARU
     useEffect(() => {
-        if (showInputModal) {
+        if (showInputModal && !isEditing && (formData.name || '').trim().length >= 2) {
             fetchArchivedRecords();
         }
-    }, [showInputModal]);
+    }, [showInputModal, isEditing, formData.name]);
 
     // Buku Ekspedisi butuh arsip: muat hanya saat dibuka
     useEffect(() => {
@@ -1352,6 +1352,7 @@ const handleAdminSaveUser = async () => {
     // Panggil fetchArchivedRecords(true) kalau perlu memuat ulang segera (mis. setelah memulangkan pasien).
     const fetchArchivedRecords = async (force = false) => {
         if (force !== true && Date.now() - archiveFetchedAtRef.current < 30 * 60 * 1000) return;
+        archiveFetchedAtRef.current = Date.now(); // tandai dulu agar ketikan berikutnya tidak memicu tarikan ganda
         try {
             const ref = getCollectionRef();
             if (!ref) return;
@@ -1371,6 +1372,7 @@ const handleAdminSaveUser = async () => {
             setArchivedRecords(archivedData);
             archiveFetchedAtRef.current = Date.now();
         } catch (error) {
+            archiveFetchedAtRef.current = 0; // gagal: izinkan coba lagi
             console.error("Gagal mengambil data arsip:", error);
         }
     };
