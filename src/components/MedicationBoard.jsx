@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { doc, updateDoc, collection, addDoc, getDocs, Timestamp, query, where } from 'firebase/firestore';
+import { doc, updateDoc, deleteField, collection, addDoc, getDocs, Timestamp, query, where } from 'firebase/firestore';
 import { MEDICATIONS, ROOM_LIST } from '../constants';
-import { getAntibioticDay, isAntibioticMedicationName, getAntibioticDoseInfo, abxCellTip, abxBadgeTip, AbxPill } from '../utils/helpers';
+import { getAntibioticDay, isAntibioticMedicationName, getAntibioticDoseInfo, abxCellTip, abxBadgeTip, AbxPill, abxStartKey } from '../utils/helpers';
 
 // Satukan obat yang sama walau penulisannya beda (kurung vs tanpa kurung). Kunci centang lama dipertahankan.
 const canonMed = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -15,6 +15,35 @@ const dedupeByCanon = (planArr, logArr) => {
         out.push(logByCanon.get(k) || s);
     });
     return out;
+};
+
+// ✨ LANGKAH 1: PISAHKAN OBAT AKTIF vs DIHENTIKAN/DIGANTI
+// Obat "aktif" = masih ada di Planning/Resep dan tidak bertanda stop/tunda.
+// Selebihnya (hanya tersisa di riwayat centang, atau bertanda stop) = "tidak aktif": hanya-baca.
+const isStopLine = (s) => /stop|tunda/i.test(String(s));
+const stripStop = (s) => String(s).replace(/\(?\s*(stop|tunda)\w*\s*\)?/gi, ' ');
+const drugNameKey = (s) => canonMed(String(s).split(/\d/)[0].replace(/\b(stop|tunda)\b/gi, ''));
+const splitMeds = (planMeds, logMeds) => {
+    const all = dedupeByCanon(planMeds, logMeds);
+    const activeCanon = new Set(planMeds.filter(s => !isStopLine(s)).map(canonMed));
+    const active = [];
+    const inactiveByKey = new Map();
+    all.forEach(med => {
+        if (!isStopLine(med) && activeCanon.has(canonMed(med))) { active.push(med); return; }
+        const k = canonMed(stripStop(med));
+        const prev = inactiveByKey.get(k);
+        if (prev === undefined || (logMeds.includes(med) && !logMeds.includes(prev))) inactiveByKey.set(k, med);
+    });
+    const inactive = [...inactiveByKey.values()];
+    // Penanda turun dosis: nama obat sama (teks sebelum angka pertama) dan ada versi baru yang aktif
+    const replacedBy = {};
+    inactive.forEach(old => {
+        const key = drugNameKey(old);
+        if (!key) return;
+        const newer = active.find(a => drugNameKey(a) === key);
+        if (newer) replacedBy[old] = newer;
+    });
+    return { active, inactive, replacedBy };
 };
 
 // --- COMPONENT: MODAL CATATAN PEMBERIAN OBAT (CPO) INDIVIDUAL (V25 - STRICT BOUNDARY & FLEX 48H) ---
@@ -92,7 +121,43 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
             });
         });
     
-    const extractedMeds = dedupeByCanon(planMeds, logMeds);
+    const { active: activeMeds, inactive: inactiveMeds, replacedBy } = splitMeds(planMeds, logMeds);
+    const extractedMeds = [...activeMeds, ...inactiveMeds];
+    const inactiveSet = new Set(inactiveMeds);
+    const [showInactive, setShowInactive] = useState(false);
+
+    // 🆕 LANGKAH 4: tanggal mulai antibiotik (pasien lama / pindahan ICU)
+    const [abxEditMed, setAbxEditMed] = useState(null);
+    const [abxDate, setAbxDate] = useState('');
+    const [abxSlot, setAbxSlot] = useState('jam_12');
+    const abxDocRef = () => doc(db, `artifacts/${firebaseConfig?.appId || 'SIMPAN_APP'}/public/data/medicalRecords`, record.id);
+    const openAbxEditor = (medName) => {
+        const ex = (safeLogs._abxStart || {})[abxStartKey(medName)];
+        setAbxEditMed(medName);
+        setAbxDate(ex?.date || '');
+        setAbxSlot(ex?.slot || 'jam_12');
+    };
+    const saveAbxStart = async (medName) => {
+        const key = abxStartKey(medName);
+        if (!key || !abxDate) return;
+        const cfg = { date: abxDate, slot: abxSlot, by: currentUser?.name || currentUser?.displayName || currentUser?.username || null, at: Date.now() };
+        setLocalLogs(prev => ({ ...(prev || {}), _abxStart: { ...((prev || {})._abxStart || {}), [key]: cfg } }));
+        setAbxEditMed(null);
+        try { await updateDoc(abxDocRef(), { [`medicationLogs._abxStart.${key}`]: cfg }); }
+        catch (e) { alert('Gagal menyimpan tanggal mulai antibiotik: ' + (e?.message || e)); }
+    };
+    const clearAbxStart = async (medName) => {
+        const key = abxStartKey(medName);
+        if (!key) return;
+        setLocalLogs(prev => {
+            const next = { ...((prev || {})._abxStart || {}) };
+            delete next[key];
+            return { ...(prev || {}), _abxStart: next };
+        });
+        setAbxEditMed(null);
+        try { await updateDoc(abxDocRef(), { [`medicationLogs._abxStart.${key}`]: deleteField() }); }
+        catch (e) { alert('Gagal menghapus tanggal mulai antibiotik: ' + (e?.message || e)); }
+    };
 
     const handleToggleShift = async (medName, dateStr, shift) => {
         const currentDayLogs = safeLogs[dateStr] || {};
@@ -175,11 +240,12 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
-                    {extractedMeds.length === 0 ? (
+                    {activeMeds.length === 0 && inactiveMeds.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-slate-400"><span className="text-5xl mb-3">📭</span><p className="font-bold">Belum ada obat yang dijadwalkan.</p></div>
                     ) : (
                         <div className="space-y-4">
-                            {extractedMeds.map((med, mIdx) => {
+                            {(showInactive ? extractedMeds : activeMeds).map((med, mIdx) => {
+                                const isInactive = inactiveSet.has(med);
                                 const lowerMed = (med || '').toLowerCase();
                                 let freq = 1;
                                 const freqMatch = lowerMed.match(/(\d+)\s*x/i);
@@ -190,7 +256,8 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                 else if (/\/\s*24\s*jam/i.test(lowerMed)) freq = 1;
                                 else if (/\/\s*48\s*jam/i.test(lowerMed)) freq = 1;
 
-                                const isStopOrTunda = lowerMed.includes('stop') || lowerMed.includes('tunda');
+                                const isStopText = lowerMed.includes('stop') || lowerMed.includes('tunda');
+                                const isStopOrTunda = isStopText || isInactive;
                                 const is48Jam = /\/\s*48\s*jam/i.test(lowerMed);
 
                                 const everCheckedShifts = [];
@@ -252,17 +319,30 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                 }
 
                                 return (
-                                    <div key={mIdx} className={`flex border rounded-xl overflow-x-auto shadow-sm custom-scrollbar transition-shadow ${isStopOrTunda ? 'border-rose-200 bg-rose-50/20' : 'border-slate-200 bg-white hover:shadow-md'}`}>
+                                    <React.Fragment key={mIdx}>
+                                    {mIdx === activeMeds.length && inactiveMeds.length > 0 && (
+                                        <button type="button" onClick={() => setShowInactive(false)} className="w-full text-left text-[11px] font-extrabold text-slate-500 bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 hover:bg-slate-200">
+                                            ▼ Dihentikan / diganti ({inactiveMeds.length}) — hanya riwayat, tidak bisa diklik. Ketuk untuk melipat.
+                                        </button>
+                                    )}
+                                    <div className={`flex border rounded-xl overflow-x-auto shadow-sm custom-scrollbar transition-shadow ${isStopText ? 'border-rose-200 bg-rose-50/20' : isInactive ? 'border-slate-200 bg-slate-100/70' : 'border-slate-200 bg-white hover:shadow-md'}`}>
                                         <div className="w-[180px] sm:w-[220px] flex-shrink-0 p-3 bg-white border-r border-slate-200 sticky left-0 z-10 flex flex-col justify-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                             <div className="flex items-start gap-1.5 flex-wrap">
-                                                <h4 className={`font-bold text-xs leading-snug mt-0.5 ${isStopOrTunda ? 'text-rose-500 line-through' : 'text-slate-800'}`}>📄 {med}</h4>
-                                                {isStopOrTunda && <span className="text-[9px] bg-rose-500 text-white px-2 py-0.5 rounded font-black shadow-sm mt-0.5">🛑 STOP</span>}
+                                                <h4 className={`font-bold text-xs leading-snug mt-0.5 ${isStopText ? 'text-rose-500 line-through' : isInactive ? 'text-slate-400 line-through' : 'text-slate-800'}`}>📄 {med}</h4>
+                                                {isStopText && <span className="text-[9px] bg-rose-500 text-white px-2 py-0.5 rounded font-black shadow-sm mt-0.5">🛑 STOP</span>}
+                                                {isInactive && replacedBy[med] && <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-black shadow-sm mt-0.5">↘ diganti → {replacedBy[med]}</span>}
+                                                {isInactive && !isStopText && !replacedBy[med] && <span className="text-[9px] bg-slate-200 text-slate-600 border border-slate-300 px-2 py-0.5 rounded font-black shadow-sm mt-0.5">sudah tidak ada di Resep</span>}
                                                 {is48Jam && <span className="text-[9px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black shadow-sm mt-0.5">⏳ 48 JAM</span>}
                                                 {typeof getAntibioticDay === 'function' && getAntibioticDay(med, safeLogs) && !isStopOrTunda && (
                                                     <span
                                                         data-abx-tip={abxBadgeTip(getAntibioticDoseInfo(med, safeLogs))}
                                                         className="text-[9px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded border border-rose-200 font-black animate-pulse shadow-sm mt-0.5"
                                                     >🚨 {getAntibioticDay(med, safeLogs)}</span>
+                                                )}
+                                                {!isStopOrTunda && typeof isAntibioticMedicationName === 'function' && isAntibioticMedicationName(med) && (
+                                                    <button type="button" onClick={() => (abxEditMed === med ? setAbxEditMed(null) : openAbxEditor(med))}
+                                                        className="text-[9px] bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-300 font-bold shadow-sm mt-0.5 hover:bg-slate-100"
+                                                        title="Isi tanggal mulai antibiotik (pasien lama / pindahan ICU)">📅 Mulai</button>
                                                 )}
                                             </div>
                                         </div>
@@ -293,6 +373,7 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                                         <div className="grid grid-cols-4 gap-1 flex-1">
                                                             {shifts.map(s => {
                                                                 const log = medLogForDate[s.key] || { checked: false, scheduled: false };
+                                                                if (isStopOrTunda && !log.checked) return <div key={s.key} className="h-[55px]" />;
                                                                 const recommendGlow = isRecommended(s.key);
                                                                 
                                                                 // 🌟 LABEL DINAMIS SESUAI POLA KLINIS (PERSIS EOA)
@@ -321,7 +402,7 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                                                         disabled={isStopOrTunda}
                                                                         className={`relative flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
                                                                     >
-                                                                        {log.checked && <AbxPill med={med} logs={safeLogs} dateStr={dateStr} shiftKey={s.key} />}
+                                                                        {log.checked && <AbxPill med={med} logs={record.currentRecordLogs} dateStr={dateStr} shiftKey={s.key} />}
                                                                         <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800 font-black' : 'text-slate-500'}`}>
                                                                             {dynamicLabel}
                                                                         </span>
@@ -344,8 +425,45 @@ const MedicationMarModal = ({ record, allRecords = [], isOpen, onClose, db, curr
                                             })}
                                         </div>
                                     </div>
+                                    {abxEditMed === med && (() => {
+                                        const key = abxStartKey(med);
+                                        const existing = (safeLogs._abxStart || {})[key];
+                                        const tmpLogs = abxDate ? { ...safeLogs, _abxStart: { ...(safeLogs._abxStart || {}), [key]: { date: abxDate, slot: abxSlot } } } : safeLogs;
+                                        const previewInfo = abxDate ? getAntibioticDoseInfo(med, tmpLogs) : null;
+                                        return (
+                                            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 -mt-2 text-[11px] text-slate-700">
+                                                <div className="font-black text-amber-900 mb-1">📅 Tanggal mulai antibiotik: {med}</div>
+                                                <p className="mb-2 leading-snug">Isi tanggal dan jam <b>dosis pertama</b> sesuai CPO kertas / catatan ICU. Dosis dari tanggal itu sampai <b>sebelum hari ini</b> dihitung otomatis hanya untuk menghitung H (tidak jadi centang hijau). Dosis hari ini tetap dicentang manual.</p>
+                                                <div className="flex flex-wrap items-center gap-2 mb-2">
+                                                    <input type="date" value={abxDate} onChange={(e) => setAbxDate(e.target.value)} className="border border-slate-300 rounded px-2 py-1 text-[11px] bg-white" />
+                                                    <select value={abxSlot} onChange={(e) => setAbxSlot(e.target.value)} className="border border-slate-300 rounded px-2 py-1 text-[11px] bg-white">
+                                                        <option value="jam_12">Dosis pertama jam 12:00 / 08:00</option>
+                                                        <option value="jam_18">Dosis pertama jam 16 / 18 / 20</option>
+                                                        <option value="jam_24">Dosis pertama jam 24:00</option>
+                                                        <option value="jam_06">Dosis pertama jam 04 / 06</option>
+                                                    </select>
+                                                </div>
+                                                <div className="mb-2 font-bold">
+                                                    {abxDate
+                                                        ? <>Hasil: <span className="bg-rose-100 text-rose-700 border border-rose-200 rounded px-1.5 py-0.5">🚨 {getAntibioticDay(med, tmpLogs)}</span> <span className="font-normal text-slate-500">({previewInfo?.priorCount || 0} dosis dihitung otomatis) — cocokkan dengan operan sebelum menyimpan.</span></>
+                                                        : <span className="font-normal text-slate-500">Pilih tanggal untuk melihat hasilnya.</span>}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button type="button" disabled={!abxDate} onClick={() => saveAbxStart(med)} className={`px-3 py-1 rounded font-bold text-white ${abxDate ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-300 cursor-not-allowed'}`}>Simpan</button>
+                                                    {existing && <button type="button" onClick={() => clearAbxStart(med)} className="px-3 py-1 rounded font-bold bg-white border border-rose-300 text-rose-700 hover:bg-rose-50">Hapus tanggal mulai</button>}
+                                                    <button type="button" onClick={() => setAbxEditMed(null)} className="px-3 py-1 rounded font-bold bg-white border border-slate-300 text-slate-600 hover:bg-slate-100">Batal</button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                    </React.Fragment>
                                 );
                             })}
+                            {!showInactive && inactiveMeds.length > 0 && (
+                                <button type="button" onClick={() => setShowInactive(true)} className="w-full text-left text-[11px] font-extrabold text-slate-500 bg-slate-100 border border-dashed border-slate-300 rounded-lg px-3 py-2 hover:bg-slate-200">
+                                    ▶ Dihentikan / diganti ({inactiveMeds.length}) — ketuk untuk melihat riwayatnya
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -371,6 +489,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
     const [selectedDate, setSelectedDate] = useState(getSafeYMD());
     const [localLogsMap, setLocalLogsMap] = useState({});
     const [isRecapMode, setIsRecapMode] = useState(false);
+    const [showInactiveIds, setShowInactiveIds] = useState({});
 
     useEffect(() => {
         const newLogsMap = {};
@@ -477,7 +596,9 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                     return Object.keys(shiftsObj).filter(med => Object.values(shiftsObj[med]).some(s => s && (s.checked || s.scheduled)));
                 });
 
-            const extractedMeds = dedupeByCanon(planMeds, logMeds);
+            const { active: activeMeds, inactive: inactiveMeds, replacedBy } = splitMeds(planMeds, logMeds);
+            const extractedMeds = [...activeMeds, ...inactiveMeds];
+            const inactiveSet = new Set(inactiveMeds);
             const medsConfig = {};
 
             extractedMeds.forEach(med => {
@@ -491,7 +612,9 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                 else if (/\/\s*24\s*jam/i.test(lowerMed)) freq = 1;
                 else if (/\/\s*48\s*jam/i.test(lowerMed)) freq = 1;
 
-                const isStopOrTunda = lowerMed.includes('stop') || lowerMed.includes('tunda');
+                const isStopText = lowerMed.includes('stop') || lowerMed.includes('tunda');
+                const isInactive = inactiveSet.has(med);
+                const isStopOrTunda = isStopText || isInactive;
                 const is48Jam = /\/\s*48\s*jam/i.test(lowerMed);
 
                 const everCheckedShifts = [];
@@ -552,10 +675,10 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                     activeShifts = [...everCheckedShifts];
                 }
 
-                medsConfig[med] = { freq, activeShifts, isStopOrTunda, is48Jam };
+                medsConfig[med] = { freq, activeShifts, isStopOrTunda, isStopText, isInactive, replacedTo: replacedBy[med] || null, is48Jam };
             });
 
-            return { ...record, extractedMeds, currentRecordLogs, medsConfig };
+            return { ...record, extractedMeds, activeCount: activeMeds.length, inactiveCount: inactiveMeds.length, currentRecordLogs, medsConfig };
         }).filter(r => r.extractedMeds.length > 0); 
     }, [records, localLogsMap, displayDates]);
 
@@ -566,7 +689,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                 const dayLogs = p.currentRecordLogs[selectedDate] || {};
                 const medsInThisShift = p.extractedMeds.filter(med => {
                     const config = p.medsConfig[med] || { activeShifts: [], isStopOrTunda: false, is48Jam: false };
-                    if (config.isStopOrTunda) return false; 
+                    if (config.isStopOrTunda) return Boolean(dayLogs[med]?.[s.key]?.checked); 
                     
                     let actShifts = [...config.activeShifts];
                     if (config.is48Jam) {
@@ -629,16 +752,19 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                 </div>
 
                                 <div className="p-3 bg-white">
-                                    {record.extractedMeds.map((med, mIdx) => {
+                                    {(showInactiveIds[record.id] ? record.extractedMeds : record.extractedMeds.slice(0, record.activeCount)).map((med, mIdx) => {
                                         const config = record.medsConfig[med] || { activeShifts: [], isStopOrTunda: false, is48Jam: false };
-                                                                                
+                                        const abxInfo = getAntibioticDoseInfo(med, record.currentRecordLogs);
+                                        
                                         return (
-                                            <div key={mIdx} className={`flex border rounded-lg overflow-x-auto shadow-sm custom-scrollbar mb-2 last:mb-0 ${config.isStopOrTunda ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200 bg-slate-50/30 hover:border-emerald-200 transition-colors'}`}>
+                                            <div key={mIdx} className={`flex border rounded-lg overflow-x-auto shadow-sm custom-scrollbar mb-2 last:mb-0 ${config.isStopText ? 'border-rose-200 bg-rose-50/30' : config.isInactive ? 'border-slate-200 bg-slate-100/70' : 'border-slate-200 bg-slate-50/30 hover:border-emerald-200 transition-colors'}`}>
                                                 
                                                 <div className="w-[170px] sm:w-[200px] flex-shrink-0 p-2.5 bg-white border-r border-slate-200 sticky left-0 z-10 flex flex-col justify-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                                     <div className="flex items-start gap-1.5 flex-wrap">
-                                                        <h4 className={`font-bold text-[11px] leading-tight ${config.isStopOrTunda ? 'text-rose-500 line-through' : 'text-indigo-900'}`}>📄 {med}</h4>
-                                                        {config.isStopOrTunda && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">🛑 STOP</span>}
+                                                        <h4 className={`font-bold text-[11px] leading-tight ${config.isStopText ? 'text-rose-500 line-through' : config.isInactive ? 'text-slate-400 line-through' : 'text-indigo-900'}`}>📄 {med}</h4>
+                                                        {config.isStopText && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">🛑 STOP</span>}
+                                                        {config.isInactive && config.replacedTo && <span className="text-[8px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">↘ diganti → {config.replacedTo}</span>}
+                                                        {config.isInactive && !config.isStopText && !config.replacedTo && <span className="text-[8px] bg-slate-200 text-slate-600 border border-slate-300 px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">sudah tidak ada di Resep</span>}
                                                         {config.is48Jam && <span className="text-[8px] bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded font-black shadow-sm mt-0.5">⏳ 48 JAM</span>}
                                                         {getAntibioticDay(med, record.currentRecordLogs) && !config.isStopOrTunda && (
                                                             <span
@@ -675,6 +801,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                                                 <div className="grid grid-cols-4 gap-1 flex-1">
                                                                     {shifts.map(s => {
                                                                         const log = medLogForDate[s.key] || { checked: false, scheduled: false };
+                                                                        if (config.isStopOrTunda && !log.checked) return <div key={s.key} className="h-[55px]" />;
                                                                         const recommendGlow = isRecommended(s.key);
                                                                         
                                                                         // 🌟 LABEL DINAMIS SESUAI POLA KLINIS (PERSIS EOA)
@@ -703,7 +830,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                                                                 disabled={config.isStopOrTunda}
                                                                                 className={`relative flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : config.isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
                                                                             >
-                                                                                {log.checked && <AbxPill med={med} logs={record.currentRecordLogs} dateStr={dateStr} shiftKey={s.key} />}
+                                                                                {log.checked && <AbxPill med={med} logs={safeLogs} dateStr={dateStr} shiftKey={s.key} />}
                                                                                 {/* 👇 PERHATIKAN BARIS INI: Menggunakan dynamicLabel */}
                                                                                 <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800 font-black' : 'text-slate-500'}`}>
                                                                                     {dynamicLabel}
@@ -729,6 +856,11 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                             </div>
                                         );
                                     })}
+                                    {record.inactiveCount > 0 && (
+                                        <button type="button" onClick={() => setShowInactiveIds(prev => ({ ...prev, [record.id]: !prev[record.id] }))} className="w-full text-left text-[10px] font-extrabold text-slate-500 bg-slate-100 border border-dashed border-slate-300 rounded-lg px-2.5 py-1.5 hover:bg-slate-200 mt-1">
+                                            {showInactiveIds[record.id] ? '▼' : '▶'} Dihentikan / diganti ({record.inactiveCount}) — {showInactiveIds[record.id] ? 'ketuk untuk melipat' : 'ketuk untuk melihat riwayat'}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))

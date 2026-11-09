@@ -618,6 +618,54 @@ const getScheduleHourLabel = (shiftKey, dpd, isCycle24, savedTime) => {
     return '12';
 };
 
+// ============================================================================
+// 🆕 LANGKAH 4: TANGGAL MULAI ANTIBIOTIK (pasien lama / pindahan ICU / transisi dari CPO kertas)
+// Disimpan di medicationLogs._abxStart.{kunciObat} = { date: 'YYYY-MM-DD', slot: 'jam_12' }.
+// Dosis dari tanggal mulai sampai SEBELUM dosis pertama yang dicentang di sini (atau sebelum hari ini)
+// dihitung otomatis sebagai dosis "virtual": ikut menghitung H, tetapi TIDAK menjadi centang hijau di CPO.
+// ============================================================================
+export const abxStartKey = (name = '') => String(name)
+    .toLowerCase()
+    .replace(/^[-*•\d.]+\s*/, '')
+    .split(/\d/)[0]
+    .replace(/\b(?:inj|injeksi|iv|im|sc|po|tab|tablet|caps|kaps|kapsul|drip|infus)\b/g, ' ')
+    .replace(/[^a-z]/g, '');
+
+const buildAbxPriorDoses = (cfg, dpd, is48Jam, textHints24, firstReal) => {
+    const ORDER = ABX_SHIFT_ORDER;
+    const startSk = ORDER[cfg.slot] !== undefined ? cfg.slot : 'jam_12';
+    let cycle;
+    if (dpd >= 4) cycle = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+    else if (dpd === 3) {
+        const c24 = startSk === 'jam_24' || (startSk !== 'jam_06' && textHints24);
+        cycle = c24 ? ['jam_12', 'jam_18', 'jam_24'] : ['jam_12', 'jam_18', 'jam_06'];
+    } else if (dpd === 2) {
+        const pair = { jam_12: 'jam_24', jam_24: 'jam_12', jam_18: 'jam_06', jam_06: 'jam_18' };
+        cycle = ['jam_12', 'jam_18', 'jam_24', 'jam_06'].filter(k => k === startSk || k === pair[startSk]);
+    } else cycle = [startSk];
+
+    const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const stop = firstReal ? { ds: firstReal.ds, ord: ORDER[firstReal.sk] ?? 0 } : { ds: ymd(new Date()), ord: -1 };
+
+    const [y, m, d] = cfg.date.split('-').map(Number);
+    const day = new Date(y, m - 1, d);
+    const out = [];
+    for (let i = 0; i < 400; i++) {
+        const ds = ymd(day);
+        if (ds > stop.ds) break;
+        if (!(is48Jam && i % 2 === 1)) {
+            cycle.forEach(sk => {
+                const ord = ORDER[sk];
+                if (i === 0 && ord < ORDER[startSk]) return;
+                if (ds === stop.ds && ord >= stop.ord) return;
+                out.push({ ds, sk, time: null, virtual: true });
+            });
+        }
+        day.setDate(day.getDate() + 1);
+    }
+    return out;
+};
+
 export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
     if (!medName) return null;
     const normalizedMed = normalizeMedicationName(medName);
@@ -649,6 +697,21 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
             }
         });
     });
+
+    // 🆕 Dosis sebelum masuk aplikasi (dari tanggal mulai yang diisi perawat)
+    let priorCount = 0;
+    let startDate = null;
+    const startCfg = ((medicationLogs || {})._abxStart || {})[abxStartKey(medName)];
+    if (startCfg && /^\d{4}-\d{2}-\d{2}$/.test(startCfg.date || '')) {
+        startDate = startCfg.date;
+        const firstReal = [...found.values()].sort((a, b) =>
+            a.ds === b.ds ? (ABX_SHIFT_ORDER[a.sk] ?? 9) - (ABX_SHIFT_ORDER[b.sk] ?? 9) : (a.ds < b.ds ? -1 : 1))[0] || null;
+        const hints24 = /\b(jam\s*24|24[:.]00|\b24\b|malam|jam\s*(8|08|16)|(8|08|16)[:.]00)\b/i.test(text);
+        buildAbxPriorDoses(startCfg, dpd, is48Jam, hints24, firstReal).forEach(v => {
+            const k = `${v.ds}|${v.sk}`;
+            if (!found.has(k)) { found.set(k, v); priorCount++; }
+        });
+    }
 
     const doses = [...found.values()].sort((a, b) =>
         a.ds === b.ds ? (ABX_SHIFT_ORDER[a.sk] ?? 9) - (ABX_SHIFT_ORDER[b.sk] ?? 9) : (a.ds < b.ds ? -1 : 1));
@@ -691,6 +754,8 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
         return {
             dpd: 1,
             total: doses.length,
+        priorCount,
+        startDate,
             byCell,
             last: lastD ? byCell[`${lastD.ds}|${lastD.sk}`] : null,
             currentH: `H${currentHNum}`,
@@ -759,6 +824,8 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
     return {
         dpd,
         total: doses.length,
+        priorCount,
+        startDate,
         byCell,
         last: lastD ? byCell[`${lastD.ds}|${lastD.sk}`] : null,
         currentH: `H${currentHNum}`,
@@ -788,7 +855,15 @@ export const abxCellTip = (info, dateStr, shiftKey) => {
     const c = info?.byCell?.[`${dateStr}|${shiftKey}`];
     return c ? abxLines(c, 'Pemberian').join('|') : undefined;
 };
-export const abxBadgeTip = (info) => info?.last ? abxLines(info.last, 'Saat ini: pemberian').join('|') : undefined;
+export const abxBadgeTip = (info) => {
+    if (!info?.last) return undefined;
+    const lines = abxLines(info.last, 'Saat ini: pemberian');
+    if (info.priorCount > 0) {
+        const sd = info.startDate ? info.startDate.split('-').reverse().slice(0, 2).join('/') : '';
+        lines.push(`Termasuk ${info.priorCount} dosis dihitung otomatis dari tanggal mulai${sd ? ' ' + sd : ''}`);
+    }
+    return lines.join('|');
+};
 export const abxPrintNote = (info) => info?.last
     ? `Ke-${info.last.k} · H${info.last.h} → ` + info.last.next.map(n => `H${n.h}: ke-${n.dose} (≈${n.date})`).join(' · ')
     : '';
@@ -814,6 +889,114 @@ export const AbxPill = ({ med, logs, dateStr, shiftKey, variant = 'float' }) => 
         </span>
     );
 };    
+
+// ============================================================================
+// 🕒 LANGKAH 3: JADWAL JAM OBAT HARI INI UNTUK DAFTAR RESEP & CETAK
+// hijau/tebal + ✓ = sudah diberikan (dicentang di CPO) | kuning = direncanakan
+// Logika disamakan dengan CPO: jam yang pernah dicentang/dijadwalkan + pasangan jam + siklus 24.
+// ============================================================================
+const medCanonKey = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+export const getMedScheduleToday = (medLine, medicationLogs = {}) => {
+    const clean = String(medLine || '').replace(/^[-*•\d.]+\s*/, '').trim();
+    const lower = clean.toLowerCase();
+    if (!clean || /stop|tunda/.test(lower)) return null;
+    if (/\b(prn|k\/p|bila perlu)\b/.test(lower) || /\b(tpm|drip|infus|ivfd)\b/.test(lower)) return null;
+
+    let freq = 1;
+    const fm = lower.match(/(\d+)\s*x/i);
+    if (fm) freq = parseInt(fm[1], 10) || 1;
+    else if (/\/\s*8\s*jam/.test(lower)) freq = 3;
+    else if (/\/\s*12\s*jam/.test(lower)) freq = 2;
+    else if (/\/\s*6\s*jam/.test(lower)) freq = 4;
+    const is48Jam = /\/\s*48\s*jam/.test(lower);
+
+    const target = medCanonKey(clean);
+    const logsOf = (ds) => {
+        const day = (medicationLogs || {})[ds] || {};
+        const k = Object.keys(day).find(x => medCanonKey(x) === target);
+        return k ? (day[k] || {}) : {};
+    };
+
+    const ever = [];
+    Object.keys(medicationLogs || {}).forEach(ds => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) return;
+        const sh = logsOf(ds);
+        Object.keys(sh).forEach(sk => {
+            const s = sh[sk];
+            if (s && (s.checked || s.scheduled) && !ever.includes(sk)) ever.push(sk);
+        });
+    });
+
+    const isNonInj = !/\b(iv|inj|injeksi|sc|im|drip|infus|vial|amp)\b/i.test(lower);
+    const isPoOrInh = isNonInj || /\b(po|p\.o|tab|kaps|caps|syr|sirup|inhalasi|nebu)\b/i.test(lower) || /\/\s*8\s*jam/i.test(lower);
+    const autoYellow = freq === 3 && isPoOrInh;
+    const has24 = ever.includes('jam_24');
+    const has06 = ever.includes('jam_06');
+    const hint24 = /\b(jam\s*24|24[:.]00|\b24\b|malam|jam\s*(8|08|16)|(8|08|16)[:.]00)\b/i.test(lower);
+    const isCycle24 = has24 || (!has06 && hint24);
+
+    let base = [];
+    if (freq === 3) {
+        if (ever.length > 0 || autoYellow) base = isCycle24 ? ['jam_12', 'jam_18', 'jam_24'] : ['jam_12', 'jam_18', 'jam_06'];
+    } else if (freq === 2) {
+        const pairs = { jam_06: 'jam_18', jam_18: 'jam_06', jam_12: 'jam_24', jam_24: 'jam_12' };
+        ever.forEach(k => {
+            if (!base.includes(k)) base.push(k);
+            if (pairs[k] && !base.includes(pairs[k])) base.push(pairs[k]);
+        });
+    } else if (freq === 4) {
+        if (ever.length > 0) base = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+    } else {
+        base = [...ever];
+    }
+
+    const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const now = new Date();
+    const todayLogs = logsOf(ymd(now));
+    const checkedToday = Object.keys(todayLogs).filter(k => todayLogs[k] && todayLogs[k].checked);
+
+    if (is48Jam) {
+        const prev = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        const prevLogs = logsOf(ymd(prev));
+        if (Object.values(prevLogs).some(sh => sh && sh.checked)) base = [];
+    }
+
+    let order = ['jam_12', 'jam_18', 'jam_24', 'jam_06'];
+    const keys0 = order.filter(k => base.includes(k) || checkedToday.includes(k));
+    if (freq <= 2 && keys0.includes('jam_06') && keys0.includes('jam_18') && !keys0.includes('jam_12') && !keys0.includes('jam_24')) {
+        order = ['jam_06', 'jam_18'];
+    }
+    const keys = order.filter(k => base.includes(k) || checkedToday.includes(k));
+    if (keys.length === 0) return null;
+    return {
+        freq,
+        slots: keys.map(k => ({ key: k, label: getScheduleHourLabel(k, freq, isCycle24, null), checked: checkedToday.includes(k) }))
+    };
+};
+
+export const MedScheduleBadge = ({ med, logs }) => {
+    const info = getMedScheduleToday(med, logs);
+    if (!info) return null;
+    const exact = { WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' };
+    return (
+        <span className="ml-1 whitespace-nowrap" title="Jam obat hari ini. ✓ = sudah diberikan, kuning = direncanakan" style={exact}>
+            {'('}
+            {info.slots.map((s, i) => (
+                <React.Fragment key={s.key}>
+                    {i > 0 && '-'}
+                    <span
+                        className={s.checked
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-400 font-black rounded px-0.5'
+                            : 'bg-yellow-100 text-yellow-800 border border-yellow-400 rounded px-0.5'}
+                        style={exact}
+                    >{s.label}{s.checked ? '✓' : ''}</span>
+                </React.Fragment>
+            ))}
+            {')'}
+        </span>
+    );
+};
 
 // 🎈 Balon tips global (DOM murni, tanpa perlu dipasang di komponen)
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.__abxTipInstalled) {

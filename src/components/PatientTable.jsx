@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ROOM_LIST } from '../constants';
-import { formatDateCM, hitungHariCM, getAntibioticDay, parsePlanning } from '../utils/helpers';
+import { formatDateCM, hitungHariCM, getAntibioticDay, parsePlanning, MedScheduleBadge } from '../utils/helpers';
 import LabRadiologyBoard from './LabRadiologyBoard';
 
 // Taruh di bawah baris import PatientTable.jsx
@@ -347,14 +347,15 @@ const PatientTable = ({
                                                             </span>
                                                         </div>
                                                         <div className="space-y-0.5 font-mono text-[10.5px] text-gray-900 leading-tight">
-                                                            {rxLines.map((line, rIdx) => {
+                                                            {[...rxLines].sort((a, b) => (/stop|tunda/i.test(a) ? 1 : 0) - (/stop|tunda/i.test(b) ? 1 : 0)).map((line, rIdx) => {
                                                                 const cleanLine = line.replace(/^[-•*]\s*/, '').trim();
-                                                                const hCode = typeof getAntibioticDay === 'function'
+                                                                const isStopRx = /stop|tunda/i.test(cleanLine);
+                                                                const hCode = !isStopRx && typeof getAntibioticDay === 'function'
                                                                     ? getAntibioticDay(cleanLine, rec.medicationLogs || {})
                                                                     : null;
                                                                 return (
                                                                     <div key={rIdx} className="flex items-start justify-between gap-1">
-                                                                        <span>• {cleanLine}</span>
+                                                                        <span className={isStopRx ? 'text-gray-400 line-through' : ''}>• {cleanLine}{!isStopRx && <MedScheduleBadge med={cleanLine} logs={rec.medicationLogs || {}} />}</span>
                                                                         {hCode && (
                                                                             <span 
                                                                                 className="border border-red-500 bg-red-50 text-red-700 font-bold text-[8px] px-1 rounded shrink-0"

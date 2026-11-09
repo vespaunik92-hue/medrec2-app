@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ANTIBIOTICS_DB, LAB_PATTERNS, LAB_NORMAL_RANGES } from '../constants';
-import { parsePlanning, getAntibioticDay, extractActiveMedications, AbxPill, getAntibioticDoseInfo, abxPrintNote } from '../utils/helpers';
+import { parsePlanning, getAntibioticDay, extractActiveMedications, AbxPill, getAntibioticDoseInfo, abxPrintNote, MedScheduleBadge } from '../utils/helpers';
 
 // --- FUNGSI HELPER UNTUK PRINT DI HP/TABLET (ANTI-CRASH) ---
 export const cetakPWA = (htmlContent, title = 'Cetak') => {
@@ -260,6 +260,7 @@ const renderItemsWithAuthors = (items = [], itemAuthors = {}, isRx = false, isSt
 
         const authors = itemAuthors[rawItem] || itemAuthors[displayItem] || [];
         let abBadge = null;
+        const schedBadge = isRx ? <MedScheduleBadge med={displayItem} logs={record.medicationLogs || {}} /> : null;
 
         // 1. Badge Hari Antibiotik
         if (isRx && typeof getAntibioticDay === 'function') {
@@ -308,7 +309,7 @@ const renderItemsWithAuthors = (items = [], itemAuthors = {}, isRx = false, isSt
                 >
                     <span className="flex-1 min-w-0">
                         • {displayItem}
-                        {abBadge}
+                        {schedBadge}{abBadge}
                         {authors.length > 1 && (
                             <span className="font-normal text-[9px] opacity-70 normal-case">
                                 {' '}({authors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' & ')})
@@ -324,7 +325,7 @@ const renderItemsWithAuthors = (items = [], itemAuthors = {}, isRx = false, isSt
             <span key={rawItem || idx} className="inline-flex items-center justify-between w-full">
                 <span>
                     • {displayItem}
-                    {abBadge}
+                    {schedBadge}{abBadge}
                     {authors.length > 1 && (
                         <span className="font-normal text-[9px] opacity-70 normal-case">
                             {' '}({authors.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(' & ')})
@@ -577,10 +578,10 @@ export const PrintLayout = ({ record, historyLogs = [], includeCpoSchedule = fal
                                         </span>
                                     </div>
                                     <div className="space-y-0.5 pl-1 text-[11px] font-mono text-gray-900 leading-tight">
-                                        {activeMeds.map((med, idx) => (
+                                        {[...activeMeds].sort((a, b) => (a.isStopOrTunda ? 1 : 0) - (b.isStopOrTunda ? 1 : 0)).map((med, idx) => (
                                             <div key={idx} className="flex items-center justify-between">
-                                                <span>- {(med.raw ? med.raw.replace(/^[-•]\s*/, '') : `${med.cleanText || ''} ${(med.route || 'P.O')} ${med.freqText || '1x1'}`).replace(/\s*\(([^)]*)\)/g, ' $1').replace(/\bp\.o\b/gi, 'po').replace(/\s+/g, ' ').trim()}</span>
-                                                {med.antibioticDay && (
+                                                <span className={med.isStopOrTunda ? 'text-gray-400 line-through' : ''}>- {(med.raw ? med.raw.replace(/^[-•]\s*/, '') : `${med.cleanText || ''} ${(med.route || 'P.O')} ${med.freqText || '1x1'}`).replace(/\s*\(([^)]*)\)/g, ' $1').replace(/\bp\.o\b/gi, 'po').replace(/\s+/g, ' ').trim()}{!med.isStopOrTunda && <MedScheduleBadge med={med.cleanText || med.raw} logs={record.medicationLogs || {}} />}</span>
+                                                {med.antibioticDay && !med.isStopOrTunda && (
                                                     <span 
                                                         className="border border-red-500 bg-red-50 text-red-700 font-bold text-[8.5px] px-1 rounded ml-1 shrink-0"
                                                         style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}

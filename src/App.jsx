@@ -903,6 +903,7 @@ const handleAdminSaveUser = async () => {
                 (rec.dpjpName && rec.dpjpName.toLowerCase().includes(term)) ||
                 (rec.raberName && rec.raberName.toLowerCase().includes(term)) ||
                 (rec.raber2Name && rec.raber2Name.toLowerCase().includes(term)) ||
+                (rec.raber3Name && rec.raber3Name.toLowerCase().includes(term)) ||
                 (rec.rmNumber && rec.rmNumber.includes(term));
 
             return matchesDpjp && matchesRoom && matchesSearch;
@@ -2781,7 +2782,7 @@ const handleAdminSaveUser = async () => {
             const parsedP = parsePlanning(r.planning);
             return [
                 index + 1, r.createdAt.toLocaleDateString('id-ID'), r.createdAt.toLocaleTimeString('id-ID'),
-                escape(r.name), escape(r.roomNumber), escape(r.dpjpName), escape(r.raberName), escape(r.raber2Name),
+                escape(r.name), escape(r.roomNumber), escape(r.dpjpName), escape(r.raberName), escape(r.raber2Name), escape(r.raber3Name),
                 r.isDischarged ? "Pulang" : "Dirawat", escape(r.subjective), escape(r.objective), escape(r.analysis),
                 escape(parsedP.others.join('; ')), escape(parsedP.labs.join(', ')), escape(parsedP.rads.join(', ')), escape(parsedP.tms.join(', '))
             ].join(",");
