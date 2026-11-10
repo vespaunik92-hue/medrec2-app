@@ -449,14 +449,16 @@ export default function App() {
     if (!currentUser || !authReady) return;
 
     const collPath = `artifacts/${firebaseConfig.appId}/public/data/medicalRecords`;
-    const qColl = query(collection(db, collPath), where('isDischarged', '==', false));
+    const qColl = query(collection(db, collPath), where('isDischarged', '==', false), where('ward', '==', selectedWard.toUpperCase()));
 
     const unsub = onSnapshot(qColl, (snapshot) => {
       const docs = snapshot.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(p => (!p.ward || p.ward.toUpperCase() === selectedWard.toUpperCase()) && !p.isDischarged && p.status !== 'discharged');
       
-        console.log('[HEMAT] dokumen diterima dari server:', snapshot.size, '| disaring ruangan:', docs.length);
+        const hitungWard = {};
+        snapshot.docs.forEach(d => { const w = d.data().ward || '(kosong)'; hitungWard[w] = (hitungWard[w] || 0) + 1; });
+        console.log('[HEMAT] dokumen diterima dari server:', snapshot.size, '| disaring ruangan:', docs.length, '| per ward:', JSON.stringify(hitungWard));
         setWardPatients(docs);
     }, (err) => console.error("Firestore Error:", err));
 
@@ -654,7 +656,17 @@ export default function App() {
       setSelectedBed(t.bed); // companion ikut berpindah ke pasien ini
       setRobotStatus(`⏳ Pasien ${i + 1} dari ${targets.length} (bed ${t.bed})\n` + hasilLog.join('\n'));
       await new Promise(r => setTimeout(r, 400));
-      const res = await kirimRobot(tab.id, 'PASIEN_RM', { ...robotConfig, modul: modulSemua, rmTarget: rm });
+      const res = await kirimRobot(tab.id, 'PASIEN_RM', {
+        ...robotConfig,
+        modul: modulSemua,
+        rmTarget: rm,
+        companionSoap: {
+          subjective: t.p.subjective || '',
+          objective: t.p.objective || '',
+          analysis: t.p.analysis || '',
+          planning: t.p.planning || ''
+        }
+      });
       hasilLog.push(`${i + 1}. ${t.bed}: ${res.hasil || (res.success ? 'OK' : 'GAGAL')}${res.success ? '' : ' - ' + String(res.error || res.message || '').split('\n').slice(-3).join(' | ')}`);
       if (res.hasil === 'PUTUS' || (res.hasil === 'GAGAL' && /IDENTITAS|ANTREAN/.test(res.error || ''))) {
         hasilLog.push('⚠️ Berhenti demi keamanan.');
@@ -1316,9 +1328,12 @@ export default function App() {
                 const val = (e.target.value || '').trim();
                 if (!val) return;
 
+                const valDigit = val.replace(/\D/g, '');
                 const matchedPatient = wardPatients.find(p => {
                   const pName = (p.name || p.nama || '').toLowerCase();
-                  return pName && pName.includes(val.toLowerCase());
+                  const rm = String(p.rmNumber || p.rm || '').replace(/\D/g, '');
+                  const cocokRM = valDigit.length >= 3 && rm && rm.includes(valDigit);
+                  return (pName && pName.includes(val.toLowerCase())) || cocokRM;
                 });
 
                 if (matchedPatient) {
@@ -1340,7 +1355,7 @@ export default function App() {
                 }
               }}
               onFocus={e => e.target.select()}
-              placeholder="Ketik kamar / nama..."
+              placeholder="Ketik kamar / nama / No RM ..."
               autoComplete="off"
               className="w-full font-black text-slate-800 bg-slate-100 border border-slate-300 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500 uppercase"
             />
@@ -1356,7 +1371,7 @@ export default function App() {
 
                 return (
                   <option key={bed} value={datalistValue}>
-                    {occ ? `🔴 Pasien: ${pName}` : '🟢 Kamar Kosong'}
+                    {occ ? `🔴 Pasien: ${pName}${(occ.rmNumber || occ.rm) ? ' · RM ' + (occ.rmNumber || occ.rm) : ''}` : '🟢 Kamar Kosong'}
                   </option>
                 );
               })}

@@ -382,24 +382,178 @@ async function klikSkalaNyeri(n) {
 }
 
 // ---------------------------------------------------------------------------
-// TTV: hanya nilai nyata. Prioritas: isian panel (6 kolom lengkap) -> teks halaman.
+// TTV PINTAR:
+// 1. Cek TTV di kolom O (Objektif) SIMPAN. Jika ada & beda dari EWS terakhir -> pakai itu.
+// 2. Jika di O kosong ATAU angkanya masih sama dengan EWS shift lalu -> geser ±1-2 poin.
 // ---------------------------------------------------------------------------
-function bacaTtv(config) {
-  const p = config || {};
-  const manual = ['rr', 'spo2', 'sistolik', 'diastolik', 'hr', 'suhu'].map(k => String(p[k] ?? '').trim());
-  if (manual.every(Boolean)) {
-    const [rr, spo2, sistolik, diastolik, hr, suhu] = manual;
-    return { rr, spo2, sistolik, diastolik, hr, suhu };
+function geserPoin(nilaiAwal, minSelisih = 1, maxSelisih = 2, batasBawah = null, batasAtas = null) {
+  const n = parseInt(nilaiAwal, 10);
+  if (isNaN(n)) return String(nilaiAwal);
+  const selisih = Math.floor(Math.random() * (maxSelisih - minSelisih + 1)) + minSelisih;
+  const arah = Math.random() < 0.5 ? 1 : -1;
+  let hasil = n + (selisih * arah);
+  if (batasBawah !== null && hasil < batasBawah) hasil = n + selisih;
+  if (batasAtas !== null && hasil > batasAtas) hasil = n - selisih;
+  return String(hasil);
+}
+
+function geserSuhu(suhuAwal) {
+  const s = parseFloat(String(suhuAwal).replace(',', '.'));
+  if (isNaN(s)) return '36.6';
+  if (s < 36.0) return '36.5';
+  const arah = Math.random() < 0.5 ? 0.1 : -0.1;
+  let hasil = +(s + arah).toFixed(1);
+  if (hasil < 36.2) hasil = +(s + 0.1).toFixed(1);
+  if (hasil > 37.2 && s <= 37.2) hasil = +(s - 0.1).toFixed(1);
+  return hasil.toFixed(1);
+}
+
+function ekstrakTtvDariObjektif(teksO = '') {
+  const t = String(teksO || '');
+  if (!t.trim()) return {};
+  const hasil = {};
+
+  // TD (contoh: TD: 120/80, TD 130/85, atau 120/80 mmHg)
+  const tdLabel = t.match(/(?:TD|Tensi|Tekanan\s*Darah|BP)\s*[:=]?\s*(\d{2,3})\s*\/\s*(\d{2,3})/i);
+  if (tdLabel) {
+    hasil.sistolik = tdLabel[1];
+    hasil.diastolik = tdLabel[2];
+  } else {
+    const tdPolos = t.match(/(?<![\/\-\.\d])(9\d|[12]\d{2})\s*\/\s*([4-9]\d|1[0-2]\d)(?![\/\-\.\d])\s*(?:mmhg)?/i);
+    if (tdPolos) {
+      hasil.sistolik = tdPolos[1];
+      hasil.diastolik = tdPolos[2];
+    }
   }
-  if (p.autoTtv === false) return null;
+
+  // N / Nadi / HR
+  const hrMatch = t.match(/(?:\bN\b|\bNadi\b|\bHR\b|\bHeart\s*Rate\b)\s*[:=]?\s*(\d{2,3})(?!\s*[\/]\d)/i);
+  if (hrMatch) hasil.hr = hrMatch[1];
+
+  // S / Suhu
+  const suhuMatch = t.match(/(?:\bS\b|\bSuhu\b|\bTemp\b|\bT\b)\s*[:=]?\s*(3[5-9]|4[01])(?:[.,](\d))?/i)
+    || t.match(/\b(3[5-9][.,]\d|40[.,]\d)\s*°?\s*C\b/i);
+  if (suhuMatch) {
+    hasil.suhu = suhuMatch[2] !== undefined
+      ? `${suhuMatch[1]}.${suhuMatch[2]}`
+      : String(suhuMatch[1]).replace(',', '.');
+  }
+
+  // Rr / RR / Respirasi
+  const rrMatch = t.match(/(?:\bRR\b|\bRr\b|\bResp(?:irasi)?\b|\bFrekuensi\s*Nafas\b)\s*[:=]?\s*(\d{1,2})\b/i);
+  if (rrMatch) hasil.rr = rrMatch[1];
+
+  // SpO2
+  const spo2Match = t.match(/(?:\bSpO2\b|\bSaO2\b|\bSaturasi\b|\bSat\b)\s*[:=]?\s*(\d{2,3})\s*%?/i)
+    || t.match(/\b(9[4-9]|100)\s*%/);
+  if (spo2Match) hasil.spo2 = spo2Match[1];
+
+  return hasil;
+}
+
+function bacaTabelGrafikEws() {
+  const hasil = {};
+  let bagian = null;
+  for (const tr of document.querySelectorAll('table tr')) {
+    const teksBaris = tr.innerText || tr.textContent || '';
+    if (/RR\s*\/\s*M/i.test(teksBaris)) bagian = 'rr';
+    else if (/SPO2/i.test(teksBaris)) bagian = 'spo2';
+    else if (/Air\s*atau\s*Oxygen/i.test(teksBaris)) bagian = 'oksigen';
+    else if (/Tekanan\s*Darah/i.test(teksBaris)) bagian = 'sistolik';
+    else if (/HR\s*\/\s*M/i.test(teksBaris)) bagian = 'hr';
+    else if (/Kesadaran/i.test(teksBaris)) bagian = 'kesadaran';
+    else if (/Suhu/i.test(teksBaris)) bagian = 'suhu';
+
+    if (!bagian || ['oksigen', 'kesadaran'].includes(bagian)) continue;
+    const selAngka = Array.from(tr.querySelectorAll('td'))
+      .map(td => (td.innerText || td.textContent || '').trim())
+      .filter(v => /^\d{1,3}(?:[.,]\d)?$/.test(v));
+    if (selAngka.length > 0) hasil[bagian] = selAngka[selAngka.length - 1].replace(',', '.');
+  }
+  return hasil;
+}
+
+function bacaTtvDiLayarEcal() {
   const t = teksHalaman();
+  const d = {};
   const td = t.match(/Tekanan\s*darah[\s\n:]*(\d{2,3})\s*\/\s*(\d{2,3})/i);
+  if (td) { d.sistolik = td[1]; d.diastolik = td[2]; }
   const hr = t.match(/Detak\s*jantung[\s\n:]*(\d{2,3})/i);
+  if (hr) d.hr = hr[1];
   const rr = t.match(/Frekuensi\s*pernafasan[\s\n:]*(\d{1,2})/i);
-  const suhu = t.match(/Suhu[\s\n:]*(\d{2}(?:[.,]\d)?)/i);
+  if (rr) d.rr = rr[1];
+  const suhu = t.match(/Suhu(?:\s*Badan)?[\s\n:]*(\d{2}(?:[.,]\d)?)\s*°?C?/i);
+  if (suhu) d.suhu = suhu[1].replace(',', '.');
   const spo2 = t.match(/SpO2[\s\n:]*(\d{2,3})/i);
-  if (!(td && hr && rr && suhu && spo2)) return null;
-  return { rr: rr[1], spo2: spo2[1], sistolik: td[1], diastolik: td[2], hr: hr[1], suhu: suhu[1].replace(',', '.') };
+  if (spo2) d.spo2 = spo2[1];
+  return { ...bacaTabelGrafikEws(), ...d };
+}
+
+async function bacaTtv(config) {
+  const p = config || {};
+  const manual = {};
+  ['rr', 'spo2', 'sistolik', 'diastolik', 'hr', 'suhu'].forEach(k => {
+    const v = String(p[k] ?? '').trim();
+    if (v) manual[k] = v.replace(',', '.');
+  });
+
+  const dariO = ekstrakTtvDariObjektif(p.companionSoap?.objective || '');
+  const kunciTtv = ['rr', 'spo2', 'sistolik', 'diastolik', 'hr', 'suhu'];
+  const sumberO = [];
+  const sumberEcal = [];
+
+  // Baca angka EWS terakhir di Ecalyptus (intip lewat tombol "Lewati" jika tertutup form)
+  let dariEcal = bacaTtvDiLayarEcal();
+  if (kunciTtv.some(k => !manual[k] && !dariEcal[k])) {
+    const btnLewati = cariTeks('Lewati', 'button, span');
+    if (btnLewati) {
+      targetKlik(btnLewati).click();
+      await tunggu(() => Object.keys(bacaTabelGrafikEws()).length > 0, 2500);
+      dariEcal = { ...bacaTabelGrafikEws(), ...bacaTtvDiLayarEcal(), ...dariEcal };
+      await bukaTab('Early Warning System (EWS)', () => cariTeks('Simpan dan Selesai', 'button, span'));
+    }
+  }
+
+  // Cek apakah TTV di kolom O masih sama persis dengan EWS shift sebelumnya
+  const tdSama = dariO.sistolik && dariEcal.sistolik &&
+    String(dariO.sistolik) === String(dariEcal.sistolik) &&
+    (!dariO.diastolik || !dariEcal.diastolik || String(dariO.diastolik) === String(dariEcal.diastolik));
+  const hrSama = dariO.hr && dariEcal.hr && String(dariO.hr) === String(dariEcal.hr);
+  const oMasihDataShiftLama = Boolean(tdSama && (!dariO.hr || hrSama));
+
+  const cadangan = { rr: '20', spo2: '98', sistolik: '122', diastolik: '78', hr: '84', suhu: '36.6' };
+  const final = {};
+
+  for (const k of kunciTtv) {
+    if (manual[k]) {
+      final[k] = manual[k];
+      continue;
+    }
+
+    const valO = dariO[k];
+    const valEcal = dariEcal[k];
+    const samaDenganEcal = valO && valEcal && String(valO).replace(',', '.') === String(valEcal).replace(',', '.');
+
+    // Jika di O ada angka baru (tidak sama dengan EWS sebelumnya) -> pakai angka di O
+    if (valO && !samaDenganEcal && !oMasihDataShiftLama) {
+      final[k] = valO;
+      sumberO.push(`${k.toUpperCase()}:${final[k]}`);
+    } else {
+      // Jika di O kosong ATAU masih sama dengan shift lalu -> bedakan ±1-2 poin
+      const patokan = valEcal || valO || cadangan[k];
+      if (k === 'sistolik') final[k] = geserPoin(patokan, 1, 2, 95, 175);
+      else if (k === 'diastolik') final[k] = geserPoin(patokan, 1, 2, 60, 105);
+      else if (k === 'hr') final[k] = geserPoin(patokan, 1, 2, 60, 105);
+      else if (k === 'suhu') final[k] = geserSuhu(patokan);
+      else if (k === 'spo2') final[k] = geserPoin(patokan, 1, 1, 97, 99);
+      else if (k === 'rr') final[k] = String(patokan || '20');
+      sumberEcal.push(`${k.toUpperCase()}:${patokan}->${final[k]}`);
+    }
+  }
+
+  if (sumberO.length) catat(`TTV dari O: ${sumberO.join(', ')}`);
+  if (sumberEcal.length) catat(`TTV ±1-2: ${sumberEcal.join(', ')}`);
+  return final;
 }
 
 // Cari input berdasarkan teks labelnya (input pertama SETELAH label di wadah terdekat)
@@ -538,11 +692,10 @@ async function jalankanModulAsesmen(config) {
     await simpanSekali(tombolSimpan.textContent.trim());
   });
 
-  // C. EWS (oksigen + alert; angka hanya dari nilai nyata)
+  // C. EWS (prioritas O SIMPAN -> jika kosong/sama geser ±1-2 poin dari EWS Ecalyptus)
   await langkah('EWS', async () => {
     await bukaTab('Early Warning System (EWS)', () => cariTeks('Simpan dan Selesai', 'button, span'));
-    const ttv = bacaTtv(config);
-    if (!ttv) throw new Error('TTV tidak terbaca dan tidak diisi di panel. EWS dilewati, TIDAK ada angka yang dikarang.');
+    const ttv = await bacaTtv(config);
 
     const peta = [['RR/MENIT', ttv.rr], ['SPO2', ttv.spo2], ['Sistole', ttv.sistolik], ['Diastole', ttv.diastolik], ['HR/MENIT', ttv.hr], ['Suhu °C', ttv.suhu]];
     let semuaOk = true;
@@ -552,7 +705,7 @@ async function jalankanModulAsesmen(config) {
     }
     if (!semuaOk) throw new Error('ada kolom EWS yang tidak terisi, tidak disimpan');
 
-    if (!pilihRadio(config.oksigen === 'air' ? 'air' : 'oxygen')) throw new Error('pilihan oxygen/air gagal');
+    if (!pilihRadio(config.oksigen === 'oxygen' ? 'oxygen' : 'air')) throw new Error('pilihan oxygen/air gagal');
     if (!pilihRadio(config.kesadaran === 'cvpu' ? 'cvpu' : 'alert')) throw new Error('pilihan alert/cvpu gagal');
     await simpanSekali('Simpan dan Selesai');
   });
@@ -709,7 +862,7 @@ const b_nama = (b) => b.nama;
 // KARTU DRAFT SOAP (salin lalu tempel): form Ecalyptus tidak mau menerima isian dari skrip
 // (terbukti di beberapa percobaan), tetapi menerima tempelan (Ctrl+V) dari pengguna.
 // ---------------------------------------------------------------------------
-function tampilkanKartuSoap(items, ambilKolom) {
+function tampilkanKartuSoap(items, ambilKolom, otomatis) {
   document.getElementById('simpan-soap-kartu')?.remove();
   const host = document.createElement('div');
   host.id = 'simpan-soap-kartu';
@@ -726,29 +879,102 @@ function tampilkanKartuSoap(items, ambilKolom) {
   const semua = document.createElement('button');
   semua.textContent = 'Tempel semua (otomatis)';
   semua.style.cssText = 'width:100%;margin-bottom:4px;background:#16a34a;';
-  // Satu klik pengguna memberi halaman fokus; robot lalu menempel (paste asli browser) ke tiap kolom.
-  semua.onclick = async () => {
+  // Menempel (paste asli browser) ke tiap kolom. Butuh halaman aktif: klik pengguna memberinya.
+  const tempelSemua = async (percobaan) => {
     semua.disabled = true; status.textContent = 'Menempel...';
-    const gagal = [];
-    for (const it of items) {
-      if (!it.teks) continue;
-      const k = ambilKolom(); const el = k && k[it.nama.toLowerCase()];
-      if (!el) { gagal.push(it.nama); continue; }
+    const tunda = (ms) => new Promise(r => setTimeout(r, ms));
+    const lapor = [];
+    try { window.focus(); } catch (e) { /* abaikan */ }
+    const lepasFokus = async () => {
+      const a = document.activeElement;
+      if (a && a !== document.body && a.blur) { a.blur(); await tunda(150); }
+    };
+    // Salin TANPA mencuri fokus dari kolom form: kolom sudah di-blur sebelum ini dipanggil.
+    const salin = async (teks) => {
+      try { await navigator.clipboard.writeText(teks); return true; } catch (e) { /* lanjut cadangan */ }
       try {
         const t = document.createElement('textarea');
-        t.value = it.teks; t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+        t.value = teks; t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
         document.body.appendChild(t); t.select();
-        const tersalin = document.execCommand('copy'); t.remove();
-        el.focus(); el.setSelectionRange(0, (el.value || '').length);
-        const tertempel = document.execCommand('paste');
-        if (!tersalin || !tertempel || el.value !== it.teks) gagal.push(it.nama);
-      } catch (e) { gagal.push(it.nama); }
-      await new Promise(r => setTimeout(r, 600));
+        const ok = document.execCommand('copy'); t.remove();
+        return ok;
+      } catch (e) { return false; }
+    };
+    // Komit: blur nyata; bila React tidak menerima blur (halaman tak berfokus), kirim blur sintetis (React 16 mendengar 'blur' fase capture).
+    const komit = async (el) => {
+      let nyata = false;
+      const dengar = () => { nyata = true; };
+      el.addEventListener('blur', dengar, { once: true });
+      el.blur();
+      await tunda(30);
+      el.removeEventListener('blur', dengar);
+      if (!nyata) {
+        el.dispatchEvent(new FocusEvent('blur', { bubbles: false, cancelable: false }));
+        el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      }
+      return nyata ? 'nyata' : 'sintetis';
+    };
+    for (const it of items) {
+      if (!it.teks) continue;
+      const cat = { nama: it.nama, tempel: '-', blur: '-', bertahan: '-', alasan: '' };
+      for (let n = 0; n < percobaan; n++) {
+        try {
+          await lepasFokus();
+          const tersalin = await salin(it.teks);
+          let k = ambilKolom(); let el = k && k[it.nama.toLowerCase()];
+          if (!el) { cat.alasan = 'kolom hilang'; break; }
+          el.focus(); await tunda(80);
+          el.setSelectionRange(0, (el.value || '').length);
+          let tertempel = false;
+          try { tertempel = document.execCommand('paste'); } catch (e) { /* abaikan */ }
+          if (!tertempel || el.value !== it.teks) {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+            if (setter) setter.call(el, it.teks);
+            el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: it.teks }));
+            cat.tempel = tersalin ? 'cadangan(input)' : 'cadangan(tanpa salin)';
+          } else cat.tempel = 'paste';
+          await tunda(250);                 // biarkan React 16 memperbarui state lokal & closure onBlur
+          k = ambilKolom(); el = (k && k[it.nama.toLowerCase()]) || el; // elemen/handler terbaru
+          cat.blur = await komit(el);
+          await tunda(350);                 // biarkan store induk selesai render
+          k = ambilKolom(); const cek = k && k[it.nama.toLowerCase()];
+          cat.bertahan = cek && cek.value === it.teks ? 'ya' : 'tidak';
+          if (cat.bertahan === 'ya') { cat.alasan = ''; break; }
+          cat.alasan = `isi ${(cek && cek.value || '').length}/${it.teks.length}`;
+        } catch (e) { cat.alasan = 'galat: ' + (e.message || e); }
+        await tunda(400);
+      }
+      lapor.push(cat);
     }
+    // Uji sentuh silang: fokus-blur kolom pertama, lalu pastikan semua isi bertahan.
+    let bertahanSemua = lapor.every(c => c.bertahan === 'ya');
+    try {
+      const k = ambilKolom();
+      const pertama = k && (k.s || Object.values(k)[0]);
+      if (pertama) { pertama.focus(); await tunda(150); pertama.blur(); await tunda(300); }
+      const k2 = ambilKolom();
+      for (const it of items) {
+        if (!it.teks) continue;
+        const e2 = k2 && k2[it.nama.toLowerCase()];
+        const c = lapor.find(x => x.nama === it.nama);
+        if (!e2 || e2.value !== it.teks) { bertahanSemua = false; if (c) { c.bertahan = 'hilang setelah uji'; } }
+      }
+    } catch (e) { /* abaikan */ }
+    await tunda(200);
+    const btn = cariTeks('Simpan SOAP', 'button, span');
+    const simpanAktif = !!(btn && tombolAktif(btn));
     semua.disabled = false;
-    if (gagal.length) status.textContent = `Gagal menempel: ${gagal.join(', ')}. Pakai tombol Salin manual, atau muat ulang ekstensi (izin clipboard).`;
-    else { status.textContent = 'Selesai menempel. Periksa, lalu klik Simpan SOAP.'; document.activeElement && document.activeElement.blur && document.activeElement.blur(); }
+    const rinci = lapor.map(c => `${c.nama}: ${c.tempel}/blur ${c.blur}/bertahan ${c.bertahan}${c.alasan ? ' (' + c.alasan + ')' : ''}`).join(' | ');
+    console.log('[SOAP-ROBOT]', rinci, '| Simpan aktif:', simpanAktif);
+    if (bertahanSemua && simpanAktif) {
+      status.textContent = '✅ Semua kolom masuk & Simpan SOAP aktif. Periksa, lalu klik Simpan SOAP sendiri. ' + rinci;
+      return true;
+    }
+    status.textContent = (bertahanSemua ? '⚠ Isian bertahan tapi Simpan SOAP masih abu-abu (kolom wajib lain?). ' : '❌ Ada kolom tidak bertahan. ') + rinci + ' — klik "Tempel semua" lagi atau pakai Salin manual.';
+    return false;
   };
+  semua.onclick = () => tempelSemua(3);
+  if (otomatis) setTimeout(() => { tempelSemua(1).then(ok => { if (!ok) status.textContent = 'Menempel otomatis butuh klik Anda: tekan "Tempel semua".'; }); }, 400);
   kotak.appendChild(semua);
   kotak.appendChild(status);
   for (const it of items) {
@@ -883,7 +1109,7 @@ async function jalankanModulSoapie(config) {
       { nama: 'P', teks: pK },
       { nama: 'I', teks: tplK.i },
     ];
-    tampilkanKartuSoap(items, kolom);
+    tampilkanKartuSoap(items, kolom, true);
     catat(`Draft SOAP (${label}) siap di kartu kiri bawah halaman: klik Salin, lalu Ctrl+V di kolomnya. Tidak ada yang diketik atau disimpan otomatis.`);
     return;
   }

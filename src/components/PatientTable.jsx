@@ -398,10 +398,10 @@ const PatientTable = ({
                                                                     <span className="bg-gray-100 px-1 rounded text-[8px] text-gray-500 border">{rec.gender}</span>
                                                                 </div>
                                                                 <div className="mt-0.5 text-gray-600 italic text-[9px] truncate font-medium">DPJP: {rec.dpjpName}</div>
-                                                                {(rec.raberName || rec.raber2Name) && (
+                                                                {(rec.raberName || rec.raber2Name || rec.raber3Name) && (
                                                                     <div className="mt-0.5 text-blue-600 font-bold text-[9px] leading-tight">
                                                                         <span className="text-gray-400 font-normal">Rb: </span>
-                                                                        {[rec.raberName, rec.raber2Name].filter(Boolean).map(name => name).join(', ')}
+                                                                        {[rec.raberName, rec.raber2Name, rec.raber3Name].filter(Boolean).join(', ')}
                                                                     </div>
                                                                 )}
                                                             </>

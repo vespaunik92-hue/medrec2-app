@@ -1296,7 +1296,11 @@ const handleAdminSaveUser = async () => {
         if (!ref) return;
 
         // 1. QUERY SUPER CEPAT: Hanya tarik pasien yang belum pulang
-        const q = query(ref, where('isDischarged', '==', false), orderBy('createdAt', 'desc'));
+        const wardSaya = currentUser?.ward || 'MELATI';
+        const lihatSemuaRuangan = ['DPJP', 'Dokter_Jaga'].includes(currentUser?.role) || wardSaya === 'ALL';
+        const q = lihatSemuaRuangan
+            ? query(ref, where('isDischarged', '==', false), orderBy('createdAt', 'desc'))
+            : query(ref, where('isDischarged', '==', false), where('ward', '==', wardSaya));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const data = snapshot.docs.map(d => {
@@ -1318,6 +1322,7 @@ const handleAdminSaveUser = async () => {
                 };
             });
 
+            if (!lihatSemuaRuangan) data.sort((a, b) => b.createdAt - a.createdAt);
             // ✨ ISOLASI BANGSAL (WARD) — DOKTER DPJP & DOKTER JAGA AKSES SEMUA BANGSAL
             const activeWard = currentUser?.ward || 'MELATI';
             const isDoctor = ['DPJP', 'Dokter_Jaga'].includes(currentUser?.role);
@@ -1332,7 +1337,7 @@ const handleAdminSaveUser = async () => {
         }, (err) => console.error("Firestore Error:", err));
 
         return () => unsubscribe();
-    }, [getCollectionRef, userId, currentUser]);
+    },  [getCollectionRef, userId, currentUser?.ward, currentUser?.role]);
 
     // Penjaga: arsip hanya ditarik ulang kalau sudah >30 menit (hemat kuota Firestore)
     const archiveFetchedAtRef = useRef(0);

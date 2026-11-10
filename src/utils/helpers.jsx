@@ -1967,7 +1967,7 @@ const generateShiftReport = (activeRecords = [], archivedRecords = [], waitingLi
     // 8. Rawat Bersama (Raber) Tanpa Dr. Edi
     const raberMap = {};
     activeRecords.forEach(r => {
-        [r.raberName, r.raber2Name].forEach(dr => {
+        [r.raberName, r.raber2Name, r.raber3Name].forEach(dr => {
             if (dr) {
                 if (dr.toLowerCase().includes('edi')) return;
                 if (!raberMap[dr]) raberMap[dr] = [];
