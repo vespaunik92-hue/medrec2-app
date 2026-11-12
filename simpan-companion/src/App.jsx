@@ -16,7 +16,9 @@ import {
   Timestamp, 
 } from 'firebase/firestore';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { PlanningQuickTag, buildWhatsAppText, cleanPrescriptionText, mergePlanningText, mergeDiagnosisText, mergePrescriptionText } from './utils/helpers';
+import { PlanningQuickTag, buildWhatsAppText, cleanPrescriptionText,
+  mergePlanningText, mergeDiagnosisText, mergePrescriptionText, extractLabSnapshot,
+  renderObjectiveCell, renderPlanningCell, getAntibioticDay } from './utils/helpers';
 import BukuCMTable from './components/BukuCMTable';
 import { handlePrintBukuCM } from './components/PrintManager';
 import { MedicationMarModal } from './components/MedicationBoard';
@@ -290,6 +292,7 @@ export default function App() {
       hr: '',
       suhu: '',
       jamObatDefault: '',
+      obatSimpan: true,
       pakaiSoapCompanion: false,
       autoSubmitSoap: false
     };
@@ -305,6 +308,10 @@ export default function App() {
   const [showPrintConfig, setShowPrintConfig] = useState(false);
   const [includeCpoInPrint, setIncludeCpoInPrint] = useState(false);
   const [activePrintSize, setActivePrintSize] = useState('A5');
+
+  // 🖨️ State Cetak Lembar SOAP Filter per DPJP
+  const [showSoapPrintModal, setShowSoapPrintModal] = useState(false);
+  const [soapDpjpFilter, setSoapDpjpFilter] = useState([]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -570,7 +577,112 @@ export default function App() {
     });
   };
 
-  // 🤖 4b. EKSEKUSI ROBOT AUTO-ECALYPTUS
+  // 💊 Helper: Ambil daftar obat yang SUDAH DICENTANG di CPO SIMPAN (Cari via No. RM atau Kamar)
+  const ambilObatTercenTangCpo = (patientRecord, shiftDinas) => {
+    const logs = patientRecord?.medicationLogs || {};
+    const now = new Date();
+    const toYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const todayYMD = toYMD(now);
+    const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+    const yestYMD = toYMD(yest);
+
+    // Ambil semua obat yang sudah dicentang (checked: true) pada hari ini
+    const checkedMeds = [];
+    const datesToCheck = (shiftDinas === 'malam' && now.getHours() < 9) ? [yestYMD, todayYMD] : [todayYMD];
+
+    datesToCheck.forEach(dStr => {
+      const dayData = logs[dStr] || {};
+      Object.entries(dayData).forEach(([medName, shiftsObj]) => {
+        if (!shiftsObj) return;
+        const adaCentang = Object.values(shiftsObj).some(slot => slot && slot.checked === true);
+        if (adaCentang && !checkedMeds.includes(medName)) {
+          checkedMeds.push(medName);
+        }
+      });
+    });
+
+    return checkedMeds;
+  };
+
+  // 🤖 PAKET DATA UNTUK DIALOG ASISTEN DI LAYAR ECALYPTUS
+  // Isi: ward, shift, pasien aktif, dan semua pasien ruangan (urut bed) lengkap dengan RM,
+  // obat yang sudah dicentang di CPO SIMPAN (hari ini; kemarin bila shift malam < 09:00), dan SOAP Companion.
+  const susunPaketDataRobot = (shift) => {
+    const sh = shift || robotConfig.shift;
+    const roomOf = (p) => p.roomNumber || p.room || p.bed || '';
+    const mapP = (p, bed) => ({
+      bed: bed || roomOf(p),
+      name: String(p.name || p.nama || '').trim(),
+      rm: String(p.rmNumber || p.rm || '').trim(),
+      cpoCheckedMeds: ambilObatTercenTangCpo(p, sh),
+      companionSoap: {
+        subjective: p.subjective || '',
+        objective: p.objective || '',
+        analysis: p.analysis || '',
+        planning: p.planning || ''
+      }
+    });
+    const allPatients = currentBedList
+      .map(bed => ({ bed, p: wardPatients.find(x => cleanBedKey(roomOf(x)) === cleanBedKey(bed)) }))
+      .filter(t => t.p)
+      .map(t => mapP(t.p, t.bed));
+    const act = wardPatients.find(p => p.id === activeDocId);
+    const activePatient = act
+      ? mapP(act, currentBedList.find(b => cleanBedKey(b) === cleanBedKey(roomOf(act))) || selectedBed)
+      : null;
+    return { ward: selectedWard, shift: sh, activePatient, allPatients };
+  };
+  const susunRef = useRef(null);
+  susunRef.current = susunPaketDataRobot;
+  const [asistenAktif, setAsistenAktif] = useState(false);
+
+  // Dialog di layar Ecalyptus meminta data / meminta Companion pindah kamar
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.onMessage) return;
+    const handler = (req, sender, sendResponse) => {
+      if (req && req.action === 'REQUEST_SIMPAN_ROBOT_DATA') {
+        try { sendResponse({ success: true, payload: susunRef.current(req.shift) }); }
+        catch (e) { sendResponse({ success: false, error: e.message }); }
+        return false;
+      }
+      if (req && req.action === 'ROBOT_SWITCH_BED' && req.bed) {
+        setSelectedBed(req.bed);
+        sendResponse({ success: true });
+        return false;
+      }
+      return false;
+    };
+    chrome.runtime.onMessage.addListener(handler);
+    return () => chrome.runtime.onMessage.removeListener(handler);
+  }, []);
+
+  // Setelah asisten dibuka, dorong data terbaru (tanpa membuka ulang dialog) saat data SIMPAN berubah
+  useEffect(() => {
+    if (!asistenAktif || typeof chrome === 'undefined' || !chrome.tabs) return;
+    const timer = setTimeout(async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) chrome.tabs.sendMessage(tab.id, { action: "SYNC_ECAL_ASSISTANT", openModal: false, payload: susunRef.current() }, () => { void chrome.runtime.lastError; });
+      } catch (e) { /* abaikan */ }
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [asistenAktif, wardPatients, selectedWard, robotConfig.shift]);
+
+  const bukaAsistenRobot = async () => {
+    if (typeof chrome === 'undefined' || !chrome.tabs) { alert("Buka ekstensi ini di browser Chrome."); return; }
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) { alert("Buka tab Ecalyptus terlebih dahulu."); return; }
+    chrome.tabs.sendMessage(tab.id, { action: "SYNC_ECAL_ASSISTANT", openModal: true, payload: susunPaketDataRobot() }, () => {
+      if (chrome.runtime.lastError) {
+        setRobotStatus("❌ Gagal terhubung ke tab Ecalyptus. Klik tab Ecalyptus, tekan F5, lalu coba lagi.");
+        return;
+      }
+      setAsistenAktif(true);
+      setRobotStatus("✅ Asisten dibuka di layar Ecalyptus.");
+    });
+  };
+
+  // 🤖 4b. EKSEKUSI ROBOT AUTO-ECALYPTUS (versi lama dari panel, tidak dipakai lagi di tampilan)
   const handleRunRobot = async (mode) => {
     if (typeof chrome === 'undefined' || !chrome.tabs) {
       alert("Buka ekstensi ini di browser Chrome.");
@@ -582,6 +694,16 @@ export default function App() {
       alert("Buka tab Ecalyptus terlebih dahulu.");
       return;
     }
+
+    // Cari pasien di SIMPAN berdasarkan No. RM terlebih dahulu, lalu fallback ke activeDocId / Nama
+    const cleanRm = (s) => String(s || '').replace(/\D/g, '').replace(/^0+/, '');
+    const targetRm = cleanRm(formData.rmNumber);
+    const activePatient = wardPatients.find(p =>
+      (targetRm && cleanRm(p.rmNumber || p.rm) === targetRm) ||
+      p.id === activeDocId ||
+      (formData.name && (p.name || p.nama || '').toLowerCase().trim() === formData.name.toLowerCase().trim())
+    );
+    const cpoCheckedMeds = ambilObatTercenTangCpo(activePatient, robotConfig.shift);
 
     setRobotRunning(true);
     const labelMode = mode === 'ASESMEN'
@@ -603,6 +725,7 @@ export default function App() {
         config: {
           ...robotConfig,
           rmTarget: (formData.rmNumber || '').trim(),
+          cpoCheckedMeds,
           companionSoap: {
             subjective: formData.subjective,
             objective: formData.objective,
@@ -626,7 +749,7 @@ export default function App() {
     );
   };
 
-    const robotStopRef = useRef(false);
+  const robotStopRef = useRef(false);
 
   const kirimRobot = (tabId, mode, config) => new Promise(resolve => {
     chrome.tabs.sendMessage(tabId, { action: "RUN_ECAL_ROBOT", mode, config }, (res) => {
@@ -653,13 +776,17 @@ export default function App() {
       if (robotStopRef.current) { hasilLog.push('🛑 Dihentikan.'); break; }
       const t = targets[i];
       const rm = String(t.p.rmNumber || t.p.rm).trim();
-      setSelectedBed(t.bed); // companion ikut berpindah ke pasien ini
+      const cpoCheckedMeds = ambilObatTercenTangCpo(t.p, robotConfig.shift);
+
+      setSelectedBed(t.bed);
       setRobotStatus(`⏳ Pasien ${i + 1} dari ${targets.length} (bed ${t.bed})\n` + hasilLog.join('\n'));
       await new Promise(r => setTimeout(r, 400));
+
       const res = await kirimRobot(tab.id, 'PASIEN_RM', {
         ...robotConfig,
         modul: modulSemua,
         rmTarget: rm,
+        cpoCheckedMeds,
         companionSoap: {
           subjective: t.p.subjective || '',
           objective: t.p.objective || '',
@@ -667,6 +794,7 @@ export default function App() {
           planning: t.p.planning || ''
         }
       });
+
       hasilLog.push(`${i + 1}. ${t.bed}: ${res.hasil || (res.success ? 'OK' : 'GAGAL')}${res.success ? '' : ' - ' + String(res.error || res.message || '').split('\n').slice(-3).join(' | ')}`);
       if (res.hasil === 'PUTUS' || (res.hasil === 'GAGAL' && /IDENTITAS|ANTREAN/.test(res.error || ''))) {
         hasilLog.push('⚠️ Berhenti demi keamanan.');
@@ -859,6 +987,233 @@ export default function App() {
 
     const wardName = selectedWard || currentUser?.ward || 'MELATI';
     handlePrintBukuCM(wardName);
+  };
+
+  // 🩺 HELPER PENCOCOK NAMA DOKTER & FILTER PASIEN PER DPJP (UNTUK CETAK LEMBAR SOAP)
+  const isSameDoctor = (docA = '', docB = '') => {
+    if (!docA || !docB) return false;
+    const norm = (s) => String(s).toLowerCase()
+      .replace(/^(dr\.|drg\.|dokter)\s*/i, '')
+      .replace(/,\s*(sp\.[a-z]+|sp[a-z]+|m\.kes|mkes|ph\.d|phd|finasim).*$/i, '')
+      .replace(/[^a-z0-9]/gi, '')
+      .trim();
+    const a = norm(docA), b = norm(docB);
+    return Boolean(a && b && (a === b || a.includes(b) || b.includes(a)));
+  };
+
+  // Daftar DPJP yang sedang memiliki pasien di ruangan aktif (diurutkan sesuai prioritas)
+  const activeWardDpjpList = useMemo(() => {
+    const map = new Map();
+    wardPatients.forEach(p => {
+      [p.dpjpName || p.dpjp, p.raberName, p.raber2Name, p.raber3Name].filter(Boolean).forEach(dName => {
+        const cleanName = dName.trim();
+        const existingKey = Array.from(map.keys()).find(k => isSameDoctor(k, cleanName));
+        if (existingKey) {
+          map.set(existingKey, map.get(existingKey) + 1);
+        } else {
+          map.set(cleanName, 1);
+        }
+      });
+    });
+
+    const priority = ['delvi', 'dian', 'priyo', 'risa', 'evan'];
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => {
+        const iA = priority.findIndex(k => a.name.toLowerCase().includes(k));
+        const iB = priority.findIndex(k => b.name.toLowerCase().includes(k));
+        if (iA !== -1 && iB !== -1) return iA - iB;
+        if (iA !== -1) return -1;
+        if (iB !== -1) return 1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [wardPatients]);
+
+  // Pasien yang lolos filter DPJP + urutan kamar (Rute U khusus dr. Delvi, urutan alami untuk lainnya)
+  const filteredPatientsForSoapPrint = useMemo(() => {
+    const isDelviSelected = soapDpjpFilter.some(d => d.toLowerCase().includes('delvi'));
+    const filtered = wardPatients.filter(rec => {
+      if (soapDpjpFilter.length === 0) return true;
+      const textScan = `${rec.diagnosis || ''} ${rec.analysis || ''} ${rec.planning || ''}`.toLowerCase();
+      const isHD = /\b(ckd\s*.*on\s*hd|hemodialisa|hemodialisis|cuci darah|hd\s*rutin|rutin\s*hd)\b/i.test(textScan);
+
+      return soapDpjpFilter.some(dr =>
+        isSameDoctor(rec.dpjpName || rec.dpjp, dr) ||
+        isSameDoctor(rec.raberName, dr) ||
+        isSameDoctor(rec.raber2Name, dr) ||
+        isSameDoctor(rec.raber3Name, dr) ||
+        (isDelviSelected && isHD)
+      );
+    });
+
+    const isDelviOnly = soapDpjpFilter.length === 1 && soapDpjpFilter[0].toLowerCase().includes('delvi');
+    if (isDelviOnly) {
+      const uShapeBase = ['K6', 'K4', 'K2', 'K1', 'K3', 'K5', 'K7', 'K8', 'K9', 'K11', 'K12', 'K14', 'K15', 'K13', 'K10'];
+      const uShapeOrder = uShapeBase.flatMap(k => {
+        const regex = new RegExp('^' + k + '(P|KM)?$', 'i');
+        return currentBedList.filter(r => regex.test(r));
+      });
+      return [...filtered].sort((a, b) => {
+        let iA = uShapeOrder.indexOf(a.roomNumber || a.room || a.bed);
+        let iB = uShapeOrder.indexOf(b.roomNumber || b.room || b.bed);
+        if (iA === -1) iA = 999;
+        if (iB === -1) iB = 999;
+        return iA - iB;
+      });
+    }
+
+    return [...filtered].sort((a, b) => {
+      const aRoom = (a?.roomNumber || a?.room || a?.bed || '').trim();
+      const bRoom = (b?.roomNumber || b?.room || b?.bed || '').trim();
+      const extractParts = (str) => {
+        const isIso = /^iso/i.test(str);
+        const numMatch = str.match(/(\d+)/);
+        const num = isIso ? 99999 : (numMatch ? parseInt(numMatch[1], 10) : 9999);
+        return { num, raw: str };
+      };
+      const pA = extractParts(aRoom), pB = extractParts(bRoom);
+      if (pA.num !== pB.num) return pA.num - pB.num;
+      return pA.raw.localeCompare(pB.raw, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [wardPatients, soapDpjpFilter, currentBedList]);
+
+  // Eksekusi Cetak Lembar SOAP di Tab Baru (Persis Gaya print.html Gambar 3 & Anti-Blank)
+  const executePrintSoapFromCompanion = () => {
+    const element = document.getElementById('companion-soap-print');
+    if (!element) return alert("Tabel SOAP belum siap.");
+    if (filteredPatientsForSoapPrint.length === 0) return alert("Tidak ada pasien untuk filter dokter ini.");
+
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll('div, span, p').forEach(el => {
+      if (el.children.length === 0) {
+        const txt = (el.textContent || '').trim();
+        if (/^(?:🕒\s*)?\[[^\]\n]+,\s*\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?(?:[\s,]+\d{1,2}[:.]\d{2})?\]$/.test(txt)) {
+          el.remove();
+        }
+      }
+    });
+
+    let content = clone.innerHTML;
+    content = content.replace(/(?:🕒\s*)?\[[^\]\n<>]+,\s*\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?(?:[\s,]+\d{1,2}[:.]\d{2})?\]\s*(?:\r?\n|<br\s*\/?>)?/gi, '');
+
+    // Ambil hanya stylesheet dari <head> dengan URL absolut & bersihkan @media print penghalang
+    const headLinks = Array.from(document.head.querySelectorAll('link[rel="stylesheet"]'))
+      .map(link => `<link rel="stylesheet" href="${link.href}" />`)
+      .join('\n');
+    const headStyles = Array.from(document.head.querySelectorAll('style'))
+      .map(s => `<style>${(s.innerHTML || '').replace(/@media\s+print\s*\{[\s\S]*?\}/gi, '')}</style>`)
+      .join('\n');
+
+    const wardName = selectedWard || currentUser?.ward || 'MELATI';
+    const dpjpLabel = soapDpjpFilter.length > 0 ? ` • DPJP: ${soapDpjpFilter.join(', ')}` : ' • SEMUA DOKTER';
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Cetak Laporan SOAP - Ruang ${wardName}</title>
+        ${headLinks}
+        ${headStyles}
+        <style>
+          @page { size: auto; margin: 6mm 8mm; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          html, body {
+            font-family: Arial, sans-serif;
+            margin: 0 !important;
+            padding: 0 !important;
+            color: #000 !important;
+            background: #f1f5f9 !important;
+            visibility: visible !important;
+          }
+          .top-bar {
+            position: sticky; top: 0; z-index: 50;
+            background: #ffffff; border-bottom: 1px solid #cbd5e1;
+            padding: 10px 18px; display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+          }
+          .sheet-wrap {
+            max-width: 1150px; margin: 16px auto; background: #ffffff;
+            padding: 16px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+          }
+          table {
+            width: 100% !important; min-width: 0 !important; max-width: 100% !important;
+            border-collapse: collapse !important; font-size: 8.5pt !important; table-layout: fixed !important;
+          }
+          th, td {
+            border: 1px solid #000 !important; padding: 4px 6px !important;
+            vertical-align: top !important; line-height: 1.3 !important;
+            word-wrap: break-word !important; overflow-wrap: break-word !important;
+          }
+          th {
+            background-color: #e5e7eb !important; text-align: center !important;
+            font-size: 9pt !important; font-weight: bold !important; color: #000 !important;
+          }
+          tr { page-break-inside: avoid; break-inside: avoid; }
+          th:nth-child(1), td:nth-child(1) { width: 14% !important; }
+          th:nth-child(2), td:nth-child(2) { width: 13% !important; }
+          th:nth-child(3), td:nth-child(3) { width: 31% !important; }
+          th:nth-child(4), td:nth-child(4) { width: 16% !important; }
+          th:nth-child(5), td:nth-child(5) { width: 26% !important; }
+          td { white-space: pre-wrap; word-wrap: break-word; }
+          h3.judul-cetak {
+            text-align: center; margin: 0 0 2px 0; font-size: 13pt;
+            font-weight: bold; text-transform: uppercase; color: #1e3a8a !important;
+          }
+          .date-print { text-align: center; font-size: 8.5pt; margin-bottom: 8px; color: #444 !important; }
+          @media print {
+            html, body, .sheet-wrap {
+              background: #ffffff !important; margin: 0 !important; padding: 0 !important;
+              max-width: none !important; box-shadow: none !important; border-radius: 0 !important;
+              visibility: visible !important;
+            }
+            .no-print, .top-bar { display: none !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="top-bar no-print">
+          <div style="font-weight:800; font-size:13px; color:#1e293b;">
+            🖨️ Preview Cetak Laporan SOAP (${filteredPatientsForSoapPrint.length} Pasien)
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button id="btn-cetak-sekarang" style="background:#4f46e5; color:#fff; border:0; padding:7px 14px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer;">
+              🖨️ Cetak Sekarang
+            </button>
+            <button id="btn-tutup-tab" style="background:#dc2626; color:#fff; border:0; padding:7px 14px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer;">
+              ✕ Tutup
+            </button>
+          </div>
+        </div>
+        <div class="sheet-wrap">
+          <h3 class="judul-cetak">Laporan Operan SOAP - Ruang ${wardName}${dpjpLabel}</h3>
+          <div class="date-print">Dicetak: ${new Date().toLocaleString('id-ID')} (${filteredPatientsForSoapPrint.length} Pasien)</div>
+          ${content}
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Buka sebagai TAB BARU (tanpa parameter width/height agar tidak menjadi jendela pop-up kecil)
+    const printWin = window.open('', '_blank');
+    if (!printWin) return alert("Pastikan izin pop-up browser aktif.");
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
+
+    // Pasang aksi tombol dari induk (aman dari blokir CSP Manifest V3)
+    const btnPrint = printWin.document.getElementById('btn-cetak-sekarang');
+    const btnClose = printWin.document.getElementById('btn-tutup-tab');
+    if (btnPrint) btnPrint.addEventListener('click', () => printWin.print());
+    if (btnClose) btnClose.addEventListener('click', () => printWin.close());
+
+    // Tunggu stylesheet termuat di tab baru, lalu otomatis buka Print Preview
+    setTimeout(() => {
+      printWin.focus();
+      printWin.print();
+    }, 600);
+
+    setShowSoapPrintModal(false);
   };
 
   // 💊 TUTUP JENDELA CPO
@@ -1054,6 +1409,17 @@ export default function App() {
         payload.createdAt = Timestamp.now();
       }
 
+      // 🧪 Riwayat Lab untuk tab Lab E-OA (sama seperti perilaku Simpan di situs induk)
+      const snapLab = extractLabSnapshot(formData.objective || '');
+      if (Object.keys(snapLab).length > 0) {
+        const labLama = wardPatients.find(p => p.id === activeDocId)?.labHistory || [];
+        const sudahSama = labLama[0] && JSON.stringify(labLama[0].values) === JSON.stringify(snapLab);
+        if (!sudahSama) {
+          const t = new Date();
+          const labelLab = `${String(t.getDate()).padStart(2, '0')}/${String(t.getMonth() + 1).padStart(2, '0')}, ${t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':')}`;
+          payload.labHistory = [{ date: labelLab, values: snapLab }, ...labLama].slice(0, 10);
+        }
+      }
       await setDoc(docRef, payload, { merge: true });
       alert(`✅ Data Bed ${selectedBed} (${formData.name}) tersinkronisasi ke web SIMPAN!`);
     } catch (err) {
@@ -1237,8 +1603,17 @@ export default function App() {
           </div>
         </div>
 
-        {/* KELOMPOK TOMBOL KANAN: BUKU CM & LOGOUT */}
-        <div className="flex items-center gap-1.5">
+        {/* KELOMPOK TOMBOL KANAN: CETAK SOAP, BUKU CM & LOGOUT */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setShowSoapPrintModal(true)}
+            className="text-[9px] bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2 py-1 rounded-lg font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
+            title="Cetak Lembar Daftar SOAP (Bisa Filter per DPJP)"
+          >
+            <span>🖨️</span> SOAP
+          </button>
+
           <button
             type="button"
             onClick={() => handlePrintBukuCM(selectedWard || currentUser?.ward || 'MELATI')}
@@ -1407,196 +1782,22 @@ export default function App() {
         </button>
       </div>
 
-      {/* 🤖 3b. PANEL ROBOT AUTO-ECALYPTUS */}
-      <div className="bg-gradient-to-r from-emerald-900 to-teal-900 text-white rounded-xl shadow-sm border border-emerald-700 overflow-hidden">
-        <div
-          onClick={() => setShowRobotPanel(!showRobotPanel)}
-          className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-white/5 transition"
+      {/* 🤖 3b. ASISTEN ROBOT AUTO-ECALYPTUS (dialog dibuka di layar Ecalyptus) */}
+      <div className="space-y-1">
+        <button
+          type="button"
+          onClick={bukaAsistenRobot}
+          className="w-full py-2 px-2 bg-gradient-to-r from-emerald-800 to-teal-800 hover:from-emerald-700 hover:to-teal-700 text-white font-black rounded-xl shadow-sm border border-emerald-700 transition cursor-pointer text-[11px] flex items-center justify-center gap-1.5"
         >
-          <div className="flex items-center gap-1.5 font-black text-[11px]">
-            <span>🤖</span>
-            <span>Robot Auto-Ecalyptus (Nyeri • Jatuh • EWS • Obat • SOAP)</span>
-          </div>
-          <span className="text-[10px] font-bold bg-emerald-700/80 px-1.5 py-0.5 rounded">
-            {showRobotPanel ? '▲ Tutup' : '▼ Buka'}
-          </span>
-        </div>
-
-        {showRobotPanel && (
-          <div className="p-2.5 bg-slate-900/90 border-t border-emerald-800 space-y-2 text-[10px]">
-            {/* BARIS 1: SHIFT & NYERI */}
-            <div className="grid grid-cols-2 gap-1.5">
-              <div>
-                <label className="text-[8px] font-bold text-emerald-300 uppercase block mb-0.5">Shift Dinas</label>
-                <select
-                  value={robotConfig.shift}
-                  onChange={e => setRobotConfig({ ...robotConfig, shift: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-white font-bold text-[10px]"
-                >
-                  <option value="pagi">☀️ Shift Pagi</option>
-                  <option value="siang">🌤️ Shift Siang</option>
-                  <option value="malam">🌙 Shift Malam</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[8px] font-bold text-emerald-300 uppercase block mb-0.5">Asesmen Nyeri</label>
-                <select
-                  value={robotConfig.nyeri}
-                  onChange={e => setRobotConfig({ ...robotConfig, nyeri: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-white font-bold text-[10px]"
-                >
-                  <option value="tidak">🟢 Tidak Nyeri (0)</option>
-                  <option value="ya">🟡 Nyeri (Skala 2 - Tumpul)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* BARIS 2: PENGATURAN TTV EWS & JAM OBAT */}
-            <div className="bg-slate-800/80 p-1.5 rounded-lg border border-slate-700 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-1.5 cursor-pointer font-bold text-emerald-200">
-                  <input
-                    type="checkbox"
-                    checked={robotConfig.autoTtv}
-                    onChange={e => setRobotConfig({ ...robotConfig, autoTtv: e.target.checked })}
-                    className="rounded"
-                  />
-                  <span>Auto-Baca TTV Header + Variasi (±1-2)</span>
-                </label>
-                <input
-                  type="text"
-                  value={robotConfig.jamObatDefault}
-                  onChange={e => setRobotConfig({ ...robotConfig, jamObatDefault: e.target.value })}
-                  placeholder="Jam Obat (Auto)"
-                  title="Kosongkan agar mengikuti jam hari sebelumnya (18:00/20:00), atau isi manual misal 18:00"
-                  className="w-24 bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-[9px] text-center text-amber-300 font-mono"
-                />
-              </div>
-
-              {!robotConfig.autoTtv && (
-                <div className="grid grid-cols-6 gap-1 pt-1">
-                  {[
-                    ['RR', 'rr'],
-                    ['SpO2', 'spo2'],
-                    ['Sistol', 'sistolik'],
-                    ['Diastol', 'diastolik'],
-                    ['HR', 'hr'],
-                    ['Suhu', 'suhu']
-                  ].map(([lbl, k]) => (
-                    <div key={k}>
-                      <span className="text-[8px] text-slate-400 block text-center">{lbl}</span>
-                      <input
-                        type="text"
-                        value={robotConfig[k]}
-                        onChange={e => setRobotConfig({ ...robotConfig, [k]: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-600 rounded p-0.5 text-center font-mono text-[9px] text-white"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* BARIS 3: OPSI SOAPIE */}
-            <div className="flex items-center justify-between px-1 text-[9.5px] text-slate-300">
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={robotConfig.pakaiSoapCompanion}
-                  onChange={e => setRobotConfig({ ...robotConfig, pakaiSoapCompanion: e.target.checked })}
-                />
-                <span>Isi S-O-A dari teks Companion</span>
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer text-amber-300 font-bold">
-                <input
-                  type="checkbox"
-                  checked={robotConfig.autoSubmitSoap}
-                  onChange={e => setRobotConfig({ ...robotConfig, autoSubmitSoap: e.target.checked })}
-                />
-                <span>Langsung Klik Simpan SOAP</span>
-              </label>
-            </div>
-
-            {/* BARIS 4: TOMBOL EKSEKUSI PER MODUL */}
-            <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-              <button
-                type="button"
-                disabled={robotRunning}
-                onClick={() => handleRunRobot('ASESMEN')}
-                className="py-1.5 px-1 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white font-black rounded-lg shadow transition cursor-pointer text-[9.5px]"
-              >
-                📋 1. Asesmen+EWS
-              </button>
-              <button
-                type="button"
-                disabled={robotRunning}
-                onClick={() => handleRunRobot('OBAT')}
-                className="py-1.5 px-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-black rounded-lg shadow transition cursor-pointer text-[9.5px]"
-              >
-                💊 2. Sapu Obat
-              </button>
-              <button
-                type="button"
-                disabled={robotRunning}
-                onClick={() => handleRunRobot('SOAPIE')}
-                className="py-1.5 px-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white font-black rounded-lg shadow transition cursor-pointer text-[9.5px]"
-              >
-                📝 3. Draft SOAP
-              </button>
-            </div>
-
-            {/* BARIS 4B: KERJAKAN SEMUA PASIEN SIMPAN (URUT BED) */}
-            <div className="flex gap-3 mb-1 px-1 text-[10px] text-slate-200">
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" checked={modulSemua.asesmen}
-                  onChange={e => setModulSemua({ ...modulSemua, asesmen: e.target.checked })} />
-                <span>Asesmen+EWS</span>
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" checked={modulSemua.obat}
-                  onChange={e => setModulSemua({ ...modulSemua, obat: e.target.checked })} />
-                <span>Sapu Obat</span>
-              </label>
-            </div>
-            <button
-              type="button"
-              disabled={robotRunning}
-              onClick={handleRunSemuaPasienSimpan}
-              className="w-full mb-1.5 py-2 bg-indigo-700 hover:bg-indigo-600 disabled:opacity-40 text-white font-bold rounded-lg shadow-md transition cursor-pointer text-[10.5px]"
-            >
-              ▶️ Kerjakan semua pasien SIMPAN (urut bed)
-            </button>
-
-            {/* BARIS 5: TOMBOL FULL SIKLUS & STOP */}
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                disabled={robotRunning}
-                onClick={() => handleRunRobot('FULL')}
-                className="flex-1 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 disabled:opacity-40 text-slate-950 font-black rounded-lg shadow-md transition cursor-pointer text-[10.5px]"
-              >
-                🚀 JALANKAN FULL SIKLUS (1 ➔ 2 ➔ 3)
-              </button>
-              {robotRunning && (
-                <button
-                  type="button"
-                  onClick={handleStopRobot}
-                  className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-lg shadow transition cursor-pointer text-[10px]"
-                >
-                  🛑 Stop
-                </button>
-              )}
-            </div>
-
-            {robotStatus && (
-              <div className="bg-black/40 border border-emerald-800/80 rounded px-2 py-1 text-[9.5px] text-emerald-200 font-medium leading-snug">
-                {robotStatus}
-              </div>
-            )}
+          <span>🤖</span> Asisten Robot Auto-Ecalyptus (Buka di Layar ➔)
+        </button>
+        {robotStatus && (
+          <div className="bg-black/40 border border-emerald-800/80 rounded px-2 py-1 text-[9.5px] text-emerald-200 font-medium leading-snug whitespace-pre-line">
+            {robotStatus}
           </div>
         )}
       </div>
-      
+
       {cpptAuthors.length > 1 && (
           <select
             value={pickedAuthor}
@@ -2046,6 +2247,157 @@ export default function App() {
         </div>
       )}
       
+      {/* 🖨️ MODAL CETAK LEMBAR SOAP FILTER PER DPJP */}
+      {showSoapPrintModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[95] animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-full max-w-xs space-y-3">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-black text-xs text-slate-800 flex items-center gap-1.5">
+                <span>🖨️</span> Cetak Lembar SOAP per DPJP
+              </h3>
+              <button onClick={() => setShowSoapPrintModal(false)} className="text-slate-400 hover:text-red-500 font-bold text-sm cursor-pointer">✕</button>
+            </div>
+
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-500 font-semibold">Pilih Dokter (kosong = semua):</span>
+              {soapDpjpFilter.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSoapDpjpFilter([])}
+                  className="text-rose-600 font-bold hover:underline cursor-pointer"
+                >
+                  Reset ({soapDpjpFilter.length})
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-52 overflow-y-auto space-y-1 pr-1">
+              {activeWardDpjpList.length === 0 ? (
+                <div className="text-center py-4 text-slate-400 italic text-[10px]">Belum ada pasien aktif di ruangan ini.</div>
+              ) : (
+                activeWardDpjpList.map(({ name, count }) => {
+                  const checked = soapDpjpFilter.includes(name);
+                  return (
+                    <label
+                      key={name}
+                      className={`flex items-center justify-between p-2 rounded-xl border text-[11px] font-bold cursor-pointer transition ${
+                        checked ? 'bg-indigo-50 border-indigo-400 text-indigo-900' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setSoapDpjpFilter(prev =>
+                              prev.includes(name) ? prev.filter(d => d !== name) : [...prev, name]
+                            );
+                          }}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                        />
+                        <span className="truncate">{name}</span>
+                      </div>
+                      <span className="text-[9px] bg-white border border-slate-200 px-1.5 py-0.5 rounded-full text-slate-600 shrink-0">
+                        {count} Pasien
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={executePrintSoapFromCompanion}
+              disabled={filteredPatientsForSoapPrint.length === 0}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <span>🖨️</span> Cetak ({filteredPatientsForSoapPrint.length} Pasien)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 🖨️ WADAH TABEL CETAK LEMBAR SOAP (TERSEMBUNYI) */}
+      <div id="companion-soap-print" className="hidden">
+        <table>
+          <thead>
+            <tr>
+              <th>Identitas</th>
+              <th>S (Subjektif)</th>
+              <th>O (Objektif)</th>
+              <th>A (Analisa)</th>
+              <th>P (Planning)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredPatientsForSoapPrint.map(rec => {
+              const rawRx = (rec.currentPrescription || '').trim();
+              const rxLines = rawRx ? rawRx.split('\n').map(l => l.trim()).filter(Boolean) : [];
+              const rxSet = new Set(rxLines.map(l => l.toLowerCase()));
+              const cleanPlan = (rec.planning || '')
+                .split('\n')
+                .filter(line => !rxSet.has(line.trim().toLowerCase()))
+                .join('\n')
+                .trim();
+              const roomCode = rec.roomNumber || rec.room || rec.bed || '-';
+
+              return (
+                <tr key={rec.id}>
+                  <td>
+                    <div className="font-bold text-[11px] text-indigo-900 leading-tight">{rec.name || rec.nama}</div>
+                    <div className="text-[9px] font-mono text-gray-500">RM: {rec.rmNumber || rec.rm || '-'}</div>
+                    <div className="mt-0.5">
+                      <span className="font-bold bg-yellow-100 px-1 rounded text-[9px] border border-yellow-300">{roomCode}</span>
+                      <span className="ml-1 bg-gray-100 px-1 rounded text-[8px] text-gray-600 border">{rec.gender || 'L'}</span>
+                    </div>
+                    <div className="mt-0.5 text-gray-700 italic text-[9px] font-medium">DPJP: {rec.dpjpName || rec.dpjp}</div>
+                    {(rec.raberName || rec.raber2Name || rec.raber3Name) && (
+                      <div className="mt-0.5 text-blue-700 font-bold text-[9px] leading-tight">
+                        Rb: {[rec.raberName, rec.raber2Name, rec.raber3Name].filter(Boolean).join(', ')}
+                      </div>
+                    )}
+                  </td>
+                  <td>{rec.subjective || '-'}</td>
+                  <td>{renderObjectiveCell(rec.objective)}</td>
+                  <td>{rec.analysis || '-'}</td>
+                  <td>
+                    {(cleanPlan || rxLines.length === 0) && renderPlanningCell(autoSmartDateTransformer(cleanPlan), rec.medicationLogs)}
+                    {rxLines.length > 0 && (
+                      <div className={cleanPlan ? 'mt-2 pt-1.5 border-t border-dashed border-rose-300' : ''}>
+                        <div className="mb-1">
+                          <span className="bg-rose-50 border border-rose-300 text-rose-800 text-[9px] font-bold px-1.5 py-0.5 rounded inline-block uppercase">
+                            💊 Resep Obat
+                          </span>
+                        </div>
+                        <div className="space-y-0.5 font-mono text-[10px] text-gray-900 leading-tight">
+                          {rxLines.map((line, rIdx) => {
+                            const cleanLine = line.replace(/^[-•*]\s*/, '').trim();
+                            const hCode = typeof getAntibioticDay === 'function'
+                              ? getAntibioticDay(cleanLine, rec.medicationLogs || {})
+                              : null;
+                            return (
+                              <div key={rIdx} className="flex items-start justify-between gap-1">
+                                <span>• {cleanLine}</span>
+                                {hCode && (
+                                  <span className="border border-red-500 bg-red-50 text-red-700 font-bold text-[8px] px-1 rounded shrink-0">
+                                    🚨 {hCode}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
       {/* 📖 WADAH CETAK BUKU CM OTOMATIS (DARI INDUK) */}
       <div id="buku-cm-print" className="hidden">
         <BukuCMTable 

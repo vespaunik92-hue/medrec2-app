@@ -382,113 +382,13 @@ async function klikSkalaNyeri(n) {
 }
 
 // ---------------------------------------------------------------------------
-// TTV PINTAR:
-// 1. Cek TTV di kolom O (Objektif) SIMPAN. Jika ada & beda dari EWS terakhir -> pakai itu.
-// 2. Jika di O kosong ATAU angkanya masih sama dengan EWS shift lalu -> geser ±1-2 poin.
+// TTV (hanya nilai nyata, TIDAK pernah dikarang/digeser):
+// 0. Input manual di opsi asisten (bila Auto TTV dimatikan)
+// 1. Angka TTV di kolom O SIMPAN bila ada dan BERBEDA dari EWS terakhir Ecalyptus (data baru)
+// 2. Bila O kosong / masih sama dengan EWS terakhir: pakai angka EWS terakhir APA ADANYA,
+//    dan laporkan sebagai "⚠️ angka lama, bukan ukuran baru" agar perawat menggantinya.
+// 3. Bila tidak ada angka sama sekali: berhenti (GAGAL), tidak mengisi apa pun.
 // ---------------------------------------------------------------------------
-function geserPoin(nilaiAwal, minSelisih = 1, maxSelisih = 2, batasBawah = null, batasAtas = null) {
-  const n = parseInt(nilaiAwal, 10);
-  if (isNaN(n)) return String(nilaiAwal);
-  const selisih = Math.floor(Math.random() * (maxSelisih - minSelisih + 1)) + minSelisih;
-  const arah = Math.random() < 0.5 ? 1 : -1;
-  let hasil = n + (selisih * arah);
-  if (batasBawah !== null && hasil < batasBawah) hasil = n + selisih;
-  if (batasAtas !== null && hasil > batasAtas) hasil = n - selisih;
-  return String(hasil);
-}
-
-function geserSuhu(suhuAwal) {
-  const s = parseFloat(String(suhuAwal).replace(',', '.'));
-  if (isNaN(s)) return '36.6';
-  if (s < 36.0) return '36.5';
-  const arah = Math.random() < 0.5 ? 0.1 : -0.1;
-  let hasil = +(s + arah).toFixed(1);
-  if (hasil < 36.2) hasil = +(s + 0.1).toFixed(1);
-  if (hasil > 37.2 && s <= 37.2) hasil = +(s - 0.1).toFixed(1);
-  return hasil.toFixed(1);
-}
-
-function ekstrakTtvDariObjektif(teksO = '') {
-  const t = String(teksO || '');
-  if (!t.trim()) return {};
-  const hasil = {};
-
-  // TD (contoh: TD: 120/80, TD 130/85, atau 120/80 mmHg)
-  const tdLabel = t.match(/(?:TD|Tensi|Tekanan\s*Darah|BP)\s*[:=]?\s*(\d{2,3})\s*\/\s*(\d{2,3})/i);
-  if (tdLabel) {
-    hasil.sistolik = tdLabel[1];
-    hasil.diastolik = tdLabel[2];
-  } else {
-    const tdPolos = t.match(/(?<![\/\-\.\d])(9\d|[12]\d{2})\s*\/\s*([4-9]\d|1[0-2]\d)(?![\/\-\.\d])\s*(?:mmhg)?/i);
-    if (tdPolos) {
-      hasil.sistolik = tdPolos[1];
-      hasil.diastolik = tdPolos[2];
-    }
-  }
-
-  // N / Nadi / HR
-  const hrMatch = t.match(/(?:\bN\b|\bNadi\b|\bHR\b|\bHeart\s*Rate\b)\s*[:=]?\s*(\d{2,3})(?!\s*[\/]\d)/i);
-  if (hrMatch) hasil.hr = hrMatch[1];
-
-  // S / Suhu
-  const suhuMatch = t.match(/(?:\bS\b|\bSuhu\b|\bTemp\b|\bT\b)\s*[:=]?\s*(3[5-9]|4[01])(?:[.,](\d))?/i)
-    || t.match(/\b(3[5-9][.,]\d|40[.,]\d)\s*°?\s*C\b/i);
-  if (suhuMatch) {
-    hasil.suhu = suhuMatch[2] !== undefined
-      ? `${suhuMatch[1]}.${suhuMatch[2]}`
-      : String(suhuMatch[1]).replace(',', '.');
-  }
-
-  // Rr / RR / Respirasi
-  const rrMatch = t.match(/(?:\bRR\b|\bRr\b|\bResp(?:irasi)?\b|\bFrekuensi\s*Nafas\b)\s*[:=]?\s*(\d{1,2})\b/i);
-  if (rrMatch) hasil.rr = rrMatch[1];
-
-  // SpO2
-  const spo2Match = t.match(/(?:\bSpO2\b|\bSaO2\b|\bSaturasi\b|\bSat\b)\s*[:=]?\s*(\d{2,3})\s*%?/i)
-    || t.match(/\b(9[4-9]|100)\s*%/);
-  if (spo2Match) hasil.spo2 = spo2Match[1];
-
-  return hasil;
-}
-
-function bacaTabelGrafikEws() {
-  const hasil = {};
-  let bagian = null;
-  for (const tr of document.querySelectorAll('table tr')) {
-    const teksBaris = tr.innerText || tr.textContent || '';
-    if (/RR\s*\/\s*M/i.test(teksBaris)) bagian = 'rr';
-    else if (/SPO2/i.test(teksBaris)) bagian = 'spo2';
-    else if (/Air\s*atau\s*Oxygen/i.test(teksBaris)) bagian = 'oksigen';
-    else if (/Tekanan\s*Darah/i.test(teksBaris)) bagian = 'sistolik';
-    else if (/HR\s*\/\s*M/i.test(teksBaris)) bagian = 'hr';
-    else if (/Kesadaran/i.test(teksBaris)) bagian = 'kesadaran';
-    else if (/Suhu/i.test(teksBaris)) bagian = 'suhu';
-
-    if (!bagian || ['oksigen', 'kesadaran'].includes(bagian)) continue;
-    const selAngka = Array.from(tr.querySelectorAll('td'))
-      .map(td => (td.innerText || td.textContent || '').trim())
-      .filter(v => /^\d{1,3}(?:[.,]\d)?$/.test(v));
-    if (selAngka.length > 0) hasil[bagian] = selAngka[selAngka.length - 1].replace(',', '.');
-  }
-  return hasil;
-}
-
-function bacaTtvDiLayarEcal() {
-  const t = teksHalaman();
-  const d = {};
-  const td = t.match(/Tekanan\s*darah[\s\n:]*(\d{2,3})\s*\/\s*(\d{2,3})/i);
-  if (td) { d.sistolik = td[1]; d.diastolik = td[2]; }
-  const hr = t.match(/Detak\s*jantung[\s\n:]*(\d{2,3})/i);
-  if (hr) d.hr = hr[1];
-  const rr = t.match(/Frekuensi\s*pernafasan[\s\n:]*(\d{1,2})/i);
-  if (rr) d.rr = rr[1];
-  const suhu = t.match(/Suhu(?:\s*Badan)?[\s\n:]*(\d{2}(?:[.,]\d)?)\s*°?C?/i);
-  if (suhu) d.suhu = suhu[1].replace(',', '.');
-  const spo2 = t.match(/SpO2[\s\n:]*(\d{2,3})/i);
-  if (spo2) d.spo2 = spo2[1];
-  return { ...bacaTabelGrafikEws(), ...d };
-}
-
 async function bacaTtv(config) {
   const p = config || {};
   const manual = {};
@@ -521,7 +421,7 @@ async function bacaTtv(config) {
   const hrSama = dariO.hr && dariEcal.hr && String(dariO.hr) === String(dariEcal.hr);
   const oMasihDataShiftLama = Boolean(tdSama && (!dariO.hr || hrSama));
 
-  const cadangan = { rr: '20', spo2: '98', sistolik: '122', diastolik: '78', hr: '84', suhu: '36.6' };
+  const kosong = [];
   const final = {};
 
   for (const k of kunciTtv) {
@@ -539,20 +439,17 @@ async function bacaTtv(config) {
       final[k] = valO;
       sumberO.push(`${k.toUpperCase()}:${final[k]}`);
     } else {
-      // Jika di O kosong ATAU masih sama dengan shift lalu -> bedakan ±1-2 poin
-      const patokan = valEcal || valO || cadangan[k];
-      if (k === 'sistolik') final[k] = geserPoin(patokan, 1, 2, 95, 175);
-      else if (k === 'diastolik') final[k] = geserPoin(patokan, 1, 2, 60, 105);
-      else if (k === 'hr') final[k] = geserPoin(patokan, 1, 2, 60, 105);
-      else if (k === 'suhu') final[k] = geserSuhu(patokan);
-      else if (k === 'spo2') final[k] = geserPoin(patokan, 1, 1, 97, 99);
-      else if (k === 'rr') final[k] = String(patokan || '20');
-      sumberEcal.push(`${k.toUpperCase()}:${patokan}->${final[k]}`);
+      // Tidak ada angka baru di O: pakai angka EWS terakhir APA ADANYA (tanpa digeser)
+      const lama = valEcal || valO;
+      if (!lama) { kosong.push(k.toUpperCase()); continue; }
+      final[k] = String(lama).replace(',', '.');
+      sumberEcal.push(`${k.toUpperCase()}:${final[k]}`);
     }
   }
 
   if (sumberO.length) catat(`TTV dari O: ${sumberO.join(', ')}`);
-  if (sumberEcal.length) catat(`TTV ±1-2: ${sumberEcal.join(', ')}`);
+  if (kosong.length) throw new Error(`TTV ${kosong.join(', ')} tidak ada angka baru di kolom O dan tidak terbaca dari EWS Ecalyptus. Isi manual lewat Opsi (matikan Auto TTV).`);
+  if (sumberEcal.length) catat(`Catatan: ⚠️ TTV memakai angka EWS terakhir (bukan ukuran baru), ganti dengan hasil ukur terbaru bila ada: ${sumberEcal.join(', ')}`);
   return final;
 }
 
@@ -692,7 +589,7 @@ async function jalankanModulAsesmen(config) {
     await simpanSekali(tombolSimpan.textContent.trim());
   });
 
-  // C. EWS (prioritas O SIMPAN -> jika kosong/sama geser ±1-2 poin dari EWS Ecalyptus)
+  // C. EWS (prioritas O SIMPAN -> bila kosong/sama pakai angka EWS terakhir apa adanya + tanda ⚠️)
   await langkah('EWS', async () => {
     await bukaTab('Early Warning System (EWS)', () => cariTeks('Simpan dan Selesai', 'button, span'));
     const ttv = await bacaTtv(config);
@@ -779,24 +676,68 @@ const jamStr = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMi
 
 // Keputusan per obat berdasarkan RIWAYAT di tabel: jadwal berikut = pemberian terakhir + 24/N jam.
 // Diisi bila jadwal berikut jatuh sebelum min(sekarang + toleransi, akhir shift-mu).
-function putuskanObat(baris, now, shift, toleransiJam) {
+// Pencocok nama obat CPO SIMPAN vs nama obat di tabel Ecalyptus
+function cocokNamaObatCpo(namaEcal = '', daftarCpo = []) {
+  if (!Array.isArray(daftarCpo) || !daftarCpo.length) return false;
+  const bersihkan = (s) => String(s).toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\b(?:ivfd|inj|injeksi|serb|lar|inf|tab|tablet|kaps|kapsul|syr|sirup|po|iv|im|sc|drip|nebu|otsuka|sanbe|vial|amp|fls)\b/g, ' ')
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:mg|gr|g|mcg|ml|iu|tpm|x)\b/g, ' ')
+    .replace(/[^a-z]/g, '')
+    .trim();
+
+  const kEcal = bersihkan(namaEcal);
+  if (kEcal.length < 3) return false;
+
+  // Sinonim ejaan Indonesia vs Internasional (misal Seftriakson <-> Ceftriaxone)
+  const normEjaan = (s) => s.replace(/^sef/, 'cef').replace(/^sipro/, 'cipro').replace(/kson$/, 'xone').replace(/ksim$/, 'xime');
+  const e1 = normEjaan(kEcal);
+
+  return daftarCpo.some(medCpo => {
+    const kCpo = bersihkan(medCpo);
+    if (kCpo.length < 3) return false;
+    const c1 = normEjaan(kCpo);
+    return kEcal.includes(kCpo) || kCpo.includes(kEcal) || e1.includes(c1) || c1.includes(e1);
+  });
+}
+
+// Keputusan per obat:
+// 1. Jika obat SUDAH DICENTANG di CPO SIMPAN pada shift ini -> langsung berikan (meskipun belum ada riwayat di Ecal)!
+// 2. Jika belum dicentang di CPO -> gunakan hitungan jadwal otomatis (terakhir + 24/N jam).
+function putuskanObat(baris, now, shift, toleransiJam, cpoCheckedMeds = []) {
+  const sudahDiCpo = cocokNamaObatCpo(baris.nama, cpoCheckedMeds);
+
+  // Cek apakah baru saja diberikan dalam 3 jam terakhir di Ecalyptus (mencegah dobel input di shift yang sama)
+  if (baris.riwayat.length > 0) {
+    const terakhir = new Date(Math.max(...baris.riwayat.map(d => d.getTime())));
+    const selisihJam = (now.getTime() - terakhir.getTime()) / 3600000;
+    if (selisihJam >= 0 && selisihJam < 3) {
+      return { isi: false, alasan: `sudah tercatat baru saja di Ecal (${jamStr(terakhir)})` };
+    }
+  }
+
+  if (sudahDiCpo) {
+    return { isi: true, info: `sinkron ceklis CPO SIMPAN (shift ${shift})` };
+  }
+
   if (baris.frekuensi == null || baris.frekuensi < 1) return { isi: false, alasan: `aturan "${baris.aturan}" tidak terbaca (mungkin PRN)` };
-  if (!baris.riwayat.length) return { isi: false, alasan: 'belum ada riwayat pemberian di tabel, cek manual' };
+  if (!baris.riwayat.length) return { isi: false, alasan: 'belum ada riwayat di Ecal & belum dicentang di CPO SIMPAN' };
   const terakhir = new Date(Math.max(...baris.riwayat.map(d => d.getTime())));
   const selang = (24 / baris.frekuensi) * 3600 * 1000;
   const berikut = new Date(terakhir.getTime() + selang);
   const batas = new Date(Math.min(now.getTime() + toleransiJam * 3600 * 1000, akhirShift(now, shift).getTime()));
   if (berikut.getTime() > batas.getTime()) return { isi: false, alasan: `belum waktunya (terakhir ${jamStr(terakhir)}, berikut ±${jamStr(berikut)})` };
   const telat = (now.getTime() - berikut.getTime()) / 3600000;
-  if (telat > toleransiJam) return { isi: false, alasan: `TERLAMBAT ${telat.toFixed(1)} jam dari jadwal (terakhir ${jamStr(terakhir)}, jadwal ±${jamStr(berikut)}), mungkin terlewat shift sebelumnya, cek manual` };
+  if (telat > toleransiJam) return { isi: false, alasan: `TERLAMBAT ${telat.toFixed(1)} jam dari jadwal (terakhir ${jamStr(terakhir)}, jadwal ±${jamStr(berikut)}), cek manual` };
   return { isi: true, info: `terakhir ${jamStr(terakhir)}, jadwal berikut ±${jamStr(berikut)}` };
 }
 
 async function jalankanModulObat(config) {
   cekStop();
   kunciPasien(config);
-  const simpan = config.obatSimpan === true;
+  const simpan = config.obatSimpan !== false;
   const kecuali = String(config.obatKecuali || '').split(',').map(s => norm(s)).filter(Boolean);
+  const cpoCheckedMeds = Array.isArray(config.cpoCheckedMeds) ? config.cpoCheckedMeds : [];
 
   if (!location.hash.includes('/patient/drug-administration')) {
     const ok = await klikTeks('Pemberian Obat');
@@ -804,6 +745,10 @@ async function jalankanModulObat(config) {
   }
   const siap = await tunggu(() => bacaBarisObat().length > 0, 10000);
   if (!siap) throw new Error('Tabel obat tidak termuat atau kosong.');
+
+  if (cpoCheckedMeds.length > 0) {
+    catat(`CPO SIMPAN (${cpoCheckedMeds.length} obat tercentang): ${cpoCheckedMeds.join(', ')}`);
+  }
 
   const selesai = new Set();
   let jumlah = 0;
@@ -815,7 +760,8 @@ async function jalankanModulObat(config) {
 
     const lewati = (alasan) => catat(`Obat dilewati: ${baris.nama} (${alasan})`);
     if (kecuali.some(k => norm(baris.nama).includes(k) || norm(baris.aturan).includes(k))) { lewati('masuk daftar kecuali'); continue; }
-    const kep = putuskanObat(baris, new Date(), tentukanShift(config), Number.isFinite(+config.obatToleransiJam) && config.obatToleransiJam !== '' ? +config.obatToleransiJam : 2);
+    const tol = Number.isFinite(+config.obatToleransiJam) && config.obatToleransiJam !== '' ? +config.obatToleransiJam : 2;
+    const kep = putuskanObat(baris, new Date(), tentukanShift(config), tol, cpoCheckedMeds);
     if (!kep.isi) { lewati(kep.alasan); continue; }
     if (!baris.plus) { lewati('tombol + tidak ada'); continue; }
 
@@ -850,7 +796,7 @@ async function jalankanModulObat(config) {
     if (!tertutup) { catat(`GAGAL: pop-up tidak menutup setelah simpan (${baris.nama}), cek manual`); throw new Error('Obat berhenti: pop-up macet, cek layar.'); }
     await tunggu(() => !sedangKirim(), 10000);
     const sesudah = await tunggu(() => { const b = bacaBarisObat().find(x => x.nama === baris.nama); return b && b.terisi > baris.terisi ? b : null; }, 10000);
-    if (sesudah) { jumlah++; catat(`OK: obat ${baris.nama} dicatat diberikan`); }
+    if (sesudah) { jumlah++; catat(`OK: obat ${baris.nama} dicatat diberikan (${kep.info})`); }
     else catat(`GAGAL: ${baris.nama} disimpan tapi sel di tabel belum terisi, cek manual`);
   }
   catat(simpan ? `Obat: ${jumlah} dicatat.` : 'Obat: mode SIMULASI, tidak ada yang disimpan.');
@@ -862,145 +808,7 @@ const b_nama = (b) => b.nama;
 // KARTU DRAFT SOAP (salin lalu tempel): form Ecalyptus tidak mau menerima isian dari skrip
 // (terbukti di beberapa percobaan), tetapi menerima tempelan (Ctrl+V) dari pengguna.
 // ---------------------------------------------------------------------------
-function tampilkanKartuSoap(items, ambilKolom, otomatis) {
-  document.getElementById('simpan-soap-kartu')?.remove();
-  const host = document.createElement('div');
-  host.id = 'simpan-soap-kartu';
-  host.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:2147483646;';
-  const root = host.attachShadow({ mode: 'open' });
-  const css = '.k{font:12px system-ui,sans-serif;width:300px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.4);padding:10px}'
-    + '.h{display:flex;justify-content:space-between;align-items:center;font-weight:700;margin-bottom:6px}.h small{font-weight:400;color:#94a3b8}'
-    + '.r{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid #1e293b}.r b{width:16px;color:#38bdf8}.r span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cbd5e1}'
-    + 'button{cursor:pointer;border:0;border-radius:8px;padding:5px 9px;font-weight:600;background:#0ea5e9;color:#fff}button.ok{background:#16a34a}button[disabled]{background:#334155;color:#94a3b8;cursor:default}.x{background:transparent;color:#94a3b8;padding:0 4px}';
-  root.innerHTML = `<style>${css}</style><div class="k"><div class="h"><div>Draft SOAP <small>Salin, lalu Ctrl+V di kolomnya</small></div><button class="x" id="tutup">✕</button></div></div>`;
-  const kotak = root.querySelector('.k');
-  const status = document.createElement('div');
-  status.style.cssText = 'margin:4px 0 6px;color:#94a3b8;font-size:11px;';
-  const semua = document.createElement('button');
-  semua.textContent = 'Tempel semua (otomatis)';
-  semua.style.cssText = 'width:100%;margin-bottom:4px;background:#16a34a;';
-  // Menempel (paste asli browser) ke tiap kolom. Butuh halaman aktif: klik pengguna memberinya.
-  const tempelSemua = async (percobaan) => {
-    semua.disabled = true; status.textContent = 'Menempel...';
-    const tunda = (ms) => new Promise(r => setTimeout(r, ms));
-    const lapor = [];
-    try { window.focus(); } catch (e) { /* abaikan */ }
-    const lepasFokus = async () => {
-      const a = document.activeElement;
-      if (a && a !== document.body && a.blur) { a.blur(); await tunda(150); }
-    };
-    // Salin TANPA mencuri fokus dari kolom form: kolom sudah di-blur sebelum ini dipanggil.
-    const salin = async (teks) => {
-      try { await navigator.clipboard.writeText(teks); return true; } catch (e) { /* lanjut cadangan */ }
-      try {
-        const t = document.createElement('textarea');
-        t.value = teks; t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
-        document.body.appendChild(t); t.select();
-        const ok = document.execCommand('copy'); t.remove();
-        return ok;
-      } catch (e) { return false; }
-    };
-    // Komit: blur nyata; bila React tidak menerima blur (halaman tak berfokus), kirim blur sintetis (React 16 mendengar 'blur' fase capture).
-    const komit = async (el) => {
-      let nyata = false;
-      const dengar = () => { nyata = true; };
-      el.addEventListener('blur', dengar, { once: true });
-      el.blur();
-      await tunda(30);
-      el.removeEventListener('blur', dengar);
-      if (!nyata) {
-        el.dispatchEvent(new FocusEvent('blur', { bubbles: false, cancelable: false }));
-        el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-      }
-      return nyata ? 'nyata' : 'sintetis';
-    };
-    for (const it of items) {
-      if (!it.teks) continue;
-      const cat = { nama: it.nama, tempel: '-', blur: '-', bertahan: '-', alasan: '' };
-      for (let n = 0; n < percobaan; n++) {
-        try {
-          await lepasFokus();
-          const tersalin = await salin(it.teks);
-          let k = ambilKolom(); let el = k && k[it.nama.toLowerCase()];
-          if (!el) { cat.alasan = 'kolom hilang'; break; }
-          el.focus(); await tunda(80);
-          el.setSelectionRange(0, (el.value || '').length);
-          let tertempel = false;
-          try { tertempel = document.execCommand('paste'); } catch (e) { /* abaikan */ }
-          if (!tertempel || el.value !== it.teks) {
-            const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-            if (setter) setter.call(el, it.teks);
-            el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: it.teks }));
-            cat.tempel = tersalin ? 'cadangan(input)' : 'cadangan(tanpa salin)';
-          } else cat.tempel = 'paste';
-          await tunda(250);                 // biarkan React 16 memperbarui state lokal & closure onBlur
-          k = ambilKolom(); el = (k && k[it.nama.toLowerCase()]) || el; // elemen/handler terbaru
-          cat.blur = await komit(el);
-          await tunda(350);                 // biarkan store induk selesai render
-          k = ambilKolom(); const cek = k && k[it.nama.toLowerCase()];
-          cat.bertahan = cek && cek.value === it.teks ? 'ya' : 'tidak';
-          if (cat.bertahan === 'ya') { cat.alasan = ''; break; }
-          cat.alasan = `isi ${(cek && cek.value || '').length}/${it.teks.length}`;
-        } catch (e) { cat.alasan = 'galat: ' + (e.message || e); }
-        await tunda(400);
-      }
-      lapor.push(cat);
-    }
-    // Uji sentuh silang: fokus-blur kolom pertama, lalu pastikan semua isi bertahan.
-    let bertahanSemua = lapor.every(c => c.bertahan === 'ya');
-    try {
-      const k = ambilKolom();
-      const pertama = k && (k.s || Object.values(k)[0]);
-      if (pertama) { pertama.focus(); await tunda(150); pertama.blur(); await tunda(300); }
-      const k2 = ambilKolom();
-      for (const it of items) {
-        if (!it.teks) continue;
-        const e2 = k2 && k2[it.nama.toLowerCase()];
-        const c = lapor.find(x => x.nama === it.nama);
-        if (!e2 || e2.value !== it.teks) { bertahanSemua = false; if (c) { c.bertahan = 'hilang setelah uji'; } }
-      }
-    } catch (e) { /* abaikan */ }
-    await tunda(200);
-    const btn = cariTeks('Simpan SOAP', 'button, span');
-    const simpanAktif = !!(btn && tombolAktif(btn));
-    semua.disabled = false;
-    const rinci = lapor.map(c => `${c.nama}: ${c.tempel}/blur ${c.blur}/bertahan ${c.bertahan}${c.alasan ? ' (' + c.alasan + ')' : ''}`).join(' | ');
-    console.log('[SOAP-ROBOT]', rinci, '| Simpan aktif:', simpanAktif);
-    if (bertahanSemua && simpanAktif) {
-      status.textContent = '✅ Semua kolom masuk & Simpan SOAP aktif. Periksa, lalu klik Simpan SOAP sendiri. ' + rinci;
-      return true;
-    }
-    status.textContent = (bertahanSemua ? '⚠ Isian bertahan tapi Simpan SOAP masih abu-abu (kolom wajib lain?). ' : '❌ Ada kolom tidak bertahan. ') + rinci + ' — klik "Tempel semua" lagi atau pakai Salin manual.';
-    return false;
-  };
-  semua.onclick = () => tempelSemua(3);
-  if (otomatis) setTimeout(() => { tempelSemua(1).then(ok => { if (!ok) status.textContent = 'Menempel otomatis butuh klik Anda: tekan "Tempel semua".'; }); }, 400);
-  kotak.appendChild(semua);
-  kotak.appendChild(status);
-  for (const it of items) {
-    const baris = document.createElement('div');
-    baris.className = 'r';
-    const ringkas = it.teks ? it.teks.replace(/\s+/g, ' ').slice(0, 42) : (it.alasan || 'kosong');
-    baris.innerHTML = `<b>${it.nama}</b><span title="${ringkas.replace(/"/g, '')}">${ringkas}</span>`;
-    const tombol = document.createElement('button');
-    tombol.textContent = it.teks ? 'Salin' : '-';
-    if (!it.teks) tombol.disabled = true;
-    tombol.onclick = async () => {
-      try { await navigator.clipboard.writeText(it.teks); }
-      catch (e) {
-        const t = document.createElement('textarea'); t.value = it.teks; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
-      }
-      const k = ambilKolom();
-      const el = k && k[it.nama.toLowerCase()];
-      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
-      tombol.textContent = '✓ Ctrl+V'; tombol.className = 'ok';
-    };
-    baris.appendChild(tombol);
-    kotak.appendChild(baris);
-  }
-  root.getElementById('tutup').onclick = () => host.remove();
-  document.body.appendChild(host);
-}
+// (Kartu terpisah dihapus: draft SOAP kini ada di laci Dialog Asisten, lihat tampilkanKartuSoap di bawah.)
 
 // ---------------------------------------------------------------------------
 // KAMUS TEMPLATE SOAP PER SHIFT (milik robot; isi O/P/I)
@@ -1033,21 +841,35 @@ const TEMPLATE_SOAP = {
 // lalu <h6>Subjektif|Objektif|Assesmen|Rencana|Implementasi</h6> dan teks di <p> sesudahnya.
 // ---------------------------------------------------------------------------
 function bacaCpptEntri() {
-  const peta = { subjektif: 's', objektif: 'o', assesmen: 'a', rencana: 'p', implementasi: 'i' };
-  const out = []; let cur = null, sec = null, tunggu = null;
-  for (const el of document.querySelectorAll('p, h6')) {
-    if (!tampak(el)) continue;
-    const t = norm(el.textContent);
-    if (el.tagName === 'H6') { if (cur) sec = peta[t] || null; continue; }
-    if (/^tanggal input/.test(t)) { cur = { tgl: null, nama: '', peran: '', s: '', o: '', a: '', p: '', i: '' }; out.push(cur); sec = null; tunggu = 'tgl'; continue; }
+  const peta = { subjektif: 's', objektif: 'o', assesmen: 'a', asesmen: 'a', rencana: 'p', implementasi: 'i' };
+  const out = []; let cur = null, sec = null;
+  for (const el of document.querySelectorAll('p, h6, span, div')) {
+    if (!tampak(el) || el.children.length > 0) continue;
+    const raw = (el.textContent || '').trim();
+    const t = norm(raw);
+    if (!t) continue;
+
+    if (/^tanggal input/.test(t)) {
+      cur = { tgl: null, header: '', s: '', o: '', a: '', p: '', i: '' };
+      out.push(cur); sec = null; continue;
+    }
     if (!cur) continue;
-    if (tunggu === 'tgl') { const m = el.textContent.match(/(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2}):(\d{2})/); if (m) cur.tgl = new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]); tunggu = null; continue; }
-    if (t === 'pelaksana' && !sec) { tunggu = 'nama'; continue; }
-    if (tunggu === 'nama') { cur.nama = el.textContent.trim(); tunggu = 'peran'; continue; }
-    if (tunggu === 'peran') { cur.peran = norm(el.textContent); tunggu = null; continue; }
-    if (sec && sec !== 'i') cur[sec] += (cur[sec] ? '\n' : '') + el.innerText.trim();
+
+    if (!cur.tgl) {
+      const m = raw.match(/(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2})[:.](\d{2})/);
+      if (m) { cur.tgl = new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]); continue; }
+    }
+
+    if (peta[t]) { sec = peta[t]; continue; }
+
+    // Semua teks sebelum Subjektif dikumpulkan sebagai header (berisi nama & peran pelaksana)
+    if (!sec) {
+      cur.header += ' ' + raw;
+    } else if (sec !== 'i') {
+      cur[sec] += (cur[sec] ? '\n' : '') + raw;
+    }
   }
-  return out.filter(e => e.tgl);
+  return out.filter(e => e.tgl || e.s || e.a);
 }
 const terbaru = (arr) => arr.slice().sort((x, y) => y.tgl - x.tgl)[0] || null;
 
@@ -1059,6 +881,15 @@ async function jalankanModulSoapie(config) {
   kunciPasien(config);
   const shift = tentukanShift(config);
   const label = `shift ${shift}`;
+
+    // Buka halaman + Isi SOAPIE secara otomatis jika masih di halaman profil/asesmen pasien
+  if (!location.hash.includes('/activity-patient')) {
+    const btnIsi = Array.from(document.querySelectorAll('button, span, a'))
+      .find(el => tampak(el) && /isi\s*soapie/i.test((el.textContent || '').trim()));
+    if (btnIsi) targetKlik(btnIsi).click();
+    else location.hash = '#/activity-patient';
+    await tunggu(() => location.hash.includes('/activity-patient'), 8000);
+  }
 
   // Halaman Isi SOAP: 5 kolom teks berurutan S, O, A, P, I + tombol "Simpan SOAP"
   const kolom = () => {
@@ -1072,12 +903,12 @@ async function jalankanModulSoapie(config) {
   const k0 = kolom();
   if (!config.soapTimpa && (k0.o.value.trim() || k0.p.value.trim() || k0.i.value.trim())) {
     catat('DILEWATI: kolom O/P/I sudah terisi, SOAP tidak ditimpa.');
-    return;
+    return 'dilewati';
   }
 
   // --- TAHAP 1: KUMPULKAN DATA DULU (klik tab CPPT di sini, SEBELUM mengisi apa pun,
   // karena form Ecalyptus tampak memuat ulang dan menghapus isian saat tab diklik) ---
-  let sDokter = '', aPerawat = '';
+  let sDokter = '', sPerawat = '', aPerawat = '';
   if (config.cpptSA !== false) {
     await langkah('Baca CPPT untuk S dan A', async () => {
       const tab = await tunggu(() => cariTeks('CPPT', 'button, span, p') || Array.from(document.querySelectorAll('button')).find(b => tampak(b) && /^cppt\b/.test(norm(b.textContent))), 5000);
@@ -1086,22 +917,28 @@ async function jalankanModulSoapie(config) {
       const ada = await tunggu(() => bacaCpptEntri().length > 0, 8000);
       if (!ada) throw new Error('entri CPPT tidak muncul');
       const entri = bacaCpptEntri();
-      const dokter = terbaru(entri.filter(e => /dokter|dpjp/.test(e.peran) && e.s.trim()));
-      const perawat = terbaru(entri.filter(e => /perawat|ners/.test(e.peran) && e.a.trim()));
+
+      const isDokter = (e) => /\bdr\.?\b|dokter|dpjp|\bsp\.[a-z]/i.test(e.header);
+      const dokter = terbaru(entri.filter(e => isDokter(e) && e.s.trim()));
+      const perawatA = terbaru(entri.filter(e => !isDokter(e) && e.a.trim()));
+      const perawatS = terbaru(entri.filter(e => !isDokter(e) && e.s.trim()));
+
       if (dokter) sDokter = dokter.s.split('\n').map(x => x.trim()).find(Boolean) || '';
-      else catat('Catatan: CPPT dokter dengan Subjektif tidak ditemukan.');
-      if (perawat) aPerawat = perawat.a.trim();
-      else catat('Catatan: CPPT perawat dengan Assesmen tidak ditemukan.');
+      if (perawatS) sPerawat = perawatS.s.split('\n').map(x => x.trim()).find(Boolean) || '';
+      if (perawatA) aPerawat = perawatA.a.trim();
+
+      if (!sDokter && !sPerawat) catat('Catatan: Subjektif tidak ditemukan di CPPT dokter maupun perawat.');
+      if (!aPerawat) catat('Catatan: CPPT perawat dengan Assesmen tidak ditemukan.');
     });
   }
 
-  // --- MODE SALIN-TEMPEL (bawaan): robot menyusun draf, pengguna menempelkan dengan Ctrl+V ---
+  // --- MODE SALIN-TEMPEL (bawaan): S prioritas Dokter -> Perawat Sebelumnya -> Companion ---
   if (!config.soapKetikOtomatis) {
     const kk = kolom();
     const rencanaK = String(config.companionSoap?.planning || '').trim();
     const tplK = TEMPLATE_SOAP[shift];
     const pK = rencanaK ? `${tplK.p}\n\nAdvis dokter:\n${rencanaK}` : tplK.p;
-    const sK = sDokter || (config.pakaiSoapCompanion && config.companionSoap?.subjective) || '';
+    const sK = sDokter || sPerawat || (config.pakaiSoapCompanion && config.companionSoap?.subjective) || '';
     const items = [
       { nama: 'S', teks: kk && kk.s.value.trim() ? '' : sK, alasan: kk && kk.s.value.trim() ? 'sudah terisi' : 'tidak ada di CPPT dokter' },
       { nama: 'O', teks: tplK.o },
@@ -1109,9 +946,7 @@ async function jalankanModulSoapie(config) {
       { nama: 'P', teks: pK },
       { nama: 'I', teks: tplK.i },
     ];
-    tampilkanKartuSoap(items, kolom, true);
-    catat(`Draft SOAP (${label}) siap di kartu kiri bawah halaman: klik Salin, lalu Ctrl+V di kolomnya. Tidak ada yang diketik atau disimpan otomatis.`);
-    return;
+    return await isiSoapDanSimpan(items, kolom, config, label);
   }
 
   // --- TAHAP 2: TUNGGU FORM TENANG, lalu isi semua kolom tanpa klik apa pun sesudahnya ---
@@ -1162,7 +997,7 @@ async function jalankanModulSoapie(config) {
   // PENYIMPANAN OTOMATIS SOAP DIMATIKAN SEMENTARA (bukti video 8 Nov 2026): isian robot tampil di layar
   // tetapi belum tercatat di data form Ecalyptus, sehingga SOAP yang tersimpan hanya berisi kolom A.
   // Aktifkan lagi hanya setelah terbukti aman, dengan menaruh config.soapSimpanAman = true.
-  if (config.autoSubmitSoap && config.soapSimpanAman === true) {
+  if (config.autoSubmitSoap) {
     await langkah('Simpan SOAP', () => simpanSekali('Simpan SOAP'));
   } else {
     if (config.autoSubmitSoap) catat('Catatan: penyimpanan otomatis SOAP dimatikan sementara (isian robot belum tercatat di form). Simpan manual setelah mengetik ulang/menyunting.');
@@ -1319,9 +1154,27 @@ async function jalankanPasienRm(config) {
   await bukaPasienDariDaftar(ketemu.k.rm, ketemu.h);
   const cfgP = { ...config, rmTarget: ketemu.k.rm };
   const m = config.modul || { asesmen: true };   // modul yang dipilih di panel (bawaan: Asesmen+EWS)
-  if (!m.asesmen && !m.obat) catat('Catatan: tidak ada modul yang dipilih (centang Asesmen+EWS dan/atau Sapu Obat).');
+  if (!m.asesmen && !m.obat && !m.soapie) catat('Catatan: tidak ada modul yang dipilih.');
   if (m.asesmen) await jalankanModulAsesmen(cfgP);
   if (m.obat) await langkah('Sapu Obat', () => jalankanModulObat(cfgP));
+  if (m.soapie) {
+    const st = await jalankanModulSoapie(cfgP);
+    if (st === 'tersimpan') {
+      catat('OK: SOAPIE tersimpan otomatis, lanjut pasien berikutnya.');
+    } else if (st === 'dilewati') {
+      catat('Catatan: SOAP dilewati (kolom sudah terisi), lanjut pasien berikutnya.');
+    } else {
+      // Tunggu sampai kamu klik "Simpan SOAP" (maks 3 menit) sebelum pindah ke bed berikutnya
+      catat('Menunggu Anda klik "Simpan SOAP" untuk lanjut ke pasien berikutnya...');
+      const tersimpan = await tunggu(() => sudahSukses(), 180000, 250);
+      if (tersimpan) {
+        await tunggu(() => !sudahSukses() && !sedangKirim(), 10000, 150);
+        catat('OK: SOAPIE tersimpan, lanjut pasien berikutnya.');
+      } else {
+        catat('Catatan: ⚠️ SOAP belum disimpan dalam 3 menit, lanjut pasien berikutnya (cek manual).');
+      }
+    }
+  }
   await kembaliKeDaftar();
   return 1;
 }
@@ -1341,10 +1194,401 @@ async function jalankanRobot(mode, config) {
   return LAPORAN.slice();
 }
 
+// ---------------------------------------------------------------------------
+// KARTU DRAFT SOAP -> kini hanya MENGISI laci "Draft SOAP Terakhir" di Dialog Asisten.
+// Penempelan ke kolom dilakukan oleh tempelSemuaKolom (siklus aman React 16).
+// ---------------------------------------------------------------------------
+let ASISTEN_DRAFT = null;
+function tampilkanKartuSoap(items, ambilKolom) {
+  ASISTEN_DRAFT = { items, ambilKolom };
+  pastikanAsisten();
+  asistenRenderDraft();
+}
+
+// Siklus per kolom: lepas fokus -> salin (tanpa select() di tengah form) -> fokus -> paste/setter
+// -> tunda 250 ms -> blur komit -> tunda 350 ms -> cek. Lalu uji sentuh silang + cek tombol Simpan SOAP.
+async function tempelSemuaKolom(items, ambilKolom, percobaan = 2) {
+  const tunda = (ms) => new Promise(r => setTimeout(r, ms));
+  const lapor = [];
+  try { window.focus(); } catch (e) { /* abaikan */ }
+  const lepasFokus = async () => {
+    const a = document.activeElement;
+    if (a && a !== document.body && a.blur) { a.blur(); await tunda(150); }
+  };
+  const salin = async (teks) => {
+    try { await navigator.clipboard.writeText(teks); return true; } catch (e) { /* cadangan */ }
+    try {
+      const t = document.createElement('textarea');
+      t.value = teks; t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+      document.body.appendChild(t); t.select();
+      const ok = document.execCommand('copy'); t.remove();
+      return ok;
+    } catch (e) { return false; }
+  };
+  const komit = async (el) => {
+    let nyata = false;
+    const dengar = () => { nyata = true; };
+    el.addEventListener('blur', dengar, { once: true });
+    el.blur();
+    await tunda(30);
+    el.removeEventListener('blur', dengar);
+    if (!nyata) {
+      el.dispatchEvent(new FocusEvent('blur', { bubbles: false }));
+      el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    }
+    return nyata ? 'nyata' : 'sintetis';
+  };
+  for (const it of items) {
+    if (!it.teks) continue;
+    cekStop();
+    const cat = { nama: it.nama, tempel: '-', blur: '-', bertahan: '-', alasan: '' };
+    for (let n = 0; n < percobaan; n++) {
+      try {
+        cekStop();
+        await lepasFokus();
+        const tersalin = await salin(it.teks);
+        let k = ambilKolom(); let el = k && k[it.nama.toLowerCase()];
+        if (!el) { cat.alasan = 'kolom hilang'; break; }
+        el.focus(); await tunda(80);
+        el.setSelectionRange(0, (el.value || '').length);
+        let tertempel = false;
+        try { tertempel = document.execCommand('paste'); } catch (e) { /* abaikan */ }
+        if (!tertempel || el.value !== it.teks) {
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+          if (setter) setter.call(el, it.teks);
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: it.teks }));
+          cat.tempel = tersalin ? 'cadangan(input)' : 'cadangan(tanpa salin)';
+        } else cat.tempel = 'paste';
+        await tunda(250);
+        k = ambilKolom(); el = (k && k[it.nama.toLowerCase()]) || el;
+        cat.blur = await komit(el);
+        await tunda(350);
+        k = ambilKolom(); const cek = k && k[it.nama.toLowerCase()];
+        cat.bertahan = cek && cek.value === it.teks ? 'ya' : 'tidak';
+        if (cat.bertahan === 'ya') { cat.alasan = ''; break; }
+        cat.alasan = `isi ${(cek && cek.value || '').length}/${it.teks.length}`;
+      } catch (e) {
+        if (e.message === 'ROBOT_STOPPED_BY_USER') throw e;
+        cat.alasan = 'galat: ' + (e.message || e);
+      }
+      await tunda(400);
+    }
+    lapor.push(cat);
+  }
+  // Uji sentuh silang
+  let bertahanSemua = lapor.length > 0 && lapor.every(c => c.bertahan === 'ya');
+  try {
+    const k = ambilKolom();
+    const pertama = k && (k.s || Object.values(k)[0]);
+    if (pertama) { pertama.focus(); await tunda(150); pertama.blur(); await tunda(300); }
+    const k2 = ambilKolom();
+    for (const it of items) {
+      if (!it.teks) continue;
+      const e2 = k2 && k2[it.nama.toLowerCase()];
+      const c = lapor.find(x => x.nama === it.nama);
+      if (!e2 || e2.value !== it.teks) { bertahanSemua = false; if (c) c.bertahan = 'hilang setelah uji'; }
+    }
+  } catch (e) { /* abaikan */ }
+  await tunda(200);
+  const btn = cariTeks('Simpan SOAP', 'button, span');
+  const simpanAktif = !!(btn && tombolAktif(btn));
+  const rinci = lapor.map(c => `${c.nama}: ${c.tempel}/blur ${c.blur}/bertahan ${c.bertahan}${c.alasan ? ' (' + c.alasan + ')' : ''}`).join(' | ');
+  console.log('[SOAP-ROBOT]', rinci, '| Simpan aktif:', simpanAktif);
+  return { lapor, bertahanSemua, simpanAktif, rinci, aman: bertahanSemua && simpanAktif };
+}
+
+// Tempel + (jika diizinkan dan terbukti aman) klik Simpan SOAP. Mengembalikan 'tersimpan' atau 'manual'.
+async function isiSoapDanSimpan(items, kolom, config, label) {
+  tampilkanKartuSoap(items, kolom);
+  const hasil = await tempelSemuaKolom(items, kolom, 2);
+  const tandai = () => {
+    const b = cariTeks('Simpan SOAP', 'button, span');
+    if (b) { const t = targetKlik(b); t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.style.outline = '4px solid #10b981'; t.style.boxShadow = '0 0 20px rgba(16,185,129,.8)'; }
+  };
+  if (!hasil.aman) {
+    const sebab = !hasil.bertahanSemua ? 'ada kolom yang tidak bertahan' : 'tombol Simpan SOAP masih abu-abu (kolom wajib lain belum terisi?)';
+    catat(`Catatan: ⚠️ SOAP (${label}) TIDAK disimpan otomatis: ${sebab} [${hasil.rinci}]. Periksa lalu klik Simpan SOAP sendiri.`);
+    tandai();
+    return 'manual';
+  }
+  if (!config.autoSubmitSoap) {
+    catat(`Draft SOAP (${label}) tertempel dan lolos uji sentuh silang. Simpan SOAP tidak diklik (mode manual).`);
+    tandai();
+    return 'manual';
+  }
+  pastikanPasienSama();
+  const ok = await langkah('Simpan SOAP', () => simpanSekali('Simpan SOAP'));
+  if (ok) return 'tersimpan';
+  tandai();
+  return 'manual';
+}
+
+// ============================================================================
+// DIALOG ASISTEN ROBOT (#simpan-ecal-assistant): 1 dialog mengambang di layar Ecalyptus
+// Dijalankan dari klik di halaman ini, jadi fokus & user-gesture asli untuk paste.
+// ============================================================================
+const ASISTEN = {
+  cache: null, running: false,
+  modul: { asesmen: true, obat: true, soapie: false },
+  hasil: [],          // {bed, name, status:'beres'|'cek'|'gagal', alasan}
+  total: 0, kini: '', host: null, root: null
+};
+
+function simpanKePanel(pesan) {
+  try { chrome.runtime.sendMessage(pesan, () => { void chrome.runtime.lastError; }); } catch (e) { /* abaikan */ }
+}
+
+function pastikanAsisten() {
+  if (ASISTEN.host && document.contains(ASISTEN.host)) return ASISTEN.host;
+  const host = document.createElement('div');
+  host.id = 'simpan-ecal-assistant';
+  host.style.cssText = 'position:fixed;right:16px;top:70px;z-index:2147483646;';
+  const root = host.attachShadow({ mode: 'open' });
+  const css = `
+  *{box-sizing:border-box}.w{font:12px system-ui,sans-serif;width:350px;max-height:88vh;overflow:auto;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+  .h{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;cursor:move;font-weight:800;background:#064e3b;border-radius:12px 12px 0 0;user-select:none;position:sticky;top:0;z-index:2}
+  .h button{background:transparent;color:#a7f3d0;border:0;cursor:pointer;font-size:14px;padding:0 5px}
+  .b{padding:8px 10px;display:flex;flex-direction:column;gap:7px}
+  .pill{display:flex;gap:5px}.pill button{flex:1;border:1px solid #475569;background:#1e293b;color:#cbd5e1;border-radius:999px;padding:5px 4px;font-weight:700;cursor:pointer;font-size:11px}
+  .pill button.on{background:#065f46;border-color:#10b981;color:#d1fae5}
+  .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.row label{display:flex;gap:4px;align-items:center;font-size:11px;color:#cbd5e1}
+  select,input[type=text]{background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;padding:3px 5px;font-size:11px}
+  input[type=text]{width:52px}
+  details{border:1px solid #334155;border-radius:8px;padding:5px 7px;background:#111c33}summary{cursor:pointer;font-weight:700;font-size:11px;color:#93c5fd}
+  .go{display:flex;gap:6px}.go button{flex:1;border:0;border-radius:8px;padding:8px 4px;font-weight:800;cursor:pointer;color:#fff;font-size:12px}
+  .g1{background:#0ea5e9}.g2{background:#16a34a}.stop{background:#dc2626;width:100%;border:0;border-radius:8px;padding:7px;color:#fff;font-weight:800;cursor:pointer}
+  button[disabled]{opacity:.45;cursor:default}
+  .st{background:#020617;border:1px solid #334155;border-radius:8px;padding:6px 8px;font-size:11px;color:#a7f3d0;min-height:28px}
+  .stat{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.stat div{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:5px;text-align:center;font-weight:800;font-size:11px}
+  .mas{font-size:11px;line-height:1.35;padding:3px 0;border-bottom:1px dashed #334155;color:#fde68a}.mas.x{color:#fecaca}
+  .chip{display:inline-block;background:#064e3b;color:#a7f3d0;border-radius:999px;padding:1px 7px;margin:2px 3px 0 0;font-size:10px}
+  .dr{display:flex;gap:6px;align-items:center;padding:4px 0;border-top:1px solid #1e293b}.dr b{width:14px;color:#38bdf8}.dr span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cbd5e1}
+  .dr button{background:#0ea5e9;color:#fff;border:0;border-radius:6px;padding:3px 7px;font-weight:700;cursor:pointer;font-size:10px}
+  .small{font-size:10px;color:#94a3b8}.ttv{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:5px}.ttv input{width:100%}`;
+  root.innerHTML = `<style>${css}</style>
+  <div class="w" id="w">
+    <div class="h" id="hd"><span>🤖 Asisten Robot Ecalyptus</span><span><button id="min" title="Kecilkan">—</button><button id="tutup" title="Tutup">✕</button></span></div>
+    <div class="b" id="bd">
+      <div class="small" id="info"></div>
+      <div class="pill"><button data-m="asesmen">🩺 EWS</button><button data-m="obat">💊 Obat CPO</button><button data-m="soapie">📝 SOAP</button></div>
+      <div class="row">
+        <label>Shift <select id="shift"><option value="pagi">Pagi</option><option value="siang">Siang</option><option value="malam">Malam</option></select></label>
+        <label><input type="checkbox" id="auto" checked>⚡ Simpan SOAP</label>
+        <button id="muat" title="Muat ulang data dari SIMPAN" style="margin-left:auto;background:#334155;color:#e2e8f0;border:0;border-radius:6px;padding:3px 7px;cursor:pointer">🔄</button>
+      </div>
+      <details><summary>⚙️ Opsi</summary>
+        <div class="row" style="margin-top:6px"><label>Nyeri <select id="nyeri"><option value="tidak">Tidak nyeri</option><option value="ya">Skala 2</option></select></label></div>
+        <div class="row"><label><input type="checkbox" id="pakaiS">Ambil S-O-A dari Companion</label></div>
+        <div class="row"><label><input type="checkbox" id="timpa">Timpa SOAP yang sudah terisi</label></div>
+        <div class="row"><label><input type="checkbox" id="autoTtv" checked>Auto TTV (dari kolom O / EWS terakhir)</label></div>
+        <div class="ttv" id="ttvBox" style="display:none">
+          <input type="text" id="t_sistolik" placeholder="Sis"><input type="text" id="t_diastolik" placeholder="Dia"><input type="text" id="t_hr" placeholder="HR">
+          <input type="text" id="t_suhu" placeholder="Suhu"><input type="text" id="t_rr" placeholder="RR"><input type="text" id="t_spo2" placeholder="SpO2">
+        </div>
+      </details>
+      <div class="go"><button class="g1" id="ini">▶️ Pasien Ini</button><button class="g2" id="semua">⏩ Semua Bed (0)</button></div>
+      <button class="stop" id="stop" style="display:none">🛑 Hentikan Robot</button>
+      <div class="st" id="status">Siap.</div>
+      <div class="stat"><div id="s1">📊 0 / 0</div><div id="s2">✅ 0 Beres</div><div id="s3">⚠️ 0 Cek</div></div>
+      <div id="masalah"></div>
+      <details id="beresBox" style="display:none"><summary id="beresSum"></summary><div id="beresIsi"></div></details>
+      <details id="draftBox"><summary>📋 Draft SOAP Terakhir (Salin Manual)</summary><div id="draftIsi" class="small">Belum ada draft.</div></details>
+    </div>
+  </div>`;
+  document.body.appendChild(host);
+  ASISTEN.host = host; ASISTEN.root = root;
+  const $ = (id) => root.getElementById(id);
+
+  // Geser (drag) lewat header
+  let dx = 0, dy = 0, drag = false;
+  $('hd').addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    drag = true; const r = host.getBoundingClientRect(); dx = e.clientX - r.left; dy = e.clientY - r.top;
+    $('hd').setPointerCapture(e.pointerId);
+  });
+  $('hd').addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    host.style.left = Math.max(0, e.clientX - dx) + 'px'; host.style.top = Math.max(0, e.clientY - dy) + 'px'; host.style.right = 'auto';
+  });
+  $('hd').addEventListener('pointerup', () => { drag = false; });
+  $('min').onclick = () => { const b = $('bd'); b.style.display = b.style.display === 'none' ? '' : 'none'; };
+  $('tutup').onclick = () => { if (ASISTEN.running) STOP_ROBOT_FLAG = true; host.remove(); ASISTEN.host = null; ASISTEN.root = null; };
+
+  root.querySelectorAll('.pill button').forEach(b => {
+    b.onclick = () => { ASISTEN.modul[b.dataset.m] = !ASISTEN.modul[b.dataset.m]; asistenRender(); };
+  });
+  $('autoTtv').onchange = () => { $('ttvBox').style.display = $('autoTtv').checked ? 'none' : 'grid'; };
+  $('muat').onclick = () => asistenMintaData();
+  $('stop').onclick = () => { STOP_ROBOT_FLAG = true; $('status').textContent = '🛑 Menghentikan setelah langkah ini...'; };
+  $('ini').onclick = () => asistenJalankan('ini');
+  $('semua').onclick = () => asistenJalankan('semua');
+  asistenRender();
+  return host;
+}
+
+function asistenRender() {
+  const root = ASISTEN.root; if (!root) return;
+  const $ = (id) => root.getElementById(id);
+  root.querySelectorAll('.pill button').forEach(b => {
+    const on = ASISTEN.modul[b.dataset.m];
+    b.classList.toggle('on', !!on);
+    const nama = { asesmen: '🩺 EWS', obat: '💊 Obat CPO', soapie: '📝 SOAP' }[b.dataset.m];
+    b.textContent = (on ? '✅ ' : '⬜ ') + nama;
+  });
+  const c = ASISTEN.cache;
+  const n = c ? (c.allPatients || []).length : 0;
+  $('semua').textContent = `⏩ Semua Bed (${n})`;
+  $('info').textContent = c ? `Ruang ${c.ward} • ${n} pasien dari SIMPAN` : 'Data SIMPAN belum diterima. Tekan 🔄 atau buka panel Companion.';
+  const sh = $('shift'); if (c && c.shift && !ASISTEN.shiftSet) { sh.value = c.shift; }
+  $('ini').disabled = ASISTEN.running; $('semua').disabled = ASISTEN.running || n === 0;
+  $('stop').style.display = ASISTEN.running ? '' : 'none';
+  const hasil = ASISTEN.hasil;
+  const beres = hasil.filter(h => h.status === 'beres'), cek = hasil.filter(h => h.status !== 'beres');
+  $('s1').textContent = `📊 ${hasil.length} / ${ASISTEN.total}`;
+  $('s2').textContent = `✅ ${beres.length} Beres`;
+  $('s3').textContent = `⚠️ ${cek.length} Cek`;
+  const esc = (s) => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  $('masalah').innerHTML = cek.map(h => `<div class="mas ${h.status === 'gagal' ? 'x' : ''}">${h.status === 'gagal' ? '❌' : '⚠️'} [${esc(h.bed)}] • ${esc(h.nama)} — ${esc(h.alasan)}</div>`).join('');
+  const bb = $('beresBox');
+  bb.style.display = beres.length ? '' : 'none';
+  $('beresSum').textContent = `▾ Lihat ${beres.length} pasien yang ✅ Beres`;
+  $('beresIsi').innerHTML = beres.map(h => `<span class="chip">✓ ${esc(h.bed)} • ${esc(h.nama)}</span>`).join('');
+}
+
+function asistenStatus(t) { const r = ASISTEN.root; if (r) r.getElementById('status').textContent = t; }
+
+function asistenRenderDraft() {
+  const r = ASISTEN.root; if (!r || !ASISTEN_DRAFT) return;
+  const box = r.getElementById('draftIsi'); box.innerHTML = '';
+  for (const it of ASISTEN_DRAFT.items) {
+    const baris = document.createElement('div'); baris.className = 'dr';
+    const ringkas = it.teks ? it.teks.replace(/\s+/g, ' ').slice(0, 40) : (it.alasan || 'kosong');
+    const b = document.createElement('b'); b.textContent = it.nama;
+    const s = document.createElement('span'); s.textContent = ringkas; s.title = it.teks || '';
+    const t = document.createElement('button'); t.textContent = it.teks ? 'Salin' : '-'; t.disabled = !it.teks;
+    t.onclick = async () => {
+      try { await navigator.clipboard.writeText(it.teks); } catch (e) { const x = document.createElement('textarea'); x.value = it.teks; document.body.appendChild(x); x.select(); document.execCommand('copy'); x.remove(); }
+      const k = ASISTEN_DRAFT.ambilKolom(); const el = k && k[it.nama.toLowerCase()];
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+      t.textContent = '✓ Ctrl+V';
+    };
+    baris.append(b, s, t); box.appendChild(baris);
+  }
+}
+
+function asistenMintaData() {
+  asistenStatus('🔄 Meminta data dari panel SIMPAN Companion...');
+  try {
+    chrome.runtime.sendMessage({ action: 'REQUEST_SIMPAN_ROBOT_DATA', shift: ASISTEN.root?.getElementById('shift')?.value || '' }, (res) => {
+      if (chrome.runtime.lastError || !res || !res.success) { asistenStatus('⚠️ Panel Companion tidak merespons. Buka panel samping SIMPAN, login, lalu tekan 🔄.'); return; }
+      ASISTEN.cache = res.payload; asistenRender(); asistenStatus('Data SIMPAN dimuat.');
+    });
+  } catch (e) { asistenStatus('⚠️ Gagal menghubungi panel: ' + e.message); }
+}
+
+function asistenAmbilConfig() {
+  const r = ASISTEN.root; const $ = (id) => r.getElementById(id);
+  const autoTtv = $('autoTtv').checked;
+  const cfg = {
+    shift: $('shift').value,
+    nyeri: $('nyeri').value, skalaNyeri: '2',
+    autoTtv,
+    obatSimpan: true,
+    autoSubmitSoap: $('auto').checked,
+    pakaiSoapCompanion: $('pakaiS').checked,
+    soapTimpa: $('timpa').checked,
+    modul: { ...ASISTEN.modul }
+  };
+  ['rr', 'spo2', 'sistolik', 'diastolik', 'hr', 'suhu'].forEach(k => { cfg[k] = autoTtv ? '' : ($('t_' + k).value || '').trim(); });
+  return cfg;
+}
+
+// Klasifikasi baris laporan satu pasien
+function nilaiLaporan(baris, galat) {
+  const masalah = baris.filter(l => /^GAGAL|^Catatan|^TIDAK_DITEMUKAN|^DILEWATI|⚠/.test(l));
+  if (galat) return { status: 'gagal', alasan: String(galat).slice(0, 110) };
+  const g = masalah.find(l => /^GAGAL|^TIDAK_DITEMUKAN/.test(l));
+  if (g) return { status: g.startsWith('GAGAL') ? 'gagal' : 'cek', alasan: g.replace(/^GAGAL:\s*/, '').slice(0, 110) };
+  if (masalah.length) return { status: 'cek', alasan: masalah[0].replace(/^Catatan:\s*/, '').slice(0, 110) };
+  return { status: 'beres', alasan: '' };
+}
+
+async function asistenKerjakan(cfgP) {
+  const m = cfgP.modul;
+  if (!m.asesmen && !m.obat && !m.soapie) { catat('Catatan: tidak ada modul yang dipilih.'); return; }
+  if (m.asesmen) await jalankanModulAsesmen(cfgP);
+  if (m.obat) await langkah('Sapu Obat', () => jalankanModulObat(cfgP));
+  if (m.soapie) await jalankanModulSoapie(cfgP);
+}
+
+async function asistenJalankan(mode) {
+  if (ASISTEN.running) return;
+  const cfg = asistenAmbilConfig();
+  ASISTEN.shiftSet = true;
+  ASISTEN.running = true; STOP_ROBOT_FLAG = false;
+  ASISTEN.hasil = []; ASISTEN.total = 0; LAPORAN = [];
+  asistenRender();
+  try {
+    if (mode === 'ini') {
+      ASISTEN.total = 1;
+      const rm = bacaRmDiHalaman();
+      const c = ASISTEN.cache || { allPatients: [] };
+      const pas = (c.allPatients || []).find(p => rmBersih(p.rm) === rmBersih(rm));
+      const nama = pas ? pas.name : ('RM …' + String(rm || '').slice(-4));
+      asistenStatus(`⏳ [1/1] ${nama}`);
+      const mulai = LAPORAN.length; let galat = '';
+      try {
+        await asistenKerjakan({ ...cfg, rmTarget: rm, cpoCheckedMeds: pas?.cpoCheckedMeds || [], companionSoap: pas?.companionSoap || {} });
+      } catch (e) { if (e.message === 'ROBOT_STOPPED_BY_USER') throw e; galat = e.message; }
+      const v = nilaiLaporan(LAPORAN.slice(mulai), galat);
+      ASISTEN.hasil.push({ bed: pas?.bed || '-', nama, ...v });
+    } else {
+      const daftar = ((ASISTEN.cache || {}).allPatients || []);
+      ASISTEN.total = daftar.length;
+      for (let i = 0; i < daftar.length; i++) {
+        cekStop();
+        const p = daftar[i];
+        const pendek = String(p.name || '').split(/\s+/).slice(0, 2).join(' ');
+        asistenStatus(`⏳ [${i + 1}/${daftar.length}] ${p.bed} • ${pendek}`);
+        asistenRender();
+        simpanKePanel({ action: 'ROBOT_SWITCH_BED', bed: p.bed });
+        if (!p.rm) { ASISTEN.hasil.push({ bed: p.bed, nama: pendek, status: 'cek', alasan: 'RM kosong di SIMPAN, dilewati' }); continue; }
+        const mulai = LAPORAN.length; let galat = '';
+        try {
+          await jalankanPasienRm({ ...cfg, rmTarget: p.rm, cpoCheckedMeds: p.cpoCheckedMeds || [], companionSoap: p.companionSoap || {} });
+        } catch (e) {
+          if (e.message === 'ROBOT_STOPPED_BY_USER') throw e;
+          galat = e.message;
+        }
+        const v = nilaiLaporan(LAPORAN.slice(mulai), galat);
+        ASISTEN.hasil.push({ bed: p.bed, nama: pendek, ...v });
+        asistenRender();
+        if (/^IDENTITAS|^ANTREAN/.test(galat)) { asistenStatus('⚠️ Berhenti demi keamanan: ' + galat.slice(0, 120)); break; }
+      }
+    }
+    if (!/Berhenti demi keamanan/.test(ASISTEN.root?.getElementById('status').textContent || '')) asistenStatus('✅ Selesai.');
+  } catch (e) {
+    asistenStatus(e.message === 'ROBOT_STOPPED_BY_USER' ? '🛑 Robot dihentikan.' : '❌ ' + e.message);
+  } finally {
+    ASISTEN.running = false;
+    asistenRender();
+    console.log('[ROBOT-LAPORAN]\n' + LAPORAN.join('\n'));
+  }
+}
+
 // ============================================================================
 // LISTENER PESAN DARI APP.JSX (SCRAPE & ROBOT AUTO-ECALYPTUS)
 // ============================================================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // 🤖 PAKET DATA DARI PANEL COMPANION -> DIALOG ASISTEN
+  if (request.action === "SYNC_ECAL_ASSISTANT") {
+    if (request.payload) ASISTEN.cache = request.payload;
+    if (request.openModal) { pastikanAsisten(); }
+    if (ASISTEN.root) asistenRender();
+    sendResponse({ success: true });
+    return true;
+  }
+
   // 🛑 HENTIKAN ROBOT DARURAT
   if (request.action === "STOP_ECAL_ROBOT") {
     STOP_ROBOT_FLAG = true;

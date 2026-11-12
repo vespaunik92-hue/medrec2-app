@@ -2262,6 +2262,7 @@ const handleAdminSaveUser = async () => {
             setLoading(true);
             await addDoc(getCollectionRef(), {
                 name: waitRec.name, roomNumber: waitRec.plannedRoom, dpjpName: 'dr. Belum Dipilih', gender: '',
+                ward: (currentUser?.ward && currentUser.ward !== 'ALL') ? currentUser.ward : (waitRec.ward || 'MELATI'),
                 createdAt: Timestamp.now(), updatedAt: Timestamp.now(), isDischarged: false,
                 planning: waitRec.diagnosis ? `Diagnosa Awal: ${waitRec.diagnosis}` : ''
             });

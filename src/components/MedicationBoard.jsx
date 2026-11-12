@@ -830,7 +830,7 @@ const GlobalMedicationBoard = ({ records, db, currentUser, firebaseConfig, onEdi
                                                                                 disabled={config.isStopOrTunda}
                                                                                 className={`relative flex flex-col items-center justify-between p-1.5 rounded-lg border transition-all h-[55px] ${log.checked ? 'bg-emerald-50 border-emerald-400 shadow-inner' : recommendGlow ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400/50 shadow-sm animate-pulse' : config.isStopOrTunda ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
                                                                             >
-                                                                                {log.checked && <AbxPill med={med} logs={safeLogs} dateStr={dateStr} shiftKey={s.key} />}
+                                                                                {log.checked && <AbxPill med={med} logs={record.currentRecordLogs} dateStr={dateStr} shiftKey={s.key} />}
                                                                                 {/* 👇 PERHATIKAN BARIS INI: Menggunakan dynamicLabel */}
                                                                                 <span className={`text-[8px] font-extrabold tracking-tight ${log.checked ? 'text-emerald-800' : recommendGlow ? 'text-yellow-800 font-black' : 'text-slate-500'}`}>
                                                                                     {dynamicLabel}

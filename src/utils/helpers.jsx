@@ -736,7 +736,7 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
             const mk = (step) => ({
                 h: h + step * 2,
                 dose: k + step,
-                date: abxAddDays(d.ds, step * 2),
+                date: abxAddDays(d.ds, step * 2 + (firstSk === 'jam_06' ? 1 : 0)), // slot 04/06 sebenarnya sudah hari berikutnya
                 hour: changeHour
             });
             byCell[`${d.ds}|${d.sk}`] = {
@@ -760,7 +760,8 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
             last: lastD ? byCell[`${lastD.ds}|${lastD.sk}`] : null,
             currentH: `H${currentHNum}`,
             nextH: `H${currentHNum + 2}`,
-            changeHour
+            changeHour,
+            changeKey: firstSk
         };
     }
 
@@ -806,7 +807,7 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
         const mk = (n) => ({
             h: n / dpd,
             dose: n,
-            date: abxAddDays(d.ds, Math.floor((r + (n - k)) / dpd)),
+            date: abxAddDays(d.ds, Math.floor((r + (n - k)) / dpd) + (changeShiftKey === 'jam_06' ? 1 : 0)), // slot 04/06 sebenarnya sudah hari berikutnya
             hour: changeHour
         });
         byCell[`${d.ds}|${d.sk}`] = {
@@ -830,7 +831,8 @@ export const getAntibioticDoseInfo = (medName, medicationLogs = {}) => {
         last: lastD ? byCell[`${lastD.ds}|${lastD.sk}`] : null,
         currentH: `H${currentHNum}`,
         nextH: `H${currentHNum + 1}`,
-        changeHour
+        changeHour,
+        changeKey: changeShiftKey
     };
 };
 
@@ -844,7 +846,10 @@ export const getAntibioticDay = (medName, medicationLogs = {}) => {
     // - 3x1 (mulai 12, siklus 12-20-04): "H1 ➔ H2 jam 04"
     // - 3x1 (mulai 08, siklus 08-16-24): "H1 ➔ H2 jam 24"
     // - per 48 jam (mulai 12): "H1 ➔ H3 jam 12"
-    return `${info.currentH} ➔ ${info.nextH} jam ${info.changeHour}`;
+    // Tanggal = tanggal kalender SEBENARNYA saat pergantian terjadi (slot 04/06 dihitung hari berikutnya,
+    // walau di kolom CPO ia ditaruh di tanggal shift malam).
+    const tglGanti = info.last?.next?.[0]?.date;
+    return `${info.currentH} ➔ ${info.nextH} jam ${info.changeHour}${tglGanti ? ` (${tglGanti})` : ''}`;
 };
 
 const abxLines = (c, prefix) => [

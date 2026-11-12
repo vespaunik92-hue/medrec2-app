@@ -19,7 +19,7 @@ const LabRadiologyBoard = ({ records, activeRecords, onOpenEkspedisi }) => {
                 parsed.labs.forEach(labItem => {
                     const testName = labItem.trim().toUpperCase(); // Normalisasi jadi huruf besar
                     if (!labs[testName]) labs[testName] = [];
-                    labs[testName].push({ room: rec.roomNumber, name: rec.name });
+                    labs[testName].push({ room: rec.roomNumber, name: rec.name, rm: rec.rmNumber || rec.rm || '' });
                     tLabs++;
                 });
             }
@@ -29,7 +29,7 @@ const LabRadiologyBoard = ({ records, activeRecords, onOpenEkspedisi }) => {
                 parsed.rads.forEach(radItem => {
                     const testName = radItem.trim().toUpperCase();
                     if (!rads[testName]) rads[testName] = [];
-                    rads[testName].push({ room: rec.roomNumber, name: rec.name });
+                    rads[testName].push({ room: rec.roomNumber, name: rec.name, rm: rec.rmNumber || rec.rm || '' });
                     tRads++;
                 });
             }
@@ -89,7 +89,7 @@ const LabRadiologyBoard = ({ records, activeRecords, onOpenEkspedisi }) => {
                                             <span className="font-bold text-[10px] bg-white border border-slate-300 px-1 py-0.5 rounded shadow-sm shrink-0 w-8 text-center">
                                                 {p.room.replace(/[AB]$/, '')}
                                             </span>
-                                            <span className="font-semibold uppercase truncate">{p.name}</span>
+                                            <span className="font-semibold uppercase truncate">{p.name}{p.rm ? <span className="ml-1 font-mono font-normal normal-case text-slate-500 text-[10px]">· {p.rm}</span> : null}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -118,7 +118,7 @@ const LabRadiologyBoard = ({ records, activeRecords, onOpenEkspedisi }) => {
                                             <span className="font-bold text-[10px] bg-white border border-slate-300 px-1 py-0.5 rounded shadow-sm shrink-0 w-8 text-center">
                                                 {p.room.replace(/[AB]$/, '')}
                                             </span>
-                                            <span className="font-semibold uppercase truncate">{p.name}</span>
+                                            <span className="font-semibold uppercase truncate">{p.name}{p.rm ? <span className="ml-1 font-mono font-normal normal-case text-slate-500 text-[10px]">· {p.rm}</span> : null}</span>
                                         </li>
                                     ))}
                                 </ul>
