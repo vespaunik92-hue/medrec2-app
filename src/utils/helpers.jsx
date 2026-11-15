@@ -1109,6 +1109,9 @@ const parseMedicationDetails = (medLine = '', medicationLogs = {}) => {
     else if (/\b(tab|caps|kapsul|syr|sirup)\b/i.test(lower)) route = 'p.o';
     else if (/\b(topikal|salep|tetes|gtt)\b/i.test(lower)) route = 'Topikal';
 
+    // Insulin (pen/vial) diberikan SC, bukan oral. Jarum/needle bukan obat. IV/drip eksplisit tetap dihormati.
+    if (route === 'p.o' && /(?:insulin|sansulin|lantus|levemir|novorapid|novomix|humalog|humulin|mixtard|actrapid|apidra|toujeo|tresiba|basaglar|ezelin)/i.test(lower) && !/\b(needle|jarum|spuit|syringe)\b/i.test(lower)) route = 'SC';
+
     // 2. Ekstraksi Frekuensi / Aturan Pakai
     let freqText = '1 x 1';
     let freqNum = 1;
@@ -2312,9 +2315,12 @@ export const cleanDrugName = (rawName = '', translator = {}) => {
   const isSyrup = /\b(?:sirup|syr|dry\s*syr|drop|drops|suspensi|susp)\b/i.test(t);
   const isInjection = /\b(?:inj|injek|injeksi|iv|i\.v\.|im|i\.m\.|sc|s\.c\.|vial|ampul|amp|drip|infus|inf|lar\s*inf)\b/i.test(t) || /\b(?:asering|kaen|ka-en|d5|d10|dextrose|dekstrosa|glukosa|b[\s\-]?fluid|clinimix|clinoleic|aminoleban|aminofusin|futrolit|ringer|plasma\s*lyte|nutriflex|tutofusin|kabiven|triofusin)\b/i.test(t) || (!isOralForm && /\bna[\s\-]?cl\b|\bnatrium\s*klorida\b/i.test(t)) || /\b(?:i\.?v|i\.?m|s\.?c)\b/i.test(t);
   const isOral = /\b(?:tab|tablet|kaps|kapsul|po|p\.o\.|caps|oral|disp|kaplet)\b/i.test(t)|| /\bp\.?o\b/i.test(t);
+  // Insulin = SC (kecuali IV/drip ditulis eksplisit). Needle/jarum bukan obat.
+  const isInsulinSc = /(?:insulin|sansulin|lantus|levemir|novorapid|novomix|humalog|humulin|mixtard|actrapid|apidra|toujeo|tresiba|basaglar|ezelin)/i.test(t) && !/\b(?:needle|jarum|spuit|syringe)\b/i.test(t) && !/\b(?:iv|i\.v\.?|ivfd|drip|infus|inf)\b/i.test(t);
 
   let routeSuffix = '';
-  if (isNebu) routeSuffix = ' (nebu)';
+  if (isInsulinSc) routeSuffix = ' (SC)';
+  else if (isNebu) routeSuffix = ' (nebu)';
   else if (isSachet) routeSuffix = ' (sachet)';
   else if (isInjection) routeSuffix = ' (Iv)';
   else if (isSyrup) routeSuffix = '';

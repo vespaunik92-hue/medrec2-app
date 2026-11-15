@@ -1,5 +1,5 @@
 import React, { memo, useState, useMemo } from 'react';
-import { renderPlanningCell, renderObjectiveCell, extractActiveMedications, getAntibioticDay, AbxPill } from '../utils/helpers';
+import { renderPlanningCell, renderObjectiveCell, extractActiveMedications, getAntibioticDay, AbxPill, MedScheduleBadge } from '../utils/helpers';
 import LabHistoryTable from './LabHistoryTable';
 import TtvHistory from './TtvHistory';
 import { autoSmartDateTransformer } from './PrintManager'; // 👈 TAMBAHKAN BARIS INI
@@ -133,7 +133,8 @@ const PatientApoCard = memo(({
                 const cleanLine = line.replace(/^(th\.|terapi:?)\s*/i, '').trim();
                 const isIvfd = /\bivfd\b/i.test(cleanLine);
                 const routeMatch = cleanLine.match(/\b(iv|im|po|p\.o|sc|nebu|drip|infus|tab|kaps|inj|vial|amp)\b/i);
-                const route = isIvfd ? 'IV' : (routeMatch ? routeMatch[1].toUpperCase().replace(/^PO$/, 'P.O') : 'P.O');
+                const isInsulin = /(?:insulin|sansulin|lantus|levemir|novorapid|novomix|humalog|humulin|mixtard|actrapid|apidra|toujeo|tresiba|basaglar|ezelin)/i.test(cleanLine) && !/\b(needle|jarum|spuit|syringe)\b/i.test(cleanLine);
+                const route = isIvfd ? 'IV' : (routeMatch ? routeMatch[1].toUpperCase().replace(/^PO$/, 'P.O') : (isInsulin ? 'SC' : 'P.O'));
                 const tpmMatch = cleanLine.match(/(\d+)\s*tpm/i);
                 const freqMatch = cleanLine.match(/(\d+\s*x\s*[\d\w\/\.]*|\d+\s*x)/i);
                 const freqText = tpmMatch ? `${tpmMatch[1]} tpm` : (freqMatch ? freqMatch[1].replace(/,/g, '').trim() : '1x1');
@@ -406,12 +407,9 @@ const PatientApoCard = memo(({
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <span className="bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded-md border border-rose-300 flex items-center gap-1 shadow-2xs">
-                            💊 RESEP OBAT
+                            {activeMeds.length} RESEP OBAT
                         </span>
-                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-300">
-                            {activeMeds.length} Obat
-                        </span>
-
+                        
                         {/* TOMBOL BUKA-TUTUP JADWAL JAM */}
                         <button
                             type="button"
@@ -469,6 +467,7 @@ const PatientApoCard = memo(({
                                             <span className="text-[10px] text-slate-500 font-mono ml-1.5">
                                                 {(med.route || 'P.O').toLowerCase().replace('p.o', 'po')} {med.freqText || med.frequency || '1x1'}
                                             </span>
+                                            {!med.isStopOrTunda && <MedScheduleBadge med={med.raw || med.cleanText} logs={rec.medicationLogs || {}} />}
                                             {abBadge && (
                                                 <span className="inline-flex bg-rose-50 text-rose-600 border border-rose-200 text-[9px] font-black px-1.5 py-0.5 rounded shadow-2xs ml-1.5 align-middle">
                                                     🚨 {abBadge}

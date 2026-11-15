@@ -1721,15 +1721,14 @@ const PatientForm = ({
                             <div className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm relative z-10 hover:z-40 focus-within:z-40 transition-all">
                                 <div className="flex items-center justify-between px-3 py-1.5 bg-rose-100 border-b border-rose-200 rounded-t-lg">
                                     <span className="text-[10px] font-bold text-rose-800 flex items-center gap-1.5">
-                                        💊 Resep Obat
-                                        <span className="bg-rose-600 text-white text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide">
-                                            PERSISTEN
-                                        </span>
+                                        💊 {(() => {
+                                            const jumlahRx = String(formData.currentPrescription || '').split('\n').map(l => l.trim()).filter(l => l.length > 2 && !l.startsWith('[')).length;
+                                            return jumlahRx > 0 ? `${jumlahRx} Resep Obat` : 'Resep Obat';
+                                        })()}
                                     </span>
 
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[9px] text-rose-500 italic">
-                                            Tidak ikut terhapus saat SOAP direset
+                                        <span className="text-[9px] text-rose-500 italic">                                            
                                         </span>
 
                                         <button
@@ -1751,6 +1750,10 @@ const PatientForm = ({
                                                 .map(line => line.trim().replace(/^[-*\u2022\d.]+\s*/, ''))
                                                 .filter(line => line.length > 2 && (ANTIBIOTICS_DB.some(ab => line.toLowerCase().includes(ab)) || /\bH\d+\b/i.test(line)));
 
+                                            // Log CPO yang BENAR diambil dari rekam aktif (sama dengan E-OA/CPO/cetak); formData bisa tidak memuatnya
+                                            const rekamAbx = (activeRecords || []).find(r => r.id === currentRecordId);
+                                            const logsAbx = rekamAbx?.medicationLogs || formData.medicationLogs || {};
+
                                             return (
                                                 <div className="relative flex items-center">
                                                     {abMeds.length > 0 && (
@@ -1759,7 +1762,7 @@ const PatientForm = ({
                                                                 let cleanMed = med.replace(/^(?:inj|tab|drip|inf|fls|syr)\.?\s+/i, '');
                                                                 let rawName = cleanMed.split(/\s*\d+\s*x|\s+x\s*\d+|\s*\d+\s*(?:mg|gr|g|mcg|ml|iu)/i)[0].trim().substring(0, 14);
                                                                 rawName = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
-                                                                const hCode = getAntibioticDay(med, formData.medicationLogs) || 'H1';
+                                                                const hCode = getAntibioticDay(med, logsAbx) || (med.match(/\bH\d+\b/i) || [])[0]?.toUpperCase() || 'H1';
 
                                                                 return (
                                                                     <div key={idx} className="whitespace-nowrap leading-tight flex items-center gap-1.5 mb-0.5 last:mb-0">

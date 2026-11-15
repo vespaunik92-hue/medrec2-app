@@ -604,6 +604,29 @@ export default function App() {
     return checkedMeds;
   };
 
+  // Detail dosis yang dicentang di CPO SIMPAN: nama obat + jam centang (log.time) + siapa yang mencentang
+  const ambilDosisCpoDetail = (patientRecord, shiftDinas) => {
+    const logs = patientRecord?.medicationLogs || {};
+    const now = new Date();
+    const toYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+    const dates = (shiftDinas === 'malam' && now.getHours() < 9) ? [toYMD(yest), toYMD(now)] : [toYMD(now)];
+    const peta = {};
+    dates.forEach(dStr => {
+      Object.entries(logs[dStr] || {}).forEach(([medName, shiftsObj]) => {
+        if (!shiftsObj || typeof shiftsObj !== 'object') return;
+        Object.entries(shiftsObj).forEach(([slot, s]) => {
+          if (!s || s.checked !== true) return;
+          const m = String(s.time || '').match(/(\d{1,2})[:.](\d{2})/);
+          (peta[medName] = peta[medName] || { nama: medName, doses: [] }).doses.push({
+            tgl: dStr, slot, jam: m ? `${m[1].padStart(2, '0')}:${m[2]}` : null, by: s.by || ''
+          });
+        });
+      });
+    });
+    return Object.values(peta);
+  };
+
   // 🤖 PAKET DATA UNTUK DIALOG ASISTEN DI LAYAR ECALYPTUS
   // Isi: ward, shift, pasien aktif, dan semua pasien ruangan (urut bed) lengkap dengan RM,
   // obat yang sudah dicentang di CPO SIMPAN (hari ini; kemarin bila shift malam < 09:00), dan SOAP Companion.
@@ -615,6 +638,7 @@ export default function App() {
       name: String(p.name || p.nama || '').trim(),
       rm: String(p.rmNumber || p.rm || '').trim(),
       cpoCheckedMeds: ambilObatTercenTangCpo(p, sh),
+      cpoCheckedDetail: ambilDosisCpoDetail(p, sh),
       companionSoap: {
         subjective: p.subjective || '',
         objective: p.objective || '',
@@ -630,8 +654,22 @@ export default function App() {
     const activePatient = act
       ? mapP(act, currentBedList.find(b => cleanBedKey(b) === cleanBedKey(roomOf(act))) || selectedBed)
       : null;
-    return { ward: selectedWard, shift: sh, activePatient, allPatients };
+    return { ward: selectedWard, shift: sh, perawat: currentUser?.name || '', ttdPerawat: ttdPerawatRef.current || '', activePatient, allPatients };
   };
+  // Tanda tangan perawat (dari SIMPAN induk: koleksi signatures/{uid}); dibaca sekali per login, hanya dibawa ke asisten
+  const ttdPerawatRef = useRef('');
+  useEffect(() => {
+    let batal = false;
+    (async () => {
+      try {
+        const u = getAuth().currentUser?.uid;
+        if (!u || !db) { ttdPerawatRef.current = ''; return; }
+        const snap = await getDoc(doc(db, 'signatures', u));
+        if (!batal) ttdPerawatRef.current = (snap.exists() && snap.data().png) || '';
+      } catch (e) { if (!batal) ttdPerawatRef.current = ''; }
+    })();
+    return () => { batal = true; };
+  }, [db, currentUser?.id]);
   const susunRef = useRef(null);
   susunRef.current = susunPaketDataRobot;
   const [asistenAktif, setAsistenAktif] = useState(false);
@@ -649,6 +687,21 @@ export default function App() {
         setSelectedBed(req.bed);
         sendResponse({ success: true });
         return false;
+      }
+      // Kaktus meminta Companion menyedot halaman Ecalyptus yang sedang terbuka (tanpa alert) / menyimpan ke SIMPAN
+      if (req && req.action === 'KAKTUS_AMBIL') {
+        (async () => {
+          try { sendResponse(await shortcutRef.current.scrape({ diam: true })); }
+          catch (e) { sendResponse({ success: false, alasan: e.message }); }
+        })();
+        return true;
+      }
+      if (req && req.action === 'KAKTUS_SIMPAN') {
+        (async () => {
+          try { await new Promise(r => setTimeout(r, 700)); sendResponse(await shortcutRef.current.save({ diam: true })); }
+          catch (e) { sendResponse({ success: false, alasan: e.message }); }
+        })();
+        return true;
       }
       return false;
     };
@@ -817,23 +870,26 @@ export default function App() {
   };
   
   // 5. PENYEDOT DATA ECALYPTUS (DILENGKAPI PENYARING CERDAS RESEP OBAT)
-  const handleScrapeEcal = async () => {
+  const handleScrapeEcal = async (opts = {}) => {
+    const diam = !!(opts && opts.diam === true);
+    const info = (m) => { if (!diam) info(m); };
+    let hasilKaktus = { success: false, alasan: 'tidak ada respons dari halaman Ecalyptus' };
     setLoadingScrape(true);
     try {
       if (typeof chrome === 'undefined' || !chrome.tabs) {
-        alert("Buka ekstensi ini di bilah samping browser Chrome.");
+        info("Buka ekstensi ini di bilah samping browser Chrome.");
         return;
       }
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) {
-        alert("Buka tab Ecalyptus terlebih dahulu.");
+        info("Buka tab Ecalyptus terlebih dahulu.");
         return;
       }
 
-      chrome.tabs.sendMessage(tab.id, { action: "SCRAPE_ECALYPTUS", authorKey: pickedAuthor }, async (response) => {
+      await new Promise((selesaiTangkap) => { chrome.tabs.sendMessage(tab.id, { action: "SCRAPE_ECALYPTUS", authorKey: pickedAuthor }, async (response) => { try {
         if (chrome.runtime.lastError) {
-          alert("Gagal membaca tab Ecalyptus!\n\n1. Klik tab Ecalyptus di sebelah kiri.\n2. Tekan F5 untuk refresh.\n3. Klik tombol Ambil Data ini kembali.");
+          info("Gagal membaca tab Ecalyptus!\n\n1. Klik tab Ecalyptus di sebelah kiri.\n2. Tekan F5 untuk refresh.\n3. Klik tombol Ambil Data ini kembali.");
           return;
         }
 
@@ -911,22 +967,25 @@ export default function App() {
             };
           });
 
+          hasilKaktus = { success: true, isLab: !!d.isLab, isRad: !!d.isRad, nama: d.name || '', rm: d.rmNumber || '', sumber: d.cpptSource || '', bukanDpjp: !!d.cpptSourceOld };
           if (d.isLab) {
-            alert("🧪 Berhasil menyalin hasil Patologi Klinik ke kolom O (Objektif)!");
+            info("🧪 Berhasil menyalin hasil Patologi Klinik ke kolom O (Objektif)!");
           } else if (d.isRad) {
-            alert("🩻 Berhasil menyalin hasil Radiologi ke kolom O (Objektif)!");
+            info("🩻 Berhasil menyalin hasil Radiologi ke kolom O (Objektif)!");
           } else {
-            alert("✅ Berhasil menyalin Profil, Resep, & Planning CPPT!");
+            info("✅ Berhasil menyalin Profil, Resep, & Planning CPPT!");
           }
         } else {
-          alert("Data Ecalyptus belum termuat sempurna.");
+          info("Data Ecalyptus belum termuat sempurna.");
         }
+        } finally { selesaiTangkap(); } });
       });
     } catch (e) {
-      alert("Error: " + e.message);
+      info("Error: " + e.message);
     } finally {
       setLoadingScrape(false);
     }
+    return hasilKaktus;
   };
 
   // 🌟 PENYAMBUNG QUICK TAG KE KOLOM PLANNING
@@ -1359,10 +1418,11 @@ export default function App() {
   };
 
   // 9. SIMPAN KE FIRESTORE
-  const handleSaveToSimpan = async () => {
+  const handleSaveToSimpan = async (opts = {}) => {
+    const diam = !!(opts && opts.diam === true);
     if (!formData.name.trim()) {
-      alert("Nama Pasien wajib diisi!");
-      return;
+      if (!diam) alert("Nama Pasien wajib diisi!");
+      return { success: false, alasan: 'nama pasien kosong (CPPT belum terbaca)' };
     }
 
     setLoadingSave(true);
@@ -1421,9 +1481,11 @@ export default function App() {
         }
       }
       await setDoc(docRef, payload, { merge: true });
-      alert(`✅ Data Bed ${selectedBed} (${formData.name}) tersinkronisasi ke web SIMPAN!`);
+      if (!diam) alert(`✅ Data Bed ${selectedBed} (${formData.name}) tersinkronisasi ke web SIMPAN!`);
+      return { success: true };
     } catch (err) {
-      alert("Gagal simpan ke Firebase: " + err.message);
+      if (!diam) alert("Gagal simpan ke Firebase: " + err.message);
+      return { success: false, alasan: err.message };
     } finally {
       setLoadingSave(false);
     }
@@ -1789,7 +1851,7 @@ export default function App() {
           onClick={bukaAsistenRobot}
           className="w-full py-2 px-2 bg-gradient-to-r from-emerald-800 to-teal-800 hover:from-emerald-700 hover:to-teal-700 text-white font-black rounded-xl shadow-sm border border-emerald-700 transition cursor-pointer text-[11px] flex items-center justify-center gap-1.5"
         >
-          <span>🤖</span> Asisten Robot Auto-Ecalyptus (Buka di Layar ➔)
+          <span>🧕</span> Kaka Asisten Ecalyptus (Buka di Layar ➔)
         </button>
         {robotStatus && (
           <div className="bg-black/40 border border-emerald-800/80 rounded px-2 py-1 text-[9.5px] text-emerald-200 font-medium leading-snug whitespace-pre-line">

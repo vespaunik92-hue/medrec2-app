@@ -34,6 +34,7 @@ import { GlobalMedicationBoard } from './components/MedicationBoard';
 import { FormattedObjective, autoSmartDateTransformer, handlePrintTTV, handlePrintSOAP, handlePrintBukuCM } from './components/PrintManager';
 import { TtvModal, DischargeModal, LaporModal, ConfirmationModal, LaporConfirmationModal, WaitingListInputPanel } from './components/Modals';
 import { RoomFilterDropdown, DpjpFilterDropdown, DigitalClock } from './components/DashboardHelpers';
+import TandaTanganSaya from './components/TandaTanganSaya';
 import { LogOut, Wallet, FileText, ChevronLeft } from 'lucide-react';
 import {
     formatDateCM, hitungHariCM, getAntibioticDay, parsePlanning, parseDateCM,
@@ -1697,7 +1698,9 @@ const handleAdminSaveUser = async () => {
                 if (isHeaderLine(l)) {
                     if (currentBlock) blocks.push(currentBlock);
                     currentBlock = { header: l, parsed: parseHeader(l), lines: [] };
-                } else if (currentBlock) {
+                } else {
+                // 🛡️ Baris TANPA header jangan dibuang
+                if (!currentBlock) currentBlock = { header: '', parsed: null, lines: [] };
                     const comp = stripTagsForCompare(l);
                     if (!applyRemovedSet || !removedSet.has(comp)) {
                         currentBlock.lines.push(l);
@@ -1712,7 +1715,7 @@ const handleAdminSaveUser = async () => {
         const localBlocks = parseBlocks(localLines, false);
 
         if (localBlocks.length === 0) {
-            return dbBlocks.map(b => [b.header, ...b.lines].join('\n')).join('\n');
+            return dbBlocks.map(b => [...(b.header ? [b.header] : []), ...b.lines].join('\n')).join('\n');
         }
 
         // Fungsi pembantu untuk melebur dua buah blok perawat
@@ -1795,7 +1798,7 @@ const handleAdminSaveUser = async () => {
         const finalLines = [];
         dbBlocks.forEach(b => {
             if (b.lines.length > 0) {
-                finalLines.push(b.header);
+                if (b.header) finalLines.push(b.header);
                 b.lines.forEach(l => finalLines.push(l));
                 finalLines.push("");
             }
@@ -4264,6 +4267,7 @@ const handleAdminSaveUser = async () => {
                                             <div><label className="block font-bold text-slate-500 uppercase mb-1">Nama Tampilan</label><input type="text" value={profileForm.name} onChange={e => setProfileForm({ ...profileForm, name: e.target.value })} className="w-full p-2 border border-slate-300 rounded font-bold" /></div>
                                             <div><label className="block font-bold text-slate-500 uppercase mb-1">Password Baru (kosongkan jika tidak diganti)</label><input type="password" autoComplete="new-password" placeholder="Min. 8 karakter" value={profileForm.newPass} onChange={e => setProfileForm({ ...profileForm, newPass: e.target.value })} className="w-full p-2 border border-slate-300 rounded font-mono" /></div>
                                             <button onClick={handleUpdateSelf} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold transition shadow-sm">Simpan Perubahan Profil</button>
+                                            <TandaTanganSaya db={db} />
                                         </div>
                                     </div>
 
